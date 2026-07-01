@@ -4,10 +4,13 @@ import { usePathname } from 'next/navigation'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
-  '/crm': 'CRM Jurídico',
-  '/clientes': 'Clientes',
+  '/crm': 'CRM',
   '/agenda': 'Agenda',
+  '/clientes': 'Clientes',
   '/tarefas': 'Tarefas',
+  '/documentos': 'Documentos',
+  '/financeiro': 'Financeiro',
+  '/configuracoes': 'Configurações',
 }
 
 export function Header() {

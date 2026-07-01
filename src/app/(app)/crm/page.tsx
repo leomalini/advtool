@@ -1,5 +1,5 @@
-import { CrmBoard } from '@/features/crm/components/CrmBoard'
+import { CrmWorkboard } from '@/features/crm/components/CrmWorkboard'
 
 export default function CrmPage() {
-  return <CrmBoard />
+  return <CrmWorkboard />
 }
