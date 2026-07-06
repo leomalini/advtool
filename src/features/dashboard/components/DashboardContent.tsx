@@ -1,27 +1,29 @@
-'use client'
+"use client";
 
-import { Scale, Briefcase, CheckSquare, Users } from 'lucide-react'
-import { MetricCard } from './MetricCard'
-import { PrazosCard } from './PrazosCard'
-import { AgendaHojeCard } from './AgendaHojeCard'
-import { AreasChart } from './AreasChart'
-import { AdvogadosCard } from './AdvogadosCard'
-import { FinanceiroResumo } from './FinanceiroResumo'
-import { ActivityFeed } from './ActivityFeed'
-import { DASHBOARD_STATS } from '@/data/mock'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { Scale, Briefcase, CheckSquare, Users } from "lucide-react";
+import { MetricCard } from "./MetricCard";
+import { PrazosCard } from "./PrazosCard";
+import { AgendaHojeCard } from "./AgendaHojeCard";
+import { AreasChart } from "./AreasChart";
+import { AdvogadosCard } from "./AdvogadosCard";
+import { FinanceiroResumo } from "./FinanceiroResumo";
+import { ActivityFeed } from "./ActivityFeed";
+import { DASHBOARD_STATS } from "@/data/mock";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 function getGreeting(): string {
-  const hora = new Date().getHours()
-  if (hora < 12) return 'Bom dia'
-  if (hora < 18) return 'Boa tarde'
-  return 'Boa noite'
+  const hora = new Date().getHours();
+  if (hora < 12) return "Bom dia";
+  if (hora < 18) return "Boa tarde";
+  return "Boa noite";
 }
 
 export function DashboardContent() {
-  const hoje = new Date()
-  const dataFormatada = format(hoje, "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+  const hoje = new Date();
+  const dataFormatada = format(hoje, "EEEE, dd 'de' MMMM 'de' yyyy", {
+    locale: ptBR,
+  });
 
   return (
     <div className="space-y-6">
@@ -97,5 +99,5 @@ export function DashboardContent() {
       {/* ── Seção 5: Feed de atividades ── */}
       <ActivityFeed />
     </div>
-  )
+  );
 }
