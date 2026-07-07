@@ -128,7 +128,7 @@ export function FinanceiroContent() {
       <div>
         <h1 className="text-xl font-semibold">Financeiro</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Visão geral das finanças do escritório — Junho 2025
+          Visão geral das finanças do escritório — Julho 2026
         </p>
       </div>
 
@@ -172,7 +172,7 @@ export function FinanceiroContent() {
         {/* ── Seção 2: Fluxo de Caixa ── */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Fluxo de Caixa — Jan a Jun 2025</CardTitle>
+            <CardTitle className="text-sm font-semibold">Fluxo de Caixa — Jan a Jun 2026</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Legenda */}

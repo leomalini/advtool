@@ -678,7 +678,7 @@ function ProximosEventos({ eventos, onEventoClick }: ProximosEventosProps) {
 // ── Main Component ─────────────────────────────────────────────
 
 export function AgendaContent() {
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 5, 30))
+  const [currentDate, setCurrentDate] = useState(new Date(2026, 6, 7))
   const [selectedEvento, setSelectedEvento] = useState<EventoEnriquecido | null>(null)
   const [novoEventoOpen, setNovoEventoOpen] = useState(false)
   const [novoEventoData, setNovoEventoData] = useState<string | undefined>(undefined)
