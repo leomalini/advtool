@@ -1,5 +1,22 @@
 import { z } from 'zod'
 
+export const LEGAL_AREAS = [
+  'trabalhista',
+  'civel',
+  'familia',
+  'tributario',
+  'criminal',
+  'previdenciario',
+  'consumidor',
+] as const
+
+const contactSchema = z.object({
+  type: z.enum(['phone', 'email']),
+  value: z.string().min(1, 'Valor obrigatório'),
+  label: z.string().max(50).optional(),
+  is_primary: z.boolean(),
+})
+
 const addressSchema = z.object({
   address_street: z.string().max(200).optional(),
   address_number: z.string().max(20).optional(),
@@ -22,11 +39,13 @@ export const createIndividualClientSchema = addressSchema.extend({
     .regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, 'CPF inválido')
     .optional()
     .or(z.literal('')),
+  legal_area: z.enum(LEGAL_AREAS).optional(),
   phone: z.string().max(30).optional(),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   notes: z.string().max(2000).optional(),
   assigned_to: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
+  contacts: z.array(contactSchema).optional(),
 })
 
 export const createCompanyClientSchema = addressSchema.extend({
@@ -39,11 +58,13 @@ export const createCompanyClientSchema = addressSchema.extend({
     .optional()
     .or(z.literal('')),
   contact_person: z.string().max(150).optional(),
+  legal_area: z.enum(LEGAL_AREAS).optional(),
   phone: z.string().max(30).optional(),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   notes: z.string().max(2000).optional(),
   assigned_to: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
+  contacts: z.array(contactSchema).optional(),
 })
 
 export const createClientSchema = z.discriminatedUnion('type', [
@@ -51,6 +72,7 @@ export const createClientSchema = z.discriminatedUnion('type', [
   createCompanyClientSchema,
 ])
 
+export type ContactInput = z.infer<typeof contactSchema>
 export type CreateIndividualClientInput = z.infer<typeof createIndividualClientSchema>
 export type CreateCompanyClientInput = z.infer<typeof createCompanyClientSchema>
 export type CreateClientInput = z.infer<typeof createClientSchema>

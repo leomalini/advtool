@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(mv 01_profiles.sql 20260101000001_profiles.sql)",
+      "Bash(mv 02_crm.sql 20260101000002_crm.sql)",
+      "Bash(mv 03_clients.sql 20260101000003_clients.sql)",
+      "Bash(mv 04_events.sql 20260101000004_events.sql)",
+      "Bash(mv 05_tasks.sql 20260101000005_tasks.sql)"
     ]
   }
 }

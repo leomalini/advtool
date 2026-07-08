@@ -1,13 +1,14 @@
 import { createClient } from '@/lib/supabase/client'
-import type { ClientWithRelations, ClientAttachment } from '@/types/cliente.types'
-import type { CreateClientInput } from '@/schemas/cliente.schema'
+import type { ClientWithRelations, ClientAttachment, ClientPendency } from '@/types/cliente.types'
+import type { CreateClientInput, ContactInput } from '@/schemas/cliente.schema'
 
 const supabase = createClient()
 
 const CLIENT_SELECT = `
   *,
   assignee:profiles!clients_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
-  creator:profiles!clients_created_by_fkey(id, full_name, avatar_url, role, created_at)
+  creator:profiles!clients_created_by_fkey(id, full_name, avatar_url, role, created_at),
+  contacts:client_contacts(*)
 `
 
 export async function getClients(): Promise<ClientWithRelations[]> {
@@ -35,13 +36,21 @@ export async function createClientRecord(
   input: CreateClientInput,
   userId: string
 ): Promise<ClientWithRelations> {
+  const { contacts, ...clientData } = input as CreateClientInput & { contacts?: ContactInput[] }
+
   const { data, error } = await supabase
     .from('clients')
-    .insert({ ...input, created_by: userId })
+    .insert({ ...clientData, created_by: userId })
     .select(CLIENT_SELECT)
     .single()
 
   if (error) throw error
+
+  if (contacts && contacts.length > 0) {
+    await supabase.from('client_contacts').insert(
+      contacts.map((c) => ({ ...c, client_id: data.id }))
+    )
+  }
 
   await supabase.from('activities').insert({
     type: 'client_created',
@@ -58,13 +67,61 @@ export async function updateClientRecord(
   id: string,
   input: Partial<CreateClientInput>
 ): Promise<void> {
-  const { error } = await supabase.from('clients').update(input).eq('id', id)
+  const { contacts, ...clientData } = input as Partial<CreateClientInput> & {
+    contacts?: ContactInput[]
+  }
+
+  const { error } = await supabase.from('clients').update(clientData).eq('id', id)
   if (error) throw error
+
+  if (contacts !== undefined) {
+    await supabase.from('client_contacts').delete().eq('client_id', id)
+    if (contacts.length > 0) {
+      await supabase.from('client_contacts').insert(
+        contacts.map((c) => ({ ...c, client_id: id }))
+      )
+    }
+  }
 }
 
 export async function deleteClientRecord(id: string): Promise<void> {
   const { error } = await supabase.from('clients').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function getClientsPendencies(): Promise<ClientPendency[]> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, type, name, company_name, trade_name, cpf, cnpj, phone, email, legal_area')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+
+  const pendencies: ClientPendency[] = []
+
+  for (const c of data ?? []) {
+    const missing: string[] = []
+    const displayName =
+      c.type === 'individual' ? (c.name ?? '') : (c.trade_name ?? c.company_name ?? '')
+
+    if (c.type === 'individual' && !c.cpf) missing.push('CPF')
+    if (c.type === 'company' && !c.cnpj) missing.push('CNPJ')
+    if (!c.phone && !c.email) missing.push('Contato (telefone ou email)')
+    if (!c.phone) missing.push('Telefone')
+    if (!c.email) missing.push('E-mail')
+    if (!c.legal_area) missing.push('Área jurídica')
+
+    if (missing.length > 0) {
+      pendencies.push({
+        clientId: c.id,
+        displayName,
+        type: c.type,
+        missingFields: missing,
+      })
+    }
+  }
+
+  return pendencies
 }
 
 export async function getClientAttachments(clientId: string): Promise<ClientAttachment[]> {
@@ -111,10 +168,7 @@ export async function uploadClientAttachment(
   return data as ClientAttachment
 }
 
-export async function deleteClientAttachment(
-  id: string,
-  filePath: string
-): Promise<void> {
+export async function deleteClientAttachment(id: string, filePath: string): Promise<void> {
   await supabase.storage.from('attachments').remove([filePath])
   const { error } = await supabase.from('client_attachments').delete().eq('id', id)
   if (error) throw error

@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:init": "supabase init",
+    "db:link": "supabase link",
+    "db:push": "supabase db push",
+    "db:pull": "supabase db pull",
+    "db:migration:new": "supabase migration new",
+    "db:status": "supabase migration list",
+    "db:repair-history": "supabase migration repair --status applied --linked 20260101000001 20260101000002 20260101000003 20260101000004 20260101000005 20260101000006 20260101000007"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

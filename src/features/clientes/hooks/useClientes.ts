@@ -1,12 +1,18 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { getClients, getClientById, getClientAttachments } from '../services/clientes.service'
+import {
+  getClients,
+  getClientById,
+  getClientAttachments,
+  getClientsPendencies,
+} from '../services/clientes.service'
 
 export const clientKeys = {
   all: ['clients'] as const,
   detail: (id: string) => ['clients', id] as const,
   attachments: (id: string) => ['client-attachments', id] as const,
+  pendencies: ['client-pendencies'] as const,
 }
 
 export function useClientes() {
@@ -29,5 +35,12 @@ export function useClienteAttachments(clientId: string) {
     queryKey: clientKeys.attachments(clientId),
     queryFn: () => getClientAttachments(clientId),
     enabled: !!clientId,
+  })
+}
+
+export function useClientesPendencies() {
+  return useQuery({
+    queryKey: clientKeys.pendencies,
+    queryFn: getClientsPendencies,
   })
 }
