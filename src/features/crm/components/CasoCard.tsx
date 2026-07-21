@@ -3,10 +3,12 @@
 import { AlertTriangle, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
-import type { Caso } from '@/data/mock'
+import type { AreaJuridica, EtiquetaId } from '@/data/mock'
+import type { CaseWithRelations } from '@/types/case.types'
+import { getCaseClientName } from '@/types/case.types'
 
 interface CasoCardProps {
-  caso: Caso
+  caso: CaseWithRelations
   onClick: () => void
   dragHandleProps?: Record<string, unknown>
 }
@@ -54,17 +56,14 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-const ADV_COLORS: Record<string, string> = {
-  'adv-1': 'bg-violet-500',
-  'adv-2': 'bg-cyan-500',
-}
-
 export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
-  const area = AREAS_JURIDICAS[caso.areaJuridica]
-  const hasAlert = caso.etiquetas.includes('urgente') || caso.etiquetas.includes('prazo-fatal')
-  const prazoInfo = caso.proximoPrazo ? formatPrazo(caso.proximoPrazo) : null
-  const advInitials = getInitials(caso.advogadoNome)
-  const advColor = ADV_COLORS[caso.advogadoId] ?? 'bg-zinc-500'
+  const legalArea = caso.legal_area ? AREAS_JURIDICAS[caso.legal_area as AreaJuridica] : null
+  const tags = caso.tags as EtiquetaId[]
+  const hasAlert = tags.includes('urgente') || tags.includes('prazo-fatal')
+  const prazoInfo = caso.next_deadline ? formatPrazo(caso.next_deadline) : null
+  const assignedName = caso.assigned_profile?.full_name ?? ''
+  const advInitials = assignedName ? getInitials(assignedName) : '??'
+  const clientName = getCaseClientName(caso)
 
   return (
     <div
@@ -79,7 +78,7 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
       {/* Header: cliente + alerta */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-semibold text-zinc-900 leading-snug line-clamp-2">
-          {caso.clienteNome}
+          {clientName}
         </p>
         {hasAlert && (
           <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -87,29 +86,31 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
       </div>
 
       {/* Área jurídica */}
-      <div className="mb-2.5">
-        <span
-          className={cn(
-            'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-            area.bg,
-            area.color
-          )}
-        >
-          {area.label}
-        </span>
-      </div>
+      {legalArea && (
+        <div className="mb-2.5">
+          <span
+            className={cn(
+              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+              legalArea.bg,
+              legalArea.color
+            )}
+          >
+            {legalArea.label}
+          </span>
+        </div>
+      )}
 
       {/* Próxima tarefa */}
-      {caso.proximaTarefa && (
+      {caso.next_task_summary && (
         <p className="text-xs text-zinc-500 truncate mb-2.5">
-          {caso.proximaTarefa}
+          {caso.next_task_summary}
         </p>
       )}
 
       {/* Etiquetas */}
-      {caso.etiquetas.length > 0 && (
+      {tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2.5">
-          {caso.etiquetas.slice(0, 3).map((etId) => {
+          {tags.slice(0, 3).map((etId) => {
             const et = ETIQUETAS[etId]
             if (!et) return null
             return (
@@ -125,9 +126,9 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
               </span>
             )
           })}
-          {caso.etiquetas.length > 3 && (
+          {tags.length > 3 && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-zinc-100 text-zinc-500">
-              +{caso.etiquetas.length - 3}
+              +{tags.length - 3}
             </span>
           )}
         </div>
@@ -151,17 +152,16 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className="text-xs text-zinc-400">
-            {formatRelativeDate(caso.ultimaAtualizacao)}
+            {formatRelativeDate(caso.updated_at)}
           </span>
-          <div
-            className={cn(
-              'w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0',
-              advColor
-            )}
-            title={caso.advogadoNome}
-          >
-            {advInitials}
-          </div>
+          {assignedName && (
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 bg-violet-500"
+              title={assignedName}
+            >
+              {advInitials}
+            </div>
+          )}
         </div>
       </div>
     </div>

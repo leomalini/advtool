@@ -1,33 +1,34 @@
 'use client'
 
 import { create } from 'zustand'
-import { CASOS } from '@/data/mock'
-import type { Caso } from '@/data/mock'
 
-interface CrmCasosState {
-  casos: Caso[]
-  selectedCasoId: string | null
+interface CrmUiState {
+  selectedCaseId: string | null
   modalOpen: boolean
-  openModal: (caso: Caso) => void
+  createModalOpen: boolean
+  openModal: (caseId: string) => void
   closeModal: () => void
-  moveCaso: (casoId: string, novaColunaId: string) => void
+  openCreateModal: () => void
+  closeCreateModal: () => void
 }
 
-export const useCrmCasosStore = create<CrmCasosState>((set) => ({
-  casos: CASOS,
-  selectedCasoId: null,
+export const useCrmUiStore = create<CrmUiState>((set) => ({
+  selectedCaseId: null,
   modalOpen: false,
+  createModalOpen: false,
 
-  openModal: (caso: Caso) =>
-    set({ selectedCasoId: caso.id, modalOpen: true }),
+  openModal: (caseId: string) =>
+    set({ selectedCaseId: caseId, modalOpen: true }),
 
   closeModal: () =>
-    set({ modalOpen: false, selectedCasoId: null }),
+    set({ modalOpen: false, selectedCaseId: null }),
 
-  moveCaso: (casoId: string, novaColunaId: string) =>
-    set((state) => ({
-      casos: state.casos.map((c) =>
-        c.id === casoId ? { ...c, colunaId: novaColunaId } : c
-      ),
-    })),
+  openCreateModal: () =>
+    set({ createModalOpen: true }),
+
+  closeCreateModal: () =>
+    set({ createModalOpen: false }),
 }))
+
+// Re-export old name for backward compatibility during refactor
+export const useCrmCasosStore = useCrmUiStore

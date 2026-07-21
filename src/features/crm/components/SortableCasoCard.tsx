@@ -3,10 +3,10 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { CasoCard } from './CasoCard'
-import type { Caso } from '@/data/mock'
+import type { CaseWithRelations } from '@/types/case.types'
 
 interface SortableCasoCardProps {
-  caso: Caso
+  caso: CaseWithRelations
   onClick: () => void
 }
 

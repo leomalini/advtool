@@ -15,19 +15,22 @@ import {
 import { SortableContext } from '@dnd-kit/sortable'
 import { CrmKanbanColumn } from './CrmKanbanColumn'
 import { CasoCard } from './CasoCard'
-import { useCrmCasosStore } from '../stores/casos.store'
-import type { Workflow, Caso } from '@/data/mock'
+import { useCrmUiStore } from '../stores/casos.store'
+import { useCases } from '../hooks/useCases'
+import { useOptimisticMoveCase } from '../hooks/useCaseMutations'
+import type { Workflow } from '@/data/mock'
+import type { CaseWithRelations } from '@/types/case.types'
 
 interface CrmKanbanBoardProps {
   workflow: Workflow
 }
 
 export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
-  const casos = useCrmCasosStore((s) => s.casos)
-  const moveCaso = useCrmCasosStore((s) => s.moveCaso)
-  const openModal = useCrmCasosStore((s) => s.openModal)
+  const openModal = useCrmUiStore((s) => s.openModal)
+  const { data: cases = [], isLoading } = useCases(workflow.id)
+  const moveCase = useOptimisticMoveCase(workflow.id)
 
-  const [activeCasoId, setActiveCasoId] = useState<string | null>(null)
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -35,21 +38,20 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
     })
   )
 
-  const workflowCasos = casos.filter((c) => c.workflowId === workflow.id)
   const columnIds = workflow.colunas.map((c) => c.id)
 
-  function getCasosByColuna(colunaId: string): Caso[] {
-    return workflowCasos
-      .filter((c) => c.colunaId === colunaId)
+  function getCasesByColumn(columnId: string): CaseWithRelations[] {
+    return cases
+      .filter((c) => c.column_id === columnId)
       .sort((a, b) => a.position - b.position)
   }
 
-  const activeCaso = activeCasoId
-    ? workflowCasos.find((c) => c.id === activeCasoId) ?? null
+  const activeCase = activeCaseId
+    ? cases.find((c) => c.id === activeCaseId) ?? null
     : null
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveCasoId(String(event.active.id))
+    setActiveCaseId(String(event.active.id))
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -60,24 +62,24 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
     const overId = String(over.id)
     if (activeId === overId) return
 
-    const activeCasoItem = workflowCasos.find((c) => c.id === activeId)
-    if (!activeCasoItem) return
+    const activeCase = cases.find((c) => c.id === activeId)
+    if (!activeCase) return
 
     const isOverColumn = columnIds.includes(overId)
-    if (isOverColumn && activeCasoItem.colunaId !== overId) {
-      moveCaso(activeId, overId)
+    if (isOverColumn && activeCase.column_id !== overId) {
+      moveCase.mutate({ id: activeId, columnId: overId, position: 0 })
       return
     }
 
-    const overCaso = workflowCasos.find((c) => c.id === overId)
-    if (overCaso && activeCasoItem.colunaId !== overCaso.colunaId) {
-      moveCaso(activeId, overCaso.colunaId)
+    const overCase = cases.find((c) => c.id === overId)
+    if (overCase && activeCase.column_id !== overCase.column_id) {
+      moveCase.mutate({ id: activeId, columnId: overCase.column_id, position: 0 })
     }
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
-    setActiveCasoId(null)
+    setActiveCaseId(null)
 
     if (!over) return
 
@@ -85,19 +87,29 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
     const overId = String(over.id)
     if (activeId === overId) return
 
-    const activeCasoItem = workflowCasos.find((c) => c.id === activeId)
-    if (!activeCasoItem) return
+    const activeCase = cases.find((c) => c.id === activeId)
+    if (!activeCase) return
 
     const isOverColumn = columnIds.includes(overId)
     if (isOverColumn) {
-      moveCaso(activeId, overId)
+      moveCase.mutate({ id: activeId, columnId: overId, position: 0 })
       return
     }
 
-    const overCaso = workflowCasos.find((c) => c.id === overId)
-    if (overCaso && activeCasoItem.colunaId !== overCaso.colunaId) {
-      moveCaso(activeId, overCaso.colunaId)
+    const overCase = cases.find((c) => c.id === overId)
+    if (overCase && activeCase.column_id !== overCase.column_id) {
+      moveCase.mutate({ id: activeId, columnId: overCase.column_id, position: 0 })
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex gap-3 h-full overflow-x-auto pb-4">
+        {workflow.colunas.slice(0, 4).map((col) => (
+          <div key={col.id} className="w-72 flex-shrink-0 rounded-xl bg-zinc-50 h-32 animate-pulse" />
+        ))}
+      </div>
+    )
   }
 
   return (
@@ -108,7 +120,7 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <SortableContext items={workflowCasos.map((c) => c.id)}>
+      <SortableContext items={cases.map((c) => c.id)}>
         <div className="flex gap-3 h-full overflow-x-auto pb-4">
           {workflow.colunas
             .slice()
@@ -117,17 +129,17 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
               <CrmKanbanColumn
                 key={coluna.id}
                 coluna={coluna}
-                casos={getCasosByColuna(coluna.id)}
-                onCardClick={openModal}
+                cases={getCasesByColumn(coluna.id)}
+                onCardClick={(c) => openModal(c.id)}
               />
             ))}
         </div>
       </SortableContext>
 
       <DragOverlay>
-        {activeCaso && (
+        {activeCase && (
           <div className="rotate-2 scale-105 shadow-2xl">
-            <CasoCard caso={activeCaso} onClick={() => {}} />
+            <CasoCard caso={activeCase} onClick={() => {}} />
           </div>
         )}
       </DragOverlay>

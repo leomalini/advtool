@@ -1,4 +1,7 @@
 {
+  "env": {
+    "BUSCA_PROCESSOS_API_KEY": "COLOQUE_SUA_CHAVE_AQUI"
+  },
   "permissions": {
     "allow": [
       "WebSearch",
@@ -6,7 +9,12 @@
       "Bash(mv 02_crm.sql 20260101000002_crm.sql)",
       "Bash(mv 03_clients.sql 20260101000003_clients.sql)",
       "Bash(mv 04_events.sql 20260101000004_events.sql)",
-      "Bash(mv 05_tasks.sql 20260101000005_tasks.sql)"
+      "Bash(mv 05_tasks.sql 20260101000005_tasks.sql)",
+      "WebFetch(domain:datajud-wiki.cnj.jus.br)",
+      "Skill(update-config)",
+      "WebFetch(domain:docs.buscaprocessos.app.br)",
+      "Bash(rm \"D:/Projects/advtool/src/app/api/cnj/[number]/route.ts\")",
+      "Bash(rmdir \"D:/Projects/advtool/src/app/api/cnj/[number]\")"
     ]
   }
 }

@@ -46,7 +46,7 @@ export interface CalendarEvent extends BaseEntity {
   all_day: boolean
   // Relacionamentos
   client_id: string | null
-  lead_id: string | null
+  case_id: string | null
   assigned_to: string
   created_by: string
   // Novos campos

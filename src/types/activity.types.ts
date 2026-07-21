@@ -1,9 +1,9 @@
 import type { Profile } from './common.types'
 
 export type ActivityType =
-  | 'lead_created'
-  | 'lead_moved'
-  | 'lead_comment'
+  | 'case_created'
+  | 'case_moved'
+  | 'case_comment'
   | 'client_created'
   | 'client_updated'
   | 'task_created'
@@ -12,12 +12,12 @@ export type ActivityType =
   | 'event_created'
   | 'attachment_uploaded'
 
-export type EntityType = 'lead' | 'client' | 'task' | 'event'
+export type EntityType = 'case' | 'client' | 'task' | 'event'
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
-  lead_created: 'criou o lead',
-  lead_moved: 'moveu o lead',
-  lead_comment: 'comentou no lead',
+  case_created: 'criou o caso',
+  case_moved: 'moveu o caso',
+  case_comment: 'comentou no caso',
   client_created: 'cadastrou o cliente',
   client_updated: 'atualizou o cliente',
   task_created: 'criou a tarefa',
@@ -40,7 +40,7 @@ export interface Activity {
 }
 
 export interface DashboardStats {
-  active_leads: number
+  active_cases: number
   weekly_meetings: number
   pending_tasks: number
   active_clients: number

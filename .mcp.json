@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "BuscaProcessos": {
+      "url": "https://docs.buscaprocessos.app.br/mcp",
+      "headers": {
+        "x-api-key": "$BUSCA_PROCESSOS_API_KEY"
+      }
+    }
+  }
+}

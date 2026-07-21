@@ -10,11 +10,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
 
-  const [leadsResult, meetingsResult, tasksResult, clientsResult] = await Promise.all([
+  const [casesResult, meetingsResult, tasksResult, clientsResult] = await Promise.all([
     supabase
-      .from('leads')
-      .select('id', { count: 'exact', head: true })
-      .not('stage_id', 'in', `(select id from lead_stages where is_lost = true)`),
+      .from('cases')
+      .select('id', { count: 'exact', head: true }),
     supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
@@ -31,7 +30,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   ])
 
   return {
-    active_leads: leadsResult.count ?? 0,
+    active_cases: casesResult.count ?? 0,
     weekly_meetings: meetingsResult.count ?? 0,
     pending_tasks: tasksResult.count ?? 0,
     active_clients: clientsResult.count ?? 0,

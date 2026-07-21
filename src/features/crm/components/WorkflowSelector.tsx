@@ -2,19 +2,21 @@
 
 import { cn } from '@/lib/utils'
 import { WORKFLOWS } from '@/data/mock'
-import type { Caso } from '@/data/mock'
 
 interface WorkflowSelectorProps {
   selectedId: string
-  casos: Caso[]
+  /** Count per workflow_id — only the selected one needs to be accurate */
+  counts?: Record<string, number>
   onChange: (id: string) => void
+  /** @deprecated pass counts instead */
+  casos?: never
 }
 
-export function WorkflowSelector({ selectedId, casos, onChange }: WorkflowSelectorProps) {
+export function WorkflowSelector({ selectedId, counts = {}, onChange }: WorkflowSelectorProps) {
   return (
     <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
       {WORKFLOWS.map((wf) => {
-        const count = casos.filter((c) => c.workflowId === wf.id).length
+        const count = counts[wf.id] ?? 0
         const isActive = selectedId === wf.id
 
         return (

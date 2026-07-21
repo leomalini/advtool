@@ -34,7 +34,6 @@ interface ClientBase extends BaseEntity {
   address_state: string | null
   address_zip: string | null
   notes: string | null
-  lead_id: string | null
   assigned_to: string | null
   created_by: string
 }

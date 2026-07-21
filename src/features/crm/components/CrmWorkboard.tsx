@@ -6,17 +6,46 @@ import { Button } from '@/components/ui/button'
 import { WorkflowSelector } from './WorkflowSelector'
 import { CrmKanbanBoard } from './CrmKanbanBoard'
 import { CasoModal } from './CasoModal'
-import { useCrmCasosStore } from '../stores/casos.store'
+import { CasoForm } from './CasoForm'
+import { useCrmUiStore } from '../stores/casos.store'
+import { useCases } from '../hooks/useCases'
+import { useCreateCase, useUpdateCase } from '../hooks/useCaseMutations'
 import { WORKFLOWS } from '@/data/mock'
+import type { CaseInput } from '@/schemas/case.schema'
 
 export function CrmWorkboard() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('wf-negociacao')
-  const { casos, modalOpen, selectedCasoId, closeModal } = useCrmCasosStore()
+  const [editModalOpen, setEditModalOpen] = useState(false)
 
+  const { modalOpen, selectedCaseId, closeModal, createModalOpen, openCreateModal, closeCreateModal } =
+    useCrmUiStore()
+
+  const { data: cases = [] } = useCases(selectedWorkflowId)
+  const selectedCase = selectedCaseId ? cases.find((c) => c.id === selectedCaseId) ?? null : null
   const selectedWorkflow = WORKFLOWS.find((w) => w.id === selectedWorkflowId)
-  const selectedCaso = selectedCasoId ? casos.find((c) => c.id === selectedCasoId) ?? null : null
+
+  const createCase = useCreateCase(selectedWorkflowId)
+  const updateCase = useUpdateCase(selectedCaseId ?? '', selectedWorkflowId)
+
+  async function handleCreateSubmit(data: CaseInput) {
+    await createCase.mutateAsync(data)
+    closeCreateModal()
+  }
+
+  async function handleEditSubmit(data: CaseInput) {
+    await updateCase.mutateAsync(data)
+    setEditModalOpen(false)
+  }
+
+  function handleEditOpen() {
+    setEditModalOpen(true)
+  }
 
   if (!selectedWorkflow) return null
+
+  const workflowCounts: Record<string, number> = {
+    [selectedWorkflowId]: cases.length,
+  }
 
   return (
     <div className="flex flex-col h-full -m-6">
@@ -40,12 +69,12 @@ export function CrmWorkboard() {
         {/* Center: workflow selector */}
         <WorkflowSelector
           selectedId={selectedWorkflowId}
-          casos={casos}
+          counts={workflowCounts}
           onChange={setSelectedWorkflowId}
         />
 
         {/* Right: new case button */}
-        <Button size="sm" className="flex-shrink-0">
+        <Button size="sm" className="flex-shrink-0" onClick={openCreateModal}>
           <Plus className="h-4 w-4 mr-1.5" />
           Novo Caso
         </Button>
@@ -56,14 +85,41 @@ export function CrmWorkboard() {
         <CrmKanbanBoard workflow={selectedWorkflow} />
       </div>
 
-      {/* Case Modal */}
-      {selectedCaso && (
+      {/* Case Detail Modal */}
+      {selectedCase && (
         <CasoModal
-          caso={selectedCaso}
-          open={modalOpen}
+          caso={selectedCase}
+          open={modalOpen && !editModalOpen}
           onClose={closeModal}
+          onEdit={handleEditOpen}
         />
       )}
+
+      {/* Edit Case Form */}
+      {selectedCase && (
+        <CasoForm
+          open={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          onSuccess={() => {}}
+          editingCase={selectedCase}
+          onSubmit={handleEditSubmit}
+          isLoading={updateCase.isPending}
+        />
+      )}
+
+      {/* Create Case Form */}
+      <CasoForm
+        open={createModalOpen}
+        onClose={closeCreateModal}
+        onSuccess={() => {}}
+        defaultValues={{
+          workflow_id: selectedWorkflowId,
+          column_id: selectedWorkflow.colunas[0]?.id ?? '',
+          tags: [],
+        }}
+        onSubmit={handleCreateSubmit}
+        isLoading={createCase.isPending}
+      />
     </div>
   )
 }

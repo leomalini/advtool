@@ -4,19 +4,20 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { WorkflowColuna, Caso } from '@/data/mock'
+import type { WorkflowColuna } from '@/data/mock'
+import type { CaseWithRelations } from '@/types/case.types'
 import { SortableCasoCard } from './SortableCasoCard'
 
 interface CrmKanbanColumnProps {
   coluna: WorkflowColuna
-  casos: Caso[]
-  onCardClick: (caso: Caso) => void
+  cases: CaseWithRelations[]
+  onCardClick: (caso: CaseWithRelations) => void
 }
 
-export function CrmKanbanColumn({ coluna, casos, onCardClick }: CrmKanbanColumnProps) {
+export function CrmKanbanColumn({ coluna, cases, onCardClick }: CrmKanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id })
 
-  const casoIds = casos.map((c) => c.id)
+  const caseIds = cases.map((c) => c.id)
 
   return (
     <div
@@ -37,7 +38,7 @@ export function CrmKanbanColumn({ coluna, casos, onCardClick }: CrmKanbanColumnP
           </h3>
         </div>
         <span className="text-xs font-medium text-zinc-400 bg-zinc-200 px-1.5 py-0.5 rounded-full">
-          {casos.length}
+          {cases.length}
         </span>
       </div>
 
@@ -46,8 +47,8 @@ export function CrmKanbanColumn({ coluna, casos, onCardClick }: CrmKanbanColumnP
         ref={setNodeRef}
         className="flex-1 flex flex-col gap-2 px-2 pb-2 min-h-[80px] overflow-y-auto max-h-[calc(100vh-220px)]"
       >
-        <SortableContext items={casoIds} strategy={verticalListSortingStrategy}>
-          {casos.map((caso) => (
+        <SortableContext items={caseIds} strategy={verticalListSortingStrategy}>
+          {cases.map((caso) => (
             <SortableCasoCard
               key={caso.id}
               caso={caso}
@@ -56,7 +57,7 @@ export function CrmKanbanColumn({ coluna, casos, onCardClick }: CrmKanbanColumnP
           ))}
         </SortableContext>
 
-        {casos.length === 0 && (
+        {cases.length === 0 && (
           <div className="flex items-center justify-center h-16 rounded-lg border border-dashed border-zinc-200 text-xs text-zinc-400">
             Sem casos
           </div>

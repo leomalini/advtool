@@ -44,7 +44,6 @@ export const createIndividualClientSchema = addressSchema.extend({
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   notes: z.string().max(2000).optional(),
   assigned_to: z.string().uuid().optional(),
-  lead_id: z.string().uuid().optional(),
   contacts: z.array(contactSchema).optional(),
 })
 
@@ -63,7 +62,6 @@ export const createCompanyClientSchema = addressSchema.extend({
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   notes: z.string().max(2000).optional(),
   assigned_to: z.string().uuid().optional(),
-  lead_id: z.string().uuid().optional(),
   contacts: z.array(contactSchema).optional(),
 })
 

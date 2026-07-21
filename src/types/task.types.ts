@@ -31,7 +31,7 @@ export interface Task extends BaseEntity {
   priority: TaskPriority
   assigned_to: string | null
   client_id: string | null
-  lead_id: string | null
+  case_id: string | null
   due_date: string | null
   position: number
   created_by: string
