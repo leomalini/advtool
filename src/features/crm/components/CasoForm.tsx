@@ -23,7 +23,8 @@ import { cn } from '@/lib/utils'
 import { caseSchema, CASE_LEGAL_AREAS, CASE_TAGS } from '@/schemas/case.schema'
 import type { CaseInput, CaseTag } from '@/schemas/case.schema'
 import type { CaseWithRelations } from '@/types/case.types'
-import { WORKFLOWS, AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { useWorkflows } from '../hooks/useWorkflows'
 import { useClientes } from '@/features/clientes/hooks/useClientes'
 import { useProfiles } from '@/hooks/useProfiles'
 
@@ -189,6 +190,7 @@ export function CasoForm({
   const [lookingUpCnj, setLookingUpCnj] = useState(false)
   const lastFetchedCnjRef = useRef<string | null>(null)
 
+  const { data: workflows = [] } = useWorkflows()
   const { data: clients = [] } = useClientes()
   const { data: profiles = [] } = useProfiles()
 
@@ -250,12 +252,12 @@ export function CasoForm({
 
   // Reset column when workflow changes
   useEffect(() => {
-    const wf = WORKFLOWS.find((w) => w.id === watchedWorkflowId)
+    const wf = workflows.find((w) => w.id === watchedWorkflowId)
     if (wf) {
-      const firstCol = wf.colunas.slice().sort((a, b) => a.posicao - b.posicao)[0]
+      const firstCol = wf.colunas[0] // já ordenado pelo service
       if (firstCol) setValue('column_id', firstCol.id)
     }
-  }, [watchedWorkflowId, setValue])
+  }, [watchedWorkflowId, setValue, workflows])
 
   // Auto-lookup: fires 600ms after the user stops typing a complete CNJ (20 digits)
   useEffect(() => {
@@ -358,7 +360,7 @@ export function CasoForm({
                     name="workflow_id"
                     control={control}
                     render={({ field }) => {
-                      const wf = WORKFLOWS.find((w) => w.id === field.value)
+                      const wf = workflows.find((w) => w.id === field.value)
                       return (
                         <Select value={field.value} onValueChange={(v) => { if (v) field.onChange(v) }}>
                           <SelectTrigger className="w-full text-sm bg-white">
@@ -369,7 +371,7 @@ export function CasoForm({
                             />
                           </SelectTrigger>
                           <SelectContent>
-                            {WORKFLOWS.map((w) => (
+                            {workflows.map((w) => (
                               <SelectItem key={w.id} value={w.id}>
                                 <span className="flex items-center gap-2">
                                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: w.cor }} />
@@ -392,7 +394,7 @@ export function CasoForm({
                     name="column_id"
                     control={control}
                     render={({ field }) => {
-                      const wf = WORKFLOWS.find((w) => w.id === watchedWorkflowId)
+                      const wf = workflows.find((w) => w.id === watchedWorkflowId)
                       const col = wf?.colunas.find((c) => c.id === field.value)
                       return (
                         <Select

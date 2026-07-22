@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { WORKFLOWS } from '@/data/mock'
+import { useWorkflows } from '../hooks/useWorkflows'
 
 interface WorkflowSelectorProps {
   selectedId: string
@@ -13,9 +13,11 @@ interface WorkflowSelectorProps {
 }
 
 export function WorkflowSelector({ selectedId, counts = {}, onChange }: WorkflowSelectorProps) {
+  const { data: workflows = [] } = useWorkflows()
+
   return (
     <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
-      {WORKFLOWS.map((wf) => {
+      {workflows.map((wf) => {
         const count = counts[wf.id] ?? 0
         const isActive = selectedId === wf.id
 

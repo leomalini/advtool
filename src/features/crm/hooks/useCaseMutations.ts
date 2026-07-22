@@ -84,13 +84,20 @@ export function useAddCaseMovement(caseId: string, workflowId: string) {
 }
 
 // ── Optimistic move (for DnD) ──────────────────────────────────────────────
+// Handles the PATCH to cases + optimistic cache update.
+// History recording (case_column_history) is the board's responsibility:
+// handleDragEnd reads the final column from the cache and calls
+// insertColumnHistory directly — avoiding all closure/context race conditions.
 
 export function useOptimisticMoveCase(workflowId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ id, columnId, position }: { id: string; columnId: string; position: number }) =>
-      moveCaseColumn(id, columnId, position),
+    mutationFn: ({ id, columnId, position }: {
+      id: string
+      columnId: string
+      position: number
+    }) => moveCaseColumn(id, columnId, position),
     onMutate: async ({ id, columnId }) => {
       await queryClient.cancelQueries({ queryKey: caseKeys.workflow(workflowId) })
       const previous = queryClient.getQueryData<CaseWithRelations[]>(

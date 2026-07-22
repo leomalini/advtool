@@ -4,17 +4,18 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { WorkflowColuna } from '@/data/mock'
+import type { WorkflowColumn } from '@/types/workflow.types'
 import type { CaseWithRelations } from '@/types/case.types'
 import { SortableCasoCard } from './SortableCasoCard'
 
 interface CrmKanbanColumnProps {
-  coluna: WorkflowColuna
+  coluna: WorkflowColumn
   cases: CaseWithRelations[]
   onCardClick: (caso: CaseWithRelations) => void
+  onAddCase: () => void
 }
 
-export function CrmKanbanColumn({ coluna, cases, onCardClick }: CrmKanbanColumnProps) {
+export function CrmKanbanColumn({ coluna, cases, onCardClick, onAddCase }: CrmKanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id })
 
   const caseIds = cases.map((c) => c.id)
@@ -66,7 +67,10 @@ export function CrmKanbanColumn({ coluna, cases, onCardClick }: CrmKanbanColumnP
 
       {/* Footer */}
       <div className="px-2 pb-2">
-        <button className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-all duration-200">
+        <button
+          onClick={onAddCase}
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-all duration-200"
+        >
           <Plus className="w-3.5 h-3.5" />
           Adicionar caso
         </button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTheme } from 'next-themes'
 import {
   Users,
   Scale,
@@ -13,25 +14,201 @@ import {
   Building2,
   Upload,
   Save,
+  Palette,
+  Sun,
+  Moon,
+  Monitor,
+  Check,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ADVOGADOS, AREAS_JURIDICAS, WORKFLOWS, ETIQUETAS } from '@/data/mock'
+import { ADVOGADOS, AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { useWorkflows } from '@/features/crm/hooks/useWorkflows'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
+
+// ── Theme Preview Card ─────────────────────────────────────────
+
+interface ThemeOption {
+  value: 'light' | 'dark' | 'system'
+  label: string
+  icon: React.ElementType
+}
+
+const THEME_OPTIONS: ThemeOption[] = [
+  { value: 'light', label: 'Claro', icon: Sun },
+  { value: 'dark', label: 'Escuro', icon: Moon },
+  { value: 'system', label: 'Sistema', icon: Monitor },
+]
+
+function LightPreview() {
+  return (
+    <div className="flex h-full w-full overflow-hidden rounded-md border border-slate-200">
+      {/* Sidebar */}
+      <div className="w-8 shrink-0 bg-white border-r border-slate-200 flex flex-col gap-1 p-1 pt-2">
+        <div className="w-4 h-1 rounded-full bg-blue-500 mx-auto mb-1" />
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className={cn('h-1 rounded-full mx-auto', i === 0 ? 'w-5 bg-blue-100' : 'w-4 bg-slate-200')} />
+        ))}
+      </div>
+      {/* Content */}
+      <div className="flex-1 bg-[#f2f3f8] p-1.5 space-y-1">
+        <div className="grid grid-cols-2 gap-1">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="bg-white rounded p-1">
+              <div className="h-1 w-4 bg-slate-200 rounded mb-0.5" />
+              <div className="h-2 w-3 bg-blue-500/30 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded p-1">
+          <div className="h-1 w-6 bg-slate-200 rounded mb-0.5" />
+          <div className="space-y-0.5">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="h-1 bg-slate-100 rounded" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DarkPreview() {
+  return (
+    <div className="flex h-full w-full overflow-hidden rounded-md border border-[#2a2d3e]">
+      {/* Sidebar */}
+      <div className="w-8 shrink-0 bg-[#252838] border-r border-[#2a2d3e] flex flex-col gap-1 p-1 pt-2">
+        <div className="w-4 h-1 rounded-full bg-blue-400 mx-auto mb-1" />
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className={cn('h-1 rounded-full mx-auto', i === 0 ? 'w-5 bg-blue-400/20' : 'w-4 bg-[#3a3d50]')} />
+        ))}
+      </div>
+      {/* Content */}
+      <div className="flex-1 bg-[#1a1d2c] p-1.5 space-y-1">
+        <div className="grid grid-cols-2 gap-1">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="bg-[#252838] rounded p-1">
+              <div className="h-1 w-4 bg-[#3a3d50] rounded mb-0.5" />
+              <div className="h-2 w-3 bg-blue-400/30 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-[#252838] rounded p-1">
+          <div className="h-1 w-6 bg-[#3a3d50] rounded mb-0.5" />
+          <div className="space-y-0.5">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="h-1 bg-[#2f3244] rounded" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SystemPreview() {
+  return (
+    <div className="flex h-full w-full overflow-hidden rounded-md border border-slate-200 relative">
+      {/* Left half — light */}
+      <div className="flex w-1/2 overflow-hidden">
+        <div className="w-7 shrink-0 bg-white flex flex-col gap-1 p-1 pt-2">
+          <div className="w-3 h-1 rounded-full bg-blue-500 mx-auto mb-1" />
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-1 w-3 bg-slate-200 rounded mx-auto" />
+          ))}
+        </div>
+        <div className="flex-1 bg-[#f2f3f8] p-1 space-y-1">
+          <div className="bg-white rounded p-0.5">
+            <div className="h-1 w-4 bg-slate-200 rounded" />
+          </div>
+          <div className="bg-white rounded p-0.5">
+            <div className="h-1 w-3 bg-slate-100 rounded" />
+          </div>
+        </div>
+      </div>
+      {/* Divider */}
+      <div className="absolute inset-y-0 left-1/2 w-px bg-slate-300 z-10" />
+      {/* Right half — dark */}
+      <div className="flex w-1/2 overflow-hidden">
+        <div className="flex-1 bg-[#1a1d2c] p-1 space-y-1">
+          <div className="bg-[#252838] rounded p-0.5">
+            <div className="h-1 w-4 bg-[#3a3d50] rounded" />
+          </div>
+          <div className="bg-[#252838] rounded p-0.5">
+            <div className="h-1 w-3 bg-[#2f3244] rounded" />
+          </div>
+        </div>
+        <div className="w-7 shrink-0 bg-[#252838] flex flex-col gap-1 p-1 pt-2">
+          <div className="w-3 h-1 rounded-full bg-blue-400 mx-auto mb-1" />
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-1 w-3 bg-[#3a3d50] rounded mx-auto" />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ThemeCard({
+  option,
+  isActive,
+  onClick,
+}: {
+  option: ThemeOption
+  isActive: boolean
+  onClick: () => void
+}) {
+  const Icon = option.icon
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'group relative flex flex-col rounded-xl border-2 p-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        isActive
+          ? 'border-primary bg-accent/30'
+          : 'border-border hover:border-muted-foreground/40 hover:bg-muted/30',
+      )}
+    >
+      {/* Preview */}
+      <div className="aspect-video w-full mb-2.5">
+        {option.value === 'light' && <LightPreview />}
+        {option.value === 'dark' && <DarkPreview />}
+        {option.value === 'system' && <SystemPreview />}
+      </div>
+
+      {/* Label row */}
+      <div className="flex items-center justify-between px-0.5">
+        <div className="flex items-center gap-1.5">
+          <Icon className={cn('h-3.5 w-3.5', isActive ? 'text-primary' : 'text-muted-foreground')} />
+          <span className={cn('text-xs font-medium', isActive ? 'text-foreground' : 'text-muted-foreground')}>
+            {option.label}
+          </span>
+        </div>
+        {isActive && (
+          <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary">
+            <Check className="h-2.5 w-2.5 text-primary-foreground" />
+          </div>
+        )}
+      </div>
+    </button>
+  )
+}
 
 // ── Helpers ────────────────────────────────────────────────────
 
 type TabValue = 'usuarios' | 'areas' | 'workflows' | 'etiquetas' | 'geral'
 
 const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
+  { value: 'geral', label: 'Geral', icon: Settings },
   { value: 'usuarios', label: 'Usuários', icon: Users },
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
-  { value: 'geral', label: 'Geral', icon: Settings },
 ]
 
 // ── Aba Usuários ───────────────────────────────────────────────
@@ -201,6 +378,8 @@ function TabAreas() {
 // ── Aba Workflows ──────────────────────────────────────────────
 
 function TabWorkflows() {
+  const { data: workflows = [], isLoading } = useWorkflows()
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -217,7 +396,14 @@ function TabWorkflows() {
       </div>
 
       <div className="space-y-3">
-        {WORKFLOWS.map((wf) => (
+        {isLoading && (
+          <div className="space-y-3">
+            {[0, 1].map((i) => (
+              <div key={i} className="rounded-xl border p-5 animate-pulse h-24 bg-muted/10" />
+            ))}
+          </div>
+        )}
+        {workflows.map((wf) => (
           <div key={wf.id} className="rounded-xl border p-5 hover:bg-muted/10 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -323,6 +509,8 @@ function TabEtiquetas() {
 // ── Aba Geral ──────────────────────────────────────────────────
 
 function TabGeral() {
+  const { theme, setTheme } = useTheme()
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div>
@@ -331,6 +519,28 @@ function TabGeral() {
           Informações do escritório e preferências do sistema
         </p>
       </div>
+
+      {/* Aparência */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Palette className="h-4 w-4 text-muted-foreground" />
+            Aparência
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            {THEME_OPTIONS.map((option) => (
+              <ThemeCard
+                key={option.value}
+                option={option}
+                isActive={theme === option.value}
+                onClick={() => setTheme(option.value)}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -422,7 +632,7 @@ export function ConfiguracoesContent() {
         </p>
       </div>
 
-      <Tabs defaultValue="usuarios">
+      <Tabs defaultValue="geral">
         <TabsList variant="line" className="border-b w-full rounded-none pb-0 gap-0 h-auto">
           {TABS.map(({ value, label, icon: Icon }) => (
             <TabsTrigger

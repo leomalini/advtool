@@ -65,8 +65,8 @@ export function Sidebar() {
             className={cn(
               "relative flex w-full items-center justify-center rounded-md p-2 transition-colors",
               active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                ? "bg-sidebar-accent text-sidebar-primary"
+                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
             )}
             render={<Link href={href} />}
           >
@@ -87,10 +87,10 @@ export function Sidebar() {
         key={href}
         href={href}
         className={cn(
-          "flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors",
+          "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
           active
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            ? "bg-sidebar-accent text-sidebar-primary font-semibold"
+            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
         )}
       >
         <Icon className="h-4 w-4 shrink-0" />
@@ -107,21 +107,23 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col border-r bg-card transition-all duration-300 shrink-0",
+        "flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 shrink-0",
         sidebarOpen ? "w-56" : "w-14",
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center border-b px-3 gap-2">
+      <div className="flex h-14 items-center border-b border-sidebar-border px-3 gap-2.5">
         <button
           onClick={toggleSidebar}
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
             <Scale className="h-4 w-4" />
           </div>
           {sidebarOpen && (
-            <span className="font-bold text-sm truncate">AdvTool</span>
+            <span className="text-sm font-semibold tracking-wide text-sidebar-foreground truncate">
+              AdvTool
+            </span>
           )}
         </button>
       </div>
@@ -146,24 +148,24 @@ export function Sidebar() {
       </div>
 
       {/* User */}
-      <div className="border-t px-2 py-3">
+      <div className="border-t border-sidebar-border px-2 py-3">
         {sidebarOpen ? (
           <div className="flex items-center gap-2">
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="text-xs bg-violet-100 text-violet-700">
+              <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
                 {initials}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate">
+              <p className="text-xs font-medium truncate text-sidebar-foreground">
                 {user?.email ?? "advogado@escritorio.adv.br"}
               </p>
-              <p className="text-xs text-muted-foreground truncate">AdvTool</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">AdvTool</p>
             </div>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0"
+              className="h-7 w-7 shrink-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               onClick={signOut}
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -172,7 +174,7 @@ export function Sidebar() {
         ) : (
           <Tooltip>
             <TooltipTrigger
-              className="flex w-full items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
               onClick={signOut}
             >
               <LogOut className="h-4 w-4" />

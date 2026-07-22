@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
   DragEndEvent,
@@ -16,9 +17,11 @@ import { SortableContext } from '@dnd-kit/sortable'
 import { CrmKanbanColumn } from './CrmKanbanColumn'
 import { CasoCard } from './CasoCard'
 import { useCrmUiStore } from '../stores/casos.store'
-import { useCases } from '../hooks/useCases'
+import { useCases, caseKeys } from '../hooks/useCases'
 import { useOptimisticMoveCase } from '../hooks/useCaseMutations'
-import type { Workflow } from '@/data/mock'
+import { insertColumnHistory } from '../services/cases.service'
+import { useAuth } from '@/hooks/useAuth'
+import type { Workflow } from '@/types/workflow.types'
 import type { CaseWithRelations } from '@/types/case.types'
 
 interface CrmKanbanBoardProps {
@@ -27,10 +30,17 @@ interface CrmKanbanBoardProps {
 
 export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
   const openModal = useCrmUiStore((s) => s.openModal)
+  const openCreateModal = useCrmUiStore((s) => s.openCreateModal)
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
   const { data: cases = [], isLoading } = useCases(workflow.id)
   const moveCase = useOptimisticMoveCase(workflow.id)
 
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null)
+
+  // Captured at dragStart (before any cache mutations) so handleDragEnd always
+  // knows the true original column regardless of how many dragOver events fired.
+  const dragStartColumnRef = useRef<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -39,6 +49,7 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
   )
 
   const columnIds = workflow.colunas.map((c) => c.id)
+  const queryKey = caseKeys.workflow(workflow.id)
 
   function getCasesByColumn(columnId: string): CaseWithRelations[] {
     return cases
@@ -51,9 +62,15 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
     : null
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveCaseId(String(event.active.id))
+    const id = String(event.active.id)
+    setActiveCaseId(id)
+    // Read from cache (not from `cases` closure) to avoid stale data.
+    const cached = queryClient.getQueryData<CaseWithRelations[]>(queryKey) ?? []
+    dragStartColumnRef.current = cached.find((c) => c.id === id)?.column_id ?? null
   }
 
+  // dragOver fires the real PATCH via mutation (+ optimistic cache update).
+  // This is the only place cases.column_id is updated in the DB during a drag.
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event
     if (!over) return
@@ -77,29 +94,35 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
     }
   }
 
+  // dragEnd does NOT send another PATCH — the DB is already updated by dragOver.
+  // Its only job is to record the move in case_column_history by comparing the
+  // original column (captured at dragStart) with the final column (from cache).
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     setActiveCaseId(null)
 
-    if (!over) return
+    const fromColumnId = dragStartColumnRef.current
+    dragStartColumnRef.current = null
+
+    // over=null means the card was dropped outside any droppable (or drag canceled).
+    // In that case skip history — the dragOver PATCH already persisted the last column.
+    if (!over || !fromColumnId || !user?.id) return
 
     const activeId = String(active.id)
-    const overId = String(over.id)
-    if (activeId === overId) return
 
-    const activeCase = cases.find((c) => c.id === activeId)
-    if (!activeCase) return
+    // Read final column from cache — onMutate in useOptimisticMoveCase has already
+    // applied the optimistic update, so this reflects the last dragOver destination.
+    const cached = queryClient.getQueryData<CaseWithRelations[]>(queryKey) ?? []
+    const finalCase = cached.find((c) => c.id === activeId)
+    if (!finalCase) return
 
-    const isOverColumn = columnIds.includes(overId)
-    if (isOverColumn) {
-      moveCase.mutate({ id: activeId, columnId: overId, position: 0 })
-      return
-    }
+    const toColumnId = finalCase.column_id
+    if (toColumnId === fromColumnId) return // dropped back on same column
 
-    const overCase = cases.find((c) => c.id === overId)
-    if (overCase && activeCase.column_id !== overCase.column_id) {
-      moveCase.mutate({ id: activeId, columnId: overCase.column_id, position: 0 })
-    }
+    // Fire the POST directly — no need for another mutation lifecycle.
+    insertColumnHistory(activeId, fromColumnId, toColumnId, user.id).then(() => {
+      queryClient.invalidateQueries({ queryKey: caseKeys.columnHistory(activeId) })
+    })
   }
 
   if (isLoading) {
@@ -131,6 +154,7 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
                 coluna={coluna}
                 cases={getCasesByColumn(coluna.id)}
                 onCardClick={(c) => openModal(c.id)}
+                onAddCase={() => openCreateModal(coluna.id)}
               />
             ))}
         </div>

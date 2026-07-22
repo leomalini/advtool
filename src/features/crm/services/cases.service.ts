@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
-import type { CaseWithRelations, CaseMovement } from '@/types/case.types'
+import type { CaseWithRelations, CaseMovement, CaseColumnHistory } from '@/types/case.types'
 import type { CaseInput } from '@/schemas/case.schema'
 
 const supabase = createClient()
@@ -53,6 +53,15 @@ export async function createCaseRecord(
     actor_id: userId,
   })
 
+  // Record initial column placement in history.
+  // from_column_id === to_column_id signals "created here" (no prior column).
+  const { error: historyError } = await supabase
+    .from('case_column_history')
+    .insert({ case_id: data.id, from_column_id: input.column_id, to_column_id: input.column_id, moved_by: userId })
+  if (historyError) {
+    console.error('[case_column_history] initial insert failed:', historyError.message)
+  }
+
   return data as CaseWithRelations
 }
 
@@ -76,9 +85,34 @@ export async function moveCaseColumn(
   if (error) throw error
 }
 
+export async function insertColumnHistory(
+  caseId: string,
+  fromColumnId: string,
+  toColumnId: string,
+  userId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('case_column_history')
+    .insert({ case_id: caseId, from_column_id: fromColumnId, to_column_id: toColumnId, moved_by: userId })
+  if (error) {
+    console.error('[case_column_history] insert failed:', error.message, error.details)
+  }
+}
+
 export async function deleteCaseRecord(id: string): Promise<void> {
   const { error } = await supabase.from('cases').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function getCaseColumnHistory(caseId: string): Promise<CaseColumnHistory[]> {
+  const { data, error } = await supabase
+    .from('case_column_history')
+    .select('*, moved_by_profile:profiles(full_name, avatar_url)')
+    .eq('case_id', caseId)
+    .order('moved_at', { ascending: true })
+
+  if (error) throw error
+  return data as CaseColumnHistory[]
 }
 
 export async function getCaseMovements(caseId: string): Promise<CaseMovement[]> {

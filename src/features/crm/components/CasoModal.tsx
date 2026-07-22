@@ -14,12 +14,16 @@ import {
   Building2,
   Clock,
   Construction,
+  ArrowRight,
+  Plus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { AREAS_JURIDICAS, WORKFLOWS } from '@/data/mock'
+import { AREAS_JURIDICAS } from '@/data/mock'
 import type { AreaJuridica } from '@/data/mock'
+import { useWorkflows, useAllColumns } from '../hooks/useWorkflows'
 import type { CaseWithRelations } from '@/types/case.types'
 import { getCaseClientName } from '@/types/case.types'
+import { useCaseColumnHistory } from '../hooks/useCases'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,7 +111,8 @@ function PlaceholderTab({ icon, label }: { icon: React.ReactNode; label: string 
 
 function TabResumo({ caso }: { caso: CaseWithRelations }) {
   const area = caso.legal_area ? AREAS_JURIDICAS[caso.legal_area as AreaJuridica] : null
-  const workflow = WORKFLOWS.find((w) => w.id === caso.workflow_id)
+  const { data: workflows = [] } = useWorkflows()
+  const workflow = workflows.find((w) => w.id === caso.workflow_id)
   const coluna = workflow?.colunas.find((c) => c.id === caso.column_id)
   const clientName = getCaseClientName(caso)
   const assignedName = caso.assigned_profile?.full_name
@@ -179,6 +184,186 @@ function TabResumo({ caso }: { caso: CaseWithRelations }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Tab: Timeline ────────────────────────────────────────────────────────────
+
+const AVATAR_COLORS = [
+  'bg-violet-500',
+  'bg-cyan-500',
+  'bg-emerald-500',
+  'bg-amber-500',
+  'bg-rose-500',
+  'bg-indigo-500',
+]
+
+function avatarColor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+function formatTimeOnly(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatDateShort(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function TabTimeline({ caso }: { caso: CaseWithRelations }) {
+  const { data: history = [], isLoading, isError } = useCaseColumnHistory(caso.id)
+  const allColumns = useAllColumns()
+
+  function findColumn(id: string | null) {
+    if (!id) return null
+    return allColumns.find((c) => c.id === id) ?? null
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4 animate-pulse">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex gap-4">
+            <div className="flex flex-col items-center pt-1.5">
+              <div className="w-3 h-3 rounded-full bg-zinc-200" />
+              {i < 2 && <div className="w-px h-12 bg-zinc-100 mt-1" />}
+            </div>
+            <div className="flex-1 pb-6">
+              <div className="h-4 w-48 bg-zinc-100 rounded mb-2" />
+              <div className="h-3 w-32 bg-zinc-100 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (isError || history.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-zinc-400">
+        <Activity className="w-8 h-8" />
+        <div className="text-center">
+          <p className="text-sm font-medium text-zinc-600">Nenhuma movimentação registrada</p>
+          <p className="text-xs text-zinc-400 mt-1">
+            O histórico de etapas aparecerá aqui conforme o caso avança no kanban
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-6">
+        <h3 className="text-sm font-semibold text-zinc-700">Histórico de etapas</h3>
+        <span className="text-xs bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full font-medium">
+          {history.length}
+        </span>
+      </div>
+
+      <div className="relative">
+        {history.map((entry, index) => {
+          const isLast = index === history.length - 1
+          const isCreation = entry.from_column_id === null || entry.from_column_id === entry.to_column_id
+          const fromCol = findColumn(entry.from_column_id)
+          const toCol = findColumn(entry.to_column_id)
+          const userName = entry.moved_by_profile?.full_name ?? 'Sistema'
+          const initials = userName
+            .split(' ')
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((w) => w[0])
+            .join('')
+            .toUpperCase()
+          const dotColor = toCol?.cor ?? '#94a3b8'
+
+          return (
+            <div key={entry.id} className="flex gap-4">
+              {/* Dot + vertical line */}
+              <div className="flex flex-col items-center flex-shrink-0">
+                <div
+                  className="w-3 h-3 rounded-full mt-1.5 ring-2 ring-white shadow-sm"
+                  style={{ backgroundColor: dotColor }}
+                />
+                {!isLast && <div className="w-px flex-1 bg-zinc-200 mt-1 min-h-[2rem]" />}
+              </div>
+
+              {/* Content */}
+              <div className={cn('flex-1', isLast ? 'pb-0' : 'pb-6')}>
+                <div className="flex items-start justify-between gap-4">
+                  {/* Left: event info */}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-zinc-800 leading-snug">
+                      {isCreation ? 'Caso criado' : 'Etapa atualizada'}
+                    </p>
+
+                    {isCreation ? (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <Plus className="w-3 h-3 text-zinc-400 flex-shrink-0" />
+                        <span className="text-xs text-zinc-500">
+                          Adicionado em{' '}
+                          <span
+                            className="font-semibold"
+                            style={{ color: toCol?.cor ?? '#71717a' }}
+                          >
+                            {toCol?.nome ?? '—'}
+                          </span>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="text-xs text-zinc-400 font-medium">
+                          {fromCol?.nome ?? '—'}
+                        </span>
+                        <ArrowRight className="w-3 h-3 text-zinc-300 flex-shrink-0" />
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: toCol?.cor ?? '#71717a' }}
+                        >
+                          {toCol?.nome ?? '—'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* User */}
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <div
+                        className={cn(
+                          'w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0',
+                          avatarColor(userName)
+                        )}
+                      >
+                        {initials}
+                      </div>
+                      <span className="text-xs text-zinc-500">{userName}</span>
+                    </div>
+                  </div>
+
+                  {/* Right: date + time */}
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-xs font-medium text-zinc-500">
+                      {formatDateShort(entry.moved_at)}
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      {formatTimeOnly(entry.moved_at)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -260,7 +445,8 @@ function TabCliente({ caso }: { caso: CaseWithRelations }) {
 // ── Tab: Processo ─────────────────────────────────────────────────────────────
 
 function TabProcesso({ caso }: { caso: CaseWithRelations }) {
-  const workflow = WORKFLOWS.find((w) => w.id === caso.workflow_id)
+  const { data: workflows = [] } = useWorkflows()
+  const workflow = workflows.find((w) => w.id === caso.workflow_id)
   const coluna = workflow?.colunas.find((c) => c.id === caso.column_id)
 
   return (
@@ -345,9 +531,10 @@ interface CasoModalProps {
 
 export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTab>('resumo')
+  const { data: workflows = [] } = useWorkflows()
 
   const area = caso.legal_area ? AREAS_JURIDICAS[caso.legal_area as AreaJuridica] : null
-  const workflow = WORKFLOWS.find((w) => w.id === caso.workflow_id)
+  const workflow = workflows.find((w) => w.id === caso.workflow_id)
   const coluna = workflow?.colunas.find((c) => c.id === caso.column_id)
   const clientName = getCaseClientName(caso)
   const assignedName = caso.assigned_profile?.full_name ?? ''
@@ -449,9 +636,7 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
           {activeTab === 'resumo' && <TabResumo caso={caso} />}
           {activeTab === 'cliente' && <TabCliente caso={caso} />}
           {activeTab === 'processo' && <TabProcesso caso={caso} />}
-          {activeTab === 'timeline' && (
-            <PlaceholderTab icon={<Activity className="w-8 h-8" />} label="Timeline" />
-          )}
+          {activeTab === 'timeline' && <TabTimeline caso={caso} />}
           {activeTab === 'agenda' && (
             <PlaceholderTab icon={<Calendar className="w-8 h-8" />} label="Agenda" />
           )}

@@ -53,6 +53,19 @@ export interface CaseMovement {
   created_at: string
 }
 
+export interface CaseColumnHistory {
+  id: string
+  case_id: string
+  from_column_id: string | null   // null = criação do caso
+  to_column_id: string
+  moved_by: string | null
+  moved_at: string
+  moved_by_profile: {
+    full_name: string
+    avatar_url: string | null
+  } | null
+}
+
 export interface CaseWithRelations extends Case {
   client: CaseClientSummary | null
   assigned_profile: CaseProfileSummary | null

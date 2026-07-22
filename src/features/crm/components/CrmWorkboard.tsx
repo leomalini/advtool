@@ -10,19 +10,20 @@ import { CasoForm } from './CasoForm'
 import { useCrmUiStore } from '../stores/casos.store'
 import { useCases } from '../hooks/useCases'
 import { useCreateCase, useUpdateCase } from '../hooks/useCaseMutations'
-import { WORKFLOWS } from '@/data/mock'
+import { useWorkflows } from '../hooks/useWorkflows'
 import type { CaseInput } from '@/schemas/case.schema'
 
 export function CrmWorkboard() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('wf-negociacao')
   const [editModalOpen, setEditModalOpen] = useState(false)
 
-  const { modalOpen, selectedCaseId, closeModal, createModalOpen, openCreateModal, closeCreateModal } =
+  const { modalOpen, selectedCaseId, closeModal, createModalOpen, createForColumnId, openCreateModal, closeCreateModal } =
     useCrmUiStore()
 
+  const { data: workflows = [] } = useWorkflows()
   const { data: cases = [] } = useCases(selectedWorkflowId)
   const selectedCase = selectedCaseId ? cases.find((c) => c.id === selectedCaseId) ?? null : null
-  const selectedWorkflow = WORKFLOWS.find((w) => w.id === selectedWorkflowId)
+  const selectedWorkflow = workflows.find((w) => w.id === selectedWorkflowId)
 
   const createCase = useCreateCase(selectedWorkflowId)
   const updateCase = useUpdateCase(selectedCaseId ?? '', selectedWorkflowId)
@@ -74,7 +75,7 @@ export function CrmWorkboard() {
         />
 
         {/* Right: new case button */}
-        <Button size="sm" className="flex-shrink-0" onClick={openCreateModal}>
+        <Button size="sm" className="flex-shrink-0" onClick={() => openCreateModal()}>
           <Plus className="h-4 w-4 mr-1.5" />
           Novo Caso
         </Button>
@@ -114,7 +115,7 @@ export function CrmWorkboard() {
         onSuccess={() => {}}
         defaultValues={{
           workflow_id: selectedWorkflowId,
-          column_id: selectedWorkflow.colunas[0]?.id ?? '',
+          column_id: createForColumnId ?? selectedWorkflow.colunas[0]?.id ?? '',
           tags: [],
         }}
         onSubmit={handleCreateSubmit}

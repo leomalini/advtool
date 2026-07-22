@@ -30,23 +30,6 @@ export interface Etiqueta {
   textColor: string // tailwind text class
 }
 
-export interface WorkflowColuna {
-  id: string
-  nome: string
-  cor: string // hex
-  posicao: number
-  workflowId: string
-  limite?: number
-}
-
-export interface Workflow {
-  id: string
-  nome: string
-  descricao: string
-  cor: string // hex accent
-  colunas: WorkflowColuna[]
-}
-
 export interface Cliente {
   id: string
   nome: string
@@ -352,43 +335,6 @@ export const CLIENTES: Cliente[] = [
     criadoEm: '2026-02-14',
     ultimaAtualizacao: '2026-06-20',
     observacoes: 'Aposentadoria por invalidez. Documentação médica em análise.',
-  },
-]
-
-// ----- WORKFLOWS -------------------------------------------
-
-export const WORKFLOWS: Workflow[] = [
-  {
-    id: 'wf-negociacao',
-    nome: 'Negociação',
-    descricao: 'Fluxo de negociação e captação de novos casos',
-    cor: '#6366f1',
-    colunas: [
-      { id: 'neg-1', nome: 'Análise do Caso', cor: '#94a3b8', posicao: 0, workflowId: 'wf-negociacao' },
-      { id: 'neg-2', nome: 'Aguardando Documentos', cor: '#f59e0b', posicao: 1, workflowId: 'wf-negociacao' },
-      { id: 'neg-3', nome: 'Análise Jurídica', cor: '#8b5cf6', posicao: 2, workflowId: 'wf-negociacao' },
-      { id: 'neg-4', nome: 'Elaboração da Proposta', cor: '#3b82f6', posicao: 3, workflowId: 'wf-negociacao' },
-      { id: 'neg-5', nome: 'Proposta Enviada', cor: '#06b6d4', posicao: 4, workflowId: 'wf-negociacao' },
-      { id: 'neg-6', nome: 'Em Negociação', cor: '#f97316', posicao: 5, workflowId: 'wf-negociacao' },
-      { id: 'neg-7', nome: 'Contrato Assinado', cor: '#10b981', posicao: 6, workflowId: 'wf-negociacao' },
-    ],
-  },
-  {
-    id: 'wf-processos',
-    nome: 'Processos',
-    descricao: 'Acompanhamento de processos judiciais em andamento',
-    cor: '#0ea5e9',
-    colunas: [
-      { id: 'proc-1', nome: 'Cadastro', cor: '#94a3b8', posicao: 0, workflowId: 'wf-processos' },
-      { id: 'proc-2', nome: 'Petição Inicial', cor: '#8b5cf6', posicao: 1, workflowId: 'wf-processos' },
-      { id: 'proc-3', nome: 'Distribuição', cor: '#3b82f6', posicao: 2, workflowId: 'wf-processos' },
-      { id: 'proc-4', nome: 'Instrução', cor: '#f59e0b', posicao: 3, workflowId: 'wf-processos' },
-      { id: 'proc-5', nome: 'Audiência', cor: '#f97316', posicao: 4, workflowId: 'wf-processos' },
-      { id: 'proc-6', nome: 'Sentença', cor: '#ec4899', posicao: 5, workflowId: 'wf-processos' },
-      { id: 'proc-7', nome: 'Recurso', cor: '#ef4444', posicao: 6, workflowId: 'wf-processos' },
-      { id: 'proc-8', nome: 'Cumprimento', cor: '#06b6d4', posicao: 7, workflowId: 'wf-processos' },
-      { id: 'proc-9', nome: 'Finalizado', cor: '#10b981', posicao: 8, workflowId: 'wf-processos' },
-    ],
   },
 ]
 
@@ -1212,18 +1158,6 @@ export const CASOS: Caso[] = [
 ]
 
 // ----- HELPERS -----------------------------------------------
-
-export function getCasosByWorkflow(workflowId: string): Caso[] {
-  return CASOS.filter((c) => c.workflowId === workflowId)
-}
-
-export function getCasosByColuna(colunaId: string): Caso[] {
-  return CASOS.filter((c) => c.colunaId === colunaId)
-}
-
-export function getWorkflowById(id: string): Workflow | undefined {
-  return WORKFLOWS.find((w) => w.id === id)
-}
 
 export function getClienteById(id: string): Cliente | undefined {
   return CLIENTES.find((c) => c.id === id)
