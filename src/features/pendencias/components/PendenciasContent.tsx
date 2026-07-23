@@ -27,7 +27,7 @@ function PendencyCard({ pendency, onResolve }: PendencyCardProps) {
 
   return (
     <div className="flex items-start gap-4 rounded-xl border p-4 hover:bg-muted/20 transition-colors">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-700">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/12 text-sm font-semibold text-warning">
         {initials}
       </div>
 
@@ -41,8 +41,8 @@ function PendencyCard({ pendency, onResolve }: PendencyCardProps) {
             className={cn(
               'inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium',
               pendency.type === 'company'
-                ? 'border-amber-200 bg-amber-50 text-amber-700'
-                : 'border-slate-200 bg-slate-50 text-slate-600'
+                ? 'border-warning/25 bg-warning/12 text-warning'
+                : 'border-border bg-muted text-muted-foreground'
             )}
           >
             {pendency.type === 'company' ? 'PJ' : 'PF'}
@@ -53,7 +53,7 @@ function PendencyCard({ pendency, onResolve }: PendencyCardProps) {
           {pendency.missingFields.map((field) => (
             <span
               key={field}
-              className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs text-amber-700"
+              className="inline-flex items-center gap-1 rounded-full bg-warning/12 border border-warning/25 px-2 py-0.5 text-xs text-warning"
             >
               <AlertCircle className="h-3 w-3" />
               {field}
@@ -165,7 +165,7 @@ export function PendenciasContent() {
       {/* Estado vazio */}
       {pendencies.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 rounded-xl border bg-muted/10 text-center">
-          <CheckCircle2 className="h-10 w-10 text-emerald-500 mb-3" />
+          <CheckCircle2 className="h-10 w-10 text-success mb-3" />
           <p className="text-sm font-medium">Tudo em ordem!</p>
           <p className="text-xs text-muted-foreground mt-1">
             Nenhum cadastro com campos obrigatórios faltando.

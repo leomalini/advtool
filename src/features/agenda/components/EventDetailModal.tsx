@@ -223,7 +223,7 @@ export function EventDetailModal({
                   {event.is_important && (
                     <Badge
                       variant="outline"
-                      className="text-amber-600 border-amber-200 bg-amber-50 gap-1 text-[11px]"
+                      className="text-warning border-warning/25 bg-warning/12 gap-1 text-[11px]"
                     >
                       <Star className="h-3 w-3" />
                       Importante
@@ -232,7 +232,7 @@ export function EventDetailModal({
                   {event.is_urgent && (
                     <Badge
                       variant="outline"
-                      className="text-red-600 border-red-200 bg-red-50 gap-1 text-[11px]"
+                      className="text-destructive border-destructive/25 bg-destructive/12 gap-1 text-[11px]"
                     >
                       <AlertCircle className="h-3 w-3" />
                       Urgente
@@ -241,7 +241,7 @@ export function EventDetailModal({
                   {event.is_recurring && (
                     <Badge
                       variant="outline"
-                      className="text-violet-600 border-violet-200 bg-violet-50 gap-1 text-[11px]"
+                      className="text-chart-2 border-chart-2/25 bg-chart-2/12 gap-1 text-[11px]"
                     >
                       <RefreshCw className="h-3 w-3" />
                       Recorrente
@@ -250,7 +250,7 @@ export function EventDetailModal({
                   {event.is_retroactive && (
                     <Badge
                       variant="outline"
-                      className="text-slate-600 border-slate-200 bg-slate-100 gap-1 text-[11px]"
+                      className="text-muted-foreground border-border bg-muted gap-1 text-[11px]"
                     >
                       <History className="h-3 w-3" />
                       Retroativa

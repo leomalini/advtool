@@ -129,7 +129,7 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
     return (
       <div className="flex gap-3 h-full overflow-x-auto pb-4">
         {workflow.colunas.slice(0, 4).map((col) => (
-          <div key={col.id} className="w-72 flex-shrink-0 rounded-xl bg-zinc-50 h-32 animate-pulse" />
+          <div key={col.id} className="w-[262px] flex-shrink-0 rounded-xl bg-muted/40 h-32 animate-pulse" />
         ))}
       </div>
     )

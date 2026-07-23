@@ -40,10 +40,10 @@ const TIPO_CONFIG: Record<
   Evento['tipo'],
   { label: string; color: string; bg: string; text: string }
 > = {
-  audiencia: { label: 'Audiência', color: '#ef4444', bg: 'bg-red-50', text: 'text-red-700' },
-  prazo: { label: 'Prazo', color: '#f59e0b', bg: 'bg-amber-50', text: 'text-amber-700' },
-  reuniao: { label: 'Reunião', color: '#6366f1', bg: 'bg-indigo-50', text: 'text-indigo-700' },
-  compromisso: { label: 'Compromisso', color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  audiencia: { label: 'Audiência', color: '#ef4444', bg: 'bg-destructive/12', text: 'text-destructive' },
+  prazo: { label: 'Prazo', color: '#f59e0b', bg: 'bg-warning/12', text: 'text-warning' },
+  reuniao: { label: 'Reunião', color: '#6366f1', bg: 'bg-accent', text: 'text-accent-foreground' },
+  compromisso: { label: 'Compromisso', color: '#10b981', bg: 'bg-success/12', text: 'text-success' },
 }
 
 // ── Tipos ──────────────────────────────────────────────────────
@@ -138,13 +138,13 @@ function EventoDetailModal({ evento, open, onClose }: EventoDetailProps) {
             {(evento.isFatalPrazo || evento.isUrgente) && (
               <div className="flex gap-2 pt-1">
                 {evento.isFatalPrazo && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-red-50 text-red-600 border-red-200">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-destructive/12 text-destructive border-destructive/25">
                     <AlertCircle className="h-3 w-3" />
                     Prazo Fatal
                   </span>
                 )}
                 {evento.isUrgente && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-amber-50 text-amber-600 border-amber-200">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-warning/12 text-warning border-warning/25">
                     <AlertCircle className="h-3 w-3" />
                     Urgente
                   </span>
@@ -565,8 +565,8 @@ function NovoEventoModal({ open, defaultData, onClose, onSave }: NovoEventoModal
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
                     form.isFatalPrazo
-                      ? 'bg-red-600 text-white border-red-600'
-                      : 'border-border text-muted-foreground hover:border-red-300 hover:text-red-600'
+                      ? 'bg-destructive text-white border-destructive'
+                      : 'border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive'
                   )}
                 >
                   <AlertCircle className="h-3.5 w-3.5" />
@@ -578,8 +578,8 @@ function NovoEventoModal({ open, defaultData, onClose, onSave }: NovoEventoModal
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
                     form.isUrgente
-                      ? 'bg-amber-500 text-white border-amber-500'
-                      : 'border-border text-muted-foreground hover:border-amber-300 hover:text-amber-600'
+                      ? 'bg-warning text-white border-warning'
+                      : 'border-border text-muted-foreground hover:border-warning/40 hover:text-warning'
                   )}
                 >
                   <AlertCircle className="h-3.5 w-3.5" />
@@ -664,7 +664,7 @@ function ProximosEventos({ eventos, onEventoClick }: ProximosEventosProps) {
                   <p className="text-[11px] text-muted-foreground truncate">{ev.clienteNome}</p>
                 </div>
                 {ev.isFatalPrazo && (
-                  <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                  <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
                 )}
               </button>
             )

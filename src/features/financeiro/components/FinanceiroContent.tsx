@@ -24,15 +24,15 @@ const STATUS_CONFIG: Record<
 > = {
   pago: {
     label: 'Pago',
-    className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    className: 'bg-success/10 text-success border-success/25',
   },
   pendente: {
     label: 'Pendente',
-    className: 'bg-amber-50 text-amber-700 border-amber-200',
+    className: 'bg-warning/10 text-warning border-warning/25',
   },
   atrasado: {
     label: 'Atrasado',
-    className: 'bg-red-50 text-red-700 border-red-200',
+    className: 'bg-destructive/10 text-destructive border-destructive/25',
   },
 }
 
@@ -135,36 +135,36 @@ export function FinanceiroContent() {
       {/* ── Seção 1: Cards de resumo ── */}
       <div className="grid grid-cols-4 gap-4">
         <SummaryCard
-          icon={<TrendingUp className="h-4.5 w-4.5 text-emerald-600" />}
+          icon={<TrendingUp className="h-4.5 w-4.5 text-success" />}
           label="Receitas do mês"
           value={formatCurrency(receitasMesPago)}
           sublabel="+31,8% vs. mês anterior"
-          colorClass="text-emerald-600"
-          bgClass="bg-emerald-50"
+          colorClass="text-success"
+          bgClass="bg-success/10"
         />
         <SummaryCard
-          icon={<TrendingDown className="h-4.5 w-4.5 text-red-500" />}
+          icon={<TrendingDown className="h-4.5 w-4.5 text-destructive" />}
           label="Despesas do mês"
           value={formatCurrency(despesasMes)}
           sublabel="Custas e operacional"
-          colorClass="text-red-500"
-          bgClass="bg-red-50"
+          colorClass="text-destructive"
+          bgClass="bg-destructive/10"
         />
         <SummaryCard
-          icon={<Clock className="h-4.5 w-4.5 text-amber-600" />}
+          icon={<Clock className="h-4.5 w-4.5 text-warning" />}
           label="A receber"
           value={formatCurrency(aReceber)}
           sublabel="Honorários pendentes"
-          colorClass="text-amber-600"
-          bgClass="bg-amber-50"
+          colorClass="text-warning"
+          bgClass="bg-warning/10"
         />
         <SummaryCard
-          icon={<ShieldAlert className="h-4.5 w-4.5 text-slate-400" />}
+          icon={<ShieldAlert className="h-4.5 w-4.5 text-muted-foreground" />}
           label="Inadimplência"
           value="R$ 0,00"
           sublabel="Nenhum atraso registrado"
-          colorClass="text-slate-500"
-          bgClass="bg-slate-100"
+          colorClass="text-muted-foreground"
+          bgClass="bg-muted"
         />
       </div>
 
@@ -178,11 +178,11 @@ export function FinanceiroContent() {
             {/* Legenda */}
             <div className="flex items-center gap-4 mb-5">
               <div className="flex items-center gap-1.5">
-                <div className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+                <div className="h-2.5 w-2.5 rounded-sm bg-success" />
                 <span className="text-xs text-muted-foreground">Receitas</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="h-2.5 w-2.5 rounded-sm bg-red-400" />
+                <div className="h-2.5 w-2.5 rounded-sm bg-destructive/70" />
                 <span className="text-xs text-muted-foreground">Despesas</span>
               </div>
             </div>
@@ -197,12 +197,12 @@ export function FinanceiroContent() {
                     {/* Barras lado a lado */}
                     <div className="w-full flex items-end justify-center gap-1 h-32">
                       <div
-                        className="flex-1 max-w-[18px] rounded-t-sm bg-emerald-500 transition-all"
+                        className="flex-1 max-w-[18px] rounded-t-sm bg-success transition-all"
                         style={{ height: `${alturaReceita}%` }}
                         title={`Receita: ${formatCurrency(item.receita)}`}
                       />
                       <div
-                        className="flex-1 max-w-[18px] rounded-t-sm bg-red-400 transition-all"
+                        className="flex-1 max-w-[18px] rounded-t-sm bg-destructive/70 transition-all"
                         style={{ height: `${alturaDesp}%` }}
                         title={`Despesa: ${formatCurrency(item.despesa)}`}
                       />
@@ -217,13 +217,13 @@ export function FinanceiroContent() {
             <div className="flex gap-6 mt-4 pt-4 border-t">
               <div>
                 <p className="text-xs text-muted-foreground">Total receitas (6m)</p>
-                <p className="text-sm font-semibold text-emerald-600">
+                <p className="text-sm font-semibold text-success">
                   {formatCurrency(FLUXO_CAIXA.reduce((a, d) => a + d.receita, 0))}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Total despesas (6m)</p>
-                <p className="text-sm font-semibold text-red-500">
+                <p className="text-sm font-semibold text-destructive">
                   {formatCurrency(FLUXO_CAIXA.reduce((a, d) => a + d.despesa, 0))}
                 </p>
               </div>
@@ -254,13 +254,13 @@ export function FinanceiroContent() {
                   return (
                     <div key={area}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className={cn('text-xs font-medium', info.color)}>{info.label}</span>
+                        <span className="text-xs font-medium" style={{ color: info.accent }}>{info.label}</span>
                         <span className="text-xs text-muted-foreground">{formatCurrency(valor)}</span>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                         <div
-                          className={cn('h-full rounded-full transition-all', info.bg.replace('bg-', 'bg-').replace('-50', '-400'))}
-                          style={{ width: `${pct}%` }}
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, backgroundColor: info.accent }}
                         />
                       </div>
                     </div>
@@ -300,7 +300,7 @@ export function FinanceiroContent() {
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-xs font-semibold text-emerald-600">
+                        <p className="text-xs font-semibold text-success">
                           {formatCurrency(honorarios)}
                         </p>
                         <p className="text-[10px] text-muted-foreground">honorários</p>
@@ -369,7 +369,7 @@ export function FinanceiroContent() {
                     <p
                       className={cn(
                         'text-sm font-semibold',
-                        mov.tipo === 'receita' ? 'text-emerald-600' : 'text-red-500',
+                        mov.tipo === 'receita' ? 'text-success' : 'text-destructive',
                       )}
                     >
                       {mov.tipo === 'despesa' ? '−' : '+'}

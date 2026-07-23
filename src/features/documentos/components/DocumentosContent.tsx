@@ -56,39 +56,39 @@ const CATEGORIA_LABELS: Record<Documento['categoria'], string> = {
 }
 
 const CATEGORIA_COLORS: Record<Documento['categoria'], string> = {
-  peticao: 'bg-blue-50 text-blue-700 border-blue-200',
-  contrato: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  procuracao: 'bg-violet-50 text-violet-700 border-violet-200',
-  decisao: 'bg-amber-50 text-amber-700 border-amber-200',
-  outros: 'bg-slate-50 text-slate-600 border-slate-200',
+  peticao: 'bg-info/12 text-info border-info/25',
+  contrato: 'bg-success/12 text-success border-success/25',
+  procuracao: 'bg-chart-2/12 text-chart-2 border-chart-2/25',
+  decisao: 'bg-warning/12 text-warning border-warning/25',
+  outros: 'bg-muted text-muted-foreground border-border',
 }
 
 function FileIcon({ tipo, className }: { tipo: string; className?: string }) {
   const ext = tipo.toLowerCase()
   if (ext === 'pdf') {
     return (
-      <div className={cn('flex items-center justify-center rounded-lg bg-red-50', className)}>
-        <FileText className="h-5 w-5 text-red-500" />
+      <div className={cn('flex items-center justify-center rounded-lg bg-destructive/12', className)}>
+        <FileText className="h-5 w-5 text-destructive" />
       </div>
     )
   }
   if (ext === 'zip' || ext === 'rar') {
     return (
-      <div className={cn('flex items-center justify-center rounded-lg bg-amber-50', className)}>
-        <FileArchive className="h-5 w-5 text-amber-500" />
+      <div className={cn('flex items-center justify-center rounded-lg bg-warning/12', className)}>
+        <FileArchive className="h-5 w-5 text-warning" />
       </div>
     )
   }
   if (ext === 'doc' || ext === 'docx') {
     return (
-      <div className={cn('flex items-center justify-center rounded-lg bg-blue-50', className)}>
-        <FileText className="h-5 w-5 text-blue-500" />
+      <div className={cn('flex items-center justify-center rounded-lg bg-info/12', className)}>
+        <FileText className="h-5 w-5 text-info" />
       </div>
     )
   }
   return (
-    <div className={cn('flex items-center justify-center rounded-lg bg-slate-100', className)}>
-      <File className="h-5 w-5 text-slate-500" />
+    <div className={cn('flex items-center justify-center rounded-lg bg-muted', className)}>
+      <File className="h-5 w-5 text-muted-foreground" />
     </div>
   )
 }

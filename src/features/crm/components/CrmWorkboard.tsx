@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Kanban, List } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { WorkflowSelector } from './WorkflowSelector'
 import { CrmKanbanBoard } from './CrmKanbanBoard'
+import { CrmTableView } from './CrmTableView'
 import { CasoModal } from './CasoModal'
 import { CasoForm } from './CasoForm'
 import { useCrmUiStore } from '../stores/casos.store'
@@ -13,11 +15,14 @@ import { useCreateCase, useUpdateCase } from '../hooks/useCaseMutations'
 import { useWorkflows } from '../hooks/useWorkflows'
 import type { CaseInput } from '@/schemas/case.schema'
 
+type ViewMode = 'kanban' | 'table'
+
 export function CrmWorkboard() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('wf-negociacao')
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban')
 
-  const { modalOpen, selectedCaseId, closeModal, createModalOpen, createForColumnId, openCreateModal, closeCreateModal } =
+  const { modalOpen, selectedCaseId, openModal, closeModal, createModalOpen, createForColumnId, openCreateModal, closeCreateModal } =
     useCrmUiStore()
 
   const { data: workflows = [] } = useWorkflows()
@@ -51,18 +56,18 @@ export function CrmWorkboard() {
   return (
     <div className="flex flex-col h-full -m-6">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b bg-white flex-shrink-0 gap-4">
+      <div className="flex items-center justify-between px-6 py-3.5 border-b bg-card flex-shrink-0 gap-4">
         {/* Left: workflow name */}
         <div className="flex items-center gap-2 min-w-0">
           <span
             className="w-2.5 h-2.5 rounded-full flex-shrink-0"
             style={{ backgroundColor: selectedWorkflow.cor }}
           />
-          <h1 className="text-sm font-semibold text-zinc-900 truncate">
+          <h1 className="text-sm font-semibold text-foreground truncate">
             {selectedWorkflow.nome}
           </h1>
-          <span className="text-xs text-zinc-400 hidden sm:block">·</span>
-          <span className="text-xs text-zinc-400 hidden sm:block">
+          <span className="text-xs text-muted-foreground hidden sm:block">·</span>
+          <span className="text-xs text-muted-foreground hidden sm:block">
             {selectedWorkflow.descricao}
           </span>
         </div>
@@ -74,17 +79,56 @@ export function CrmWorkboard() {
           onChange={setSelectedWorkflowId}
         />
 
-        {/* Right: new case button */}
-        <Button size="sm" className="flex-shrink-0" onClick={() => openCreateModal()}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Novo Caso
-        </Button>
+        {/* Right: view switcher + new case button */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-0.5 bg-muted border border-border rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('kanban')}
+              aria-label="Visão Kanban"
+              className={cn(
+                'flex items-center justify-center w-[26px] h-6 rounded-md transition-colors',
+                viewMode === 'kanban'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Kanban className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              aria-label="Visão em tabela"
+              className={cn(
+                'flex items-center justify-center w-[26px] h-6 rounded-md transition-colors',
+                viewMode === 'table'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <Button size="sm" onClick={() => openCreateModal()}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Novo Caso
+          </Button>
+        </div>
       </div>
 
-      {/* Kanban Board */}
-      <div className="flex-1 overflow-hidden px-6 pt-5 pb-0">
-        <CrmKanbanBoard workflow={selectedWorkflow} />
-      </div>
+      {/* Board */}
+      {viewMode === 'kanban' ? (
+        <div className="flex-1 overflow-hidden px-6 pt-5 pb-0">
+          <CrmKanbanBoard workflow={selectedWorkflow} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <CrmTableView
+            workflow={selectedWorkflow}
+            cases={cases}
+            onRowClick={(caso) => openModal(caso.id)}
+          />
+        </div>
+      )}
 
       {/* Case Detail Modal */}
       {selectedCase && (

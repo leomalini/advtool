@@ -4,10 +4,10 @@ import type { TaskPriority } from '@/types/task.types'
 import { cn } from '@/lib/utils'
 
 const variants: Record<TaskPriority, string> = {
-  low: 'bg-green-100 text-green-700 border-green-200',
-  medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  high: 'bg-orange-100 text-orange-700 border-orange-200',
-  urgent: 'bg-red-100 text-red-700 border-red-200',
+  low: 'bg-success/12 text-success border-success/25',
+  medium: 'bg-warning/12 text-warning border-warning/25',
+  high: 'bg-chart-4/15 text-chart-4 border-chart-4/30',
+  urgent: 'bg-destructive/12 text-destructive border-destructive/25',
 }
 
 interface PriorityBadgeProps {

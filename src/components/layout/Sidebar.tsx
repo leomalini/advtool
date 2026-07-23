@@ -27,14 +27,24 @@ import {
 } from "@/components/ui/tooltip";
 import { useClientesPendencies } from "@/features/clientes/hooks/useClientes";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/crm", label: "CRM", icon: Briefcase },
-  { href: "/agenda", label: "Agenda", icon: Calendar },
-  { href: "/clientes", label: "Clientes", icon: Users },
-  { href: "/tarefas", label: "Tarefas", icon: CheckSquare },
-  { href: "/documentos", label: "Documentos", icon: FolderOpen },
-  { href: "/financeiro", label: "Financeiro", icon: DollarSign },
+const navGroups = [
+  {
+    label: "Geral",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/crm", label: "CRM", icon: Briefcase },
+      { href: "/agenda", label: "Agenda", icon: Calendar },
+    ],
+  },
+  {
+    label: "Gestão",
+    items: [
+      { href: "/clientes", label: "Clientes", icon: Users },
+      { href: "/tarefas", label: "Tarefas", icon: CheckSquare },
+      { href: "/documentos", label: "Documentos", icon: FolderOpen },
+      { href: "/financeiro", label: "Financeiro", icon: DollarSign },
+    ],
+  },
 ];
 
 const bottomItems = [
@@ -63,16 +73,16 @@ export function Sidebar() {
         <Tooltip key={href}>
           <TooltipTrigger
             className={cn(
-              "relative flex w-full items-center justify-center rounded-md p-2 transition-colors",
+              "relative flex w-full items-center justify-center rounded-lg p-2 transition-colors",
               active
-                ? "bg-sidebar-accent text-sidebar-primary"
-                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                ? "bg-sidebar-accent text-sidebar-primary shadow-[inset_0_0_0_1px_var(--sidebar-accent)]"
+                : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
             )}
             render={<Link href={href} />}
           >
             <Icon className="h-4 w-4" />
             {badge != null && badge > 0 && (
-              <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+              <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning text-[9px] font-bold text-warning-foreground">
                 {badge > 9 ? '9+' : badge}
               </span>
             )}
@@ -87,16 +97,16 @@ export function Sidebar() {
         key={href}
         href={href}
         className={cn(
-          "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] transition-colors",
           active
-            ? "bg-sidebar-accent text-sidebar-primary font-semibold"
+            ? "bg-sidebar-accent text-sidebar-primary font-semibold shadow-[inset_0_0_0_1px_var(--sidebar-accent)]"
             : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
         )}
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        <Icon className={cn("h-4 w-4 shrink-0", active && "text-sidebar-primary")} />
         <span className="truncate flex-1">{label}</span>
         {badge != null && badge > 0 && (
-          <span className="flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+          <span className="flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-warning px-1 text-[10px] font-bold text-warning-foreground">
             {badge}
           </span>
         )}
@@ -129,19 +139,24 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-4 space-y-0.5">
-        {navItems.map(({ href, label, icon: Icon }) =>
-          renderNavItem(href, label, Icon),
-        )}
-
-        {/* Pendências — item separado com badge */}
-        <div className="pt-1">
-          {renderNavItem("/pendencias", "Pendências", AlertCircle, pendencyCount)}
-        </div>
+      <nav className="flex-1 px-2 py-3.5 space-y-0.5 overflow-y-auto">
+        {navGroups.map((group) => (
+          <div key={group.label} className="mb-0.5">
+            {sidebarOpen && (
+              <div className="px-2.5 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-sidebar-foreground/40 first:pt-2">
+                {group.label}
+              </div>
+            )}
+            {group.items.map(({ href, label, icon: Icon }) =>
+              renderNavItem(href, label, Icon),
+            )}
+          </div>
+        ))}
       </nav>
 
-      {/* Bottom nav */}
-      <div className="px-2 pb-2 space-y-0.5">
+      {/* Bottom nav — Pendências + Configurações */}
+      <div className="px-2 pb-2 pt-1 space-y-0.5 border-t border-sidebar-border">
+        {renderNavItem("/pendencias", "Pendências", AlertCircle, pendencyCount)}
         {bottomItems.map(({ href, label, icon: Icon }) =>
           renderNavItem(href, label, Icon),
         )}

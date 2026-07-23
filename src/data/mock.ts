@@ -181,25 +181,25 @@ export interface Caso {
 
 // ----- CONSTANTES ------------------------------------------
 
-export const AREAS_JURIDICAS: Record<AreaJuridica, { label: string; color: string; bg: string }> = {
-  trabalhista: { label: 'Trabalhista', color: 'text-blue-700', bg: 'bg-blue-50' },
-  civel: { label: 'Cível', color: 'text-purple-700', bg: 'bg-purple-50' },
-  familia: { label: 'Família', color: 'text-pink-700', bg: 'bg-pink-50' },
-  tributario: { label: 'Tributário', color: 'text-amber-700', bg: 'bg-amber-50' },
-  criminal: { label: 'Criminal', color: 'text-red-700', bg: 'bg-red-50' },
-  previdenciario: { label: 'Previdenciário', color: 'text-teal-700', bg: 'bg-teal-50' },
-  consumidor: { label: 'Consumidor', color: 'text-emerald-700', bg: 'bg-emerald-50' },
+export const AREAS_JURIDICAS: Record<AreaJuridica, { label: string; color: string; bg: string; accent: string }> = {
+  trabalhista: { label: 'Trabalhista', accent: '#6b8afd', bg: 'bg-[#eef0fe] dark:bg-[rgba(107,138,253,.12)]', color: 'text-[#3a4fd0] dark:text-[#93b1ff]' },
+  civel: { label: 'Cível', accent: '#b07cf0', bg: 'bg-[#f2edfd] dark:bg-[rgba(176,124,240,.12)]', color: 'text-[#7048c8] dark:text-[#c9a4f5]' },
+  familia: { label: 'Família', accent: '#ec6ead', bg: 'bg-[#fbeaf3] dark:bg-[rgba(236,110,173,.12)]', color: 'text-[#c23b83] dark:text-[#f7a8d0]' },
+  tributario: { label: 'Tributário', accent: '#f5b544', bg: 'bg-[#fcf3e3] dark:bg-[rgba(245,181,68,.12)]', color: 'text-[#b0730f] dark:text-[#f5cf8a]' },
+  criminal: { label: 'Criminal', accent: '#f2657a', bg: 'bg-[#fdeaec] dark:bg-[rgba(242,101,122,.12)]', color: 'text-[#c23c4c] dark:text-[#f7a3b1]' },
+  previdenciario: { label: 'Previdenciário', accent: '#38bdf8', bg: 'bg-[#e3f2fb] dark:bg-[rgba(56,189,248,.12)]', color: 'text-[#1a7fb8] dark:text-[#7fd0f5]' },
+  consumidor: { label: 'Consumidor', accent: '#3ecf8e', bg: 'bg-[#eafaf2] dark:bg-[rgba(62,207,142,.12)]', color: 'text-[#0c8a5d] dark:text-[#7fe0b4]' },
 }
 
 export const ETIQUETAS: Record<EtiquetaId, Etiqueta> = {
-  urgente: { id: 'urgente', label: 'Urgente', color: 'bg-red-100', textColor: 'text-red-700' },
-  'prazo-fatal': { id: 'prazo-fatal', label: 'Prazo Fatal', color: 'bg-orange-100', textColor: 'text-orange-700' },
-  audiencia: { id: 'audiencia', label: 'Audiência', color: 'bg-blue-100', textColor: 'text-blue-700' },
-  'aguardando-cliente': { id: 'aguardando-cliente', label: 'Aguardando Cliente', color: 'bg-yellow-100', textColor: 'text-yellow-700' },
-  'prioridade-alta': { id: 'prioridade-alta', label: 'Prioridade Alta', color: 'bg-rose-100', textColor: 'text-rose-700' },
-  recurso: { id: 'recurso', label: 'Recurso', color: 'bg-violet-100', textColor: 'text-violet-700' },
-  acordo: { id: 'acordo', label: 'Acordo', color: 'bg-emerald-100', textColor: 'text-emerald-700' },
-  novo: { id: 'novo', label: 'Novo', color: 'bg-sky-100', textColor: 'text-sky-700' },
+  urgente: { id: 'urgente', label: 'Urgente', color: 'bg-[#fdeaec] dark:bg-[rgba(242,101,122,.14)]', textColor: 'text-[#c23c4c] dark:text-[#ff8a9b]' },
+  'prazo-fatal': { id: 'prazo-fatal', label: 'Prazo Fatal', color: 'bg-[#fdeaec] dark:bg-[rgba(242,101,122,.14)]', textColor: 'text-[#c23c4c] dark:text-[#ff8a9b]' },
+  audiencia: { id: 'audiencia', label: 'Audiência', color: 'bg-[#eef0fe] dark:bg-[rgba(107,138,253,.12)]', textColor: 'text-[#3a4fd0] dark:text-[#93b1ff]' },
+  'aguardando-cliente': { id: 'aguardando-cliente', label: 'Aguardando Cliente', color: 'bg-[#fcf3e3] dark:bg-[rgba(245,181,68,.12)]', textColor: 'text-[#b0730f] dark:text-[#f5cf8a]' },
+  'prioridade-alta': { id: 'prioridade-alta', label: 'Prioridade Alta', color: 'bg-[#fdeaec] dark:bg-[rgba(242,101,122,.14)]', textColor: 'text-[#c23c4c] dark:text-[#ff8a9b]' },
+  recurso: { id: 'recurso', label: 'Recurso', color: 'bg-[#f2edfd] dark:bg-[rgba(176,124,240,.12)]', textColor: 'text-[#7048c8] dark:text-[#c9a4f5]' },
+  acordo: { id: 'acordo', label: 'Acordo', color: 'bg-[#eafaf2] dark:bg-[rgba(62,207,142,.12)]', textColor: 'text-[#0c8a5d] dark:text-[#7fe0b4]' },
+  novo: { id: 'novo', label: 'Novo', color: 'bg-[#e3f2fb] dark:bg-[rgba(56,189,248,.12)]', textColor: 'text-[#1a7fb8] dark:text-[#7fd0f5]' },
 }
 
 // ----- ADVOGADOS -------------------------------------------

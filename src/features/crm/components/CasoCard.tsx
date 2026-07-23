@@ -6,44 +6,12 @@ import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import type { CaseWithRelations } from '@/types/case.types'
 import { getCaseClientName } from '@/types/case.types'
+import { formatPrazo, formatRelativeDate } from '../utils/prazo'
 
 interface CasoCardProps {
   caso: CaseWithRelations
   onClick: () => void
   dragHandleProps?: Record<string, unknown>
-}
-
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffMinutes = Math.floor(diffMs / (1000 * 60))
-
-  if (diffMinutes < 1) return 'agora'
-  if (diffMinutes < 60) return `há ${diffMinutes}min`
-  if (diffHours < 24) return `há ${diffHours}h`
-  if (diffDays === 1) return 'ontem'
-  if (diffDays < 30) return `há ${diffDays} dias`
-  const diffMonths = Math.floor(diffDays / 30)
-  if (diffMonths === 1) return 'há 1 mês'
-  return `há ${diffMonths} meses`
-}
-
-function formatPrazo(prazoStr: string): { label: string; isUrgent: boolean } {
-  const prazo = new Date(prazoStr)
-  const now = new Date()
-  const diffMs = prazo.getTime() - now.getTime()
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-
-  if (diffDays < 0) return { label: `Vencido há ${Math.abs(diffDays)}d`, isUrgent: true }
-  if (diffDays === 0) return { label: 'Vence hoje', isUrgent: true }
-  if (diffDays <= 3) return { label: `${diffDays}d restantes`, isUrgent: true }
-  if (diffDays <= 7) return { label: `${diffDays}d restantes`, isUrgent: false }
-
-  const date = prazo.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-  return { label: date, isUrgent: false }
 }
 
 function getInitials(name: string): string {
@@ -69,19 +37,33 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
     <div
       onClick={onClick}
       className={cn(
-        'group bg-white rounded-xl border border-zinc-200 p-3.5 cursor-pointer',
-        'hover:shadow-md hover:border-zinc-300 transition-all duration-200',
+        'group relative bg-card rounded-[11px] border border-border pl-4 pr-3.5 py-3 cursor-pointer',
+        'hover:border-foreground/20 hover:-translate-y-px hover:shadow-lg transition-all duration-200',
         'select-none'
       )}
       {...dragHandleProps}
     >
+      {legalArea && (
+        <span
+          className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full"
+          style={{ backgroundColor: legalArea.accent }}
+        />
+      )}
+
       {/* Header: cliente + alerta */}
       <div className="flex items-start justify-between gap-2 mb-2">
-        <p className="text-sm font-semibold text-zinc-900 leading-snug line-clamp-2">
-          {clientName}
-        </p>
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-foreground leading-snug line-clamp-2">
+            {clientName}
+          </p>
+          {caso.cnj_number && (
+            <p className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
+              {caso.cnj_number}
+            </p>
+          )}
+        </div>
         {hasAlert && (
-          <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+          <AlertTriangle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />
         )}
       </div>
 
@@ -90,7 +72,7 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
         <div className="mb-2.5">
           <span
             className={cn(
-              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+              'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium',
               legalArea.bg,
               legalArea.color
             )}
@@ -102,7 +84,7 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
 
       {/* Próxima tarefa */}
       {caso.next_task_summary && (
-        <p className="text-xs text-zinc-500 truncate mb-2.5">
+        <p className="text-[11px] text-muted-foreground truncate mb-2.5">
           {caso.next_task_summary}
         </p>
       )}
@@ -117,7 +99,7 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
               <span
                 key={etId}
                 className={cn(
-                  'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
+                  'inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-semibold',
                   et.color,
                   et.textColor
                 )}
@@ -127,7 +109,7 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
             )
           })}
           {tags.length > 3 && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-zinc-100 text-zinc-500">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-muted text-muted-foreground">
               +{tags.length - 3}
             </span>
           )}
@@ -135,13 +117,15 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
       )}
 
       {/* Footer: prazo + advogado + atualização */}
-      <div className="flex items-center justify-between gap-2 mt-1">
+      <div className="flex items-center justify-between gap-2 mt-1 pt-2.5 border-t border-border">
         <div className="flex items-center gap-2 min-w-0">
           {prazoInfo && (
             <span
               className={cn(
-                'flex items-center gap-1 text-xs',
-                prazoInfo.isUrgent ? 'text-red-500 font-medium' : 'text-zinc-400'
+                'flex items-center gap-1 text-[11px]',
+                prazoInfo.tone === 'critical' && 'text-destructive font-semibold animate-pulse-urgent',
+                prazoInfo.tone === 'warning' && 'text-warning font-medium',
+                prazoInfo.tone === 'neutral' && 'text-muted-foreground'
               )}
             >
               <Clock className="w-3 h-3 flex-shrink-0" />
@@ -151,12 +135,12 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-xs text-zinc-400">
+          <span className="text-[10px] text-muted-foreground">
             {formatRelativeDate(caso.updated_at)}
           </span>
           {assignedName && (
             <div
-              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 bg-violet-500"
+              className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9.5px] font-bold flex-shrink-0 bg-accent text-accent-foreground"
               title={assignedName}
             >
               {advInitials}

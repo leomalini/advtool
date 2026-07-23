@@ -5,6 +5,10 @@
       "headers": {
         "x-api-key": "$BUSCA_PROCESSOS_API_KEY"
       }
+    },
+    "claude_design": {
+      "type": "http",
+      "url": "https://api.anthropic.com/v1/design/mcp"
     }
   }
 }

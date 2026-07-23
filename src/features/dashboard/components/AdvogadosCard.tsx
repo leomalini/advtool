@@ -33,7 +33,7 @@ export function AdvogadosCard() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Users className="h-4 w-4 text-violet-500" />
+          <Users className="h-4 w-4 text-accent-foreground" />
           Carga por Advogado
         </CardTitle>
       </CardHeader>
@@ -63,7 +63,7 @@ export function AdvogadosCard() {
               {/* Barra de progresso */}
               <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                  className="h-full rounded-full bg-accent-foreground transition-all duration-500"
                   style={{ width: `${progresso}%` }}
                 />
               </div>
@@ -71,13 +71,13 @@ export function AdvogadosCard() {
               {/* Breakdown de status */}
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1">
-                  <div className="h-2 w-2 rounded-full bg-blue-500" />
+                  <div className="h-2 w-2 rounded-full bg-info" />
                   <span className="text-xs text-muted-foreground">
                     {adv.ativos} em processo
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <div className="h-2 w-2 rounded-full bg-violet-400" />
+                  <div className="h-2 w-2 rounded-full bg-chart-2" />
                   <span className="text-xs text-muted-foreground">
                     {adv.negociacao} em negociação
                   </span>

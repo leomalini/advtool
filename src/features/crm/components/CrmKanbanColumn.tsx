@@ -23,8 +23,8 @@ export function CrmKanbanColumn({ coluna, cases, onCardClick, onAddCase }: CrmKa
   return (
     <div
       className={cn(
-        'flex flex-col w-72 flex-shrink-0 rounded-xl transition-all duration-200',
-        isOver ? 'bg-zinc-100' : 'bg-zinc-50'
+        'flex flex-col w-[262px] flex-shrink-0 rounded-xl transition-all duration-200',
+        isOver ? 'bg-accent/60' : 'bg-muted/40'
       )}
     >
       {/* Column Header */}
@@ -34,11 +34,11 @@ export function CrmKanbanColumn({ coluna, cases, onCardClick, onAddCase }: CrmKa
             className="w-2 h-2 rounded-full flex-shrink-0"
             style={{ backgroundColor: coluna.cor }}
           />
-          <h3 className="text-xs font-semibold text-zinc-700 uppercase tracking-wide">
+          <h3 className="text-[11px] font-semibold text-foreground/80 uppercase tracking-wide">
             {coluna.nome}
           </h3>
         </div>
-        <span className="text-xs font-medium text-zinc-400 bg-zinc-200 px-1.5 py-0.5 rounded-full">
+        <span className="text-[11px] font-medium text-muted-foreground bg-foreground/[0.07] px-1.5 py-0.5 rounded-full">
           {cases.length}
         </span>
       </div>
@@ -59,7 +59,7 @@ export function CrmKanbanColumn({ coluna, cases, onCardClick, onAddCase }: CrmKa
         </SortableContext>
 
         {cases.length === 0 && (
-          <div className="flex items-center justify-center h-16 rounded-lg border border-dashed border-zinc-200 text-xs text-zinc-400">
+          <div className="flex items-center justify-center h-16 rounded-lg border border-dashed border-border text-xs text-muted-foreground">
             Sem casos
           </div>
         )}
@@ -69,7 +69,7 @@ export function CrmKanbanColumn({ coluna, cases, onCardClick, onAddCase }: CrmKa
       <div className="px-2 pb-2">
         <button
           onClick={onAddCase}
-          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-all duration-200"
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-dashed border-border text-xs text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-all duration-200"
         >
           <Plus className="w-3.5 h-3.5" />
           Adicionar caso

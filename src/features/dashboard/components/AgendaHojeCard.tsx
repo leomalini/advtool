@@ -10,26 +10,26 @@ type EventoTipo = 'audiencia' | 'reuniao' | 'prazo' | 'compromisso'
 const TIPO_CONFIG: Record<EventoTipo, { icon: React.ElementType; color: string; bg: string; label: string }> = {
   audiencia: {
     icon: Gavel,
-    color: 'text-blue-700',
-    bg: 'bg-blue-100',
+    color: 'text-info',
+    bg: 'bg-info/12',
     label: 'Audiência',
   },
   reuniao: {
     icon: Users,
-    color: 'text-violet-700',
-    bg: 'bg-violet-100',
+    color: 'text-chart-2',
+    bg: 'bg-chart-2/12',
     label: 'Reunião',
   },
   prazo: {
     icon: Clock,
-    color: 'text-amber-700',
-    bg: 'bg-amber-100',
+    color: 'text-warning',
+    bg: 'bg-warning/12',
     label: 'Prazo',
   },
   compromisso: {
     icon: CalendarDays,
-    color: 'text-slate-700',
-    bg: 'bg-slate-100',
+    color: 'text-muted-foreground',
+    bg: 'bg-muted',
     label: 'Compromisso',
   },
 }
@@ -46,7 +46,7 @@ export function AgendaHojeCard() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-violet-500" />
+          <CalendarDays className="h-4 w-4 text-accent-foreground" />
           Próximos Eventos
         </CardTitle>
       </CardHeader>

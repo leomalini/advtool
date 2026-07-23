@@ -134,8 +134,8 @@ function ClienteRow({ cliente, onVerDetalhe, onEdit, onDelete }: ClienteRowProps
               className={cn(
                 'inline-flex items-center rounded border px-1 py-0 text-xs font-medium',
                 cliente.type === 'company'
-                  ? 'border-amber-200 bg-amber-50 text-amber-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-600'
+                  ? 'border-warning/25 bg-warning/12 text-warning'
+                  : 'border-border bg-muted text-muted-foreground'
               )}
             >
               {cliente.type === 'company' ? 'PJ' : 'PF'}

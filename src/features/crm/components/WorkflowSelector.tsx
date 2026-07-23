@@ -16,7 +16,7 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
   const { data: workflows = [] } = useWorkflows()
 
   return (
-    <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
+    <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
       {workflows.map((wf) => {
         const count = counts[wf.id] ?? 0
         const isActive = selectedId === wf.id
@@ -28,8 +28,8 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
             className={cn(
               'flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200',
               isActive
-                ? 'bg-white text-zinc-900 shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-800 hover:bg-white/60'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-card/60'
             )}
           >
             <span
@@ -42,7 +42,7 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
                 'inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-semibold transition-all duration-200',
                 isActive
                   ? 'text-white'
-                  : 'bg-zinc-200 text-zinc-500'
+                  : 'bg-foreground/[0.08] text-muted-foreground'
               )}
               style={isActive ? { backgroundColor: wf.cor } : {}}
             >

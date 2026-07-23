@@ -18,10 +18,10 @@ export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
 }
 
 export const TASK_PRIORITY_COLORS: Record<TaskPriority, string> = {
-  low: 'text-green-600',
-  medium: 'text-yellow-600',
-  high: 'text-orange-600',
-  urgent: 'text-red-600',
+  low: 'text-success',
+  medium: 'text-warning',
+  high: 'text-chart-4',
+  urgent: 'text-destructive',
 }
 
 export interface Task extends BaseEntity {

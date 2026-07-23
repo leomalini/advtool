@@ -267,8 +267,8 @@ function TabUsuarios() {
                 className={cn(
                   'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border',
                   adv.id === 'adv-1'
-                    ? 'bg-violet-50 text-violet-700 border-violet-200'
-                    : 'bg-sky-50 text-sky-700 border-sky-200',
+                    ? 'bg-chart-2/12 text-chart-2 border-chart-2/25'
+                    : 'bg-info/12 text-info border-info/25',
                 )}
               >
                 {adv.id === 'adv-1' ? 'Admin' : 'Advogado'}
@@ -348,7 +348,7 @@ function TabAreas() {
                   onClick={() => toggleArea(area)}
                   className={cn(
                     'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                    ativos[area] ? 'bg-emerald-500' : 'bg-muted-foreground/30',
+                    ativos[area] ? 'bg-success' : 'bg-muted-foreground/30',
                   )}
                 >
                   <span

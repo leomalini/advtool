@@ -49,8 +49,7 @@ export function DashboardContent() {
           label="Processos Ativos"
           value={DASHBOARD_STATS.casosAtivos}
           icon={Scale}
-          iconColor="text-blue-600"
-          iconBg="bg-blue-100"
+          variant="accent"
           trend="+2 esta semana"
           trendUp
         />
@@ -58,8 +57,7 @@ export function DashboardContent() {
           label="Em Negociação"
           value={DASHBOARD_STATS.casosNegociacao}
           icon={Briefcase}
-          iconColor="text-violet-600"
-          iconBg="bg-violet-100"
+          variant="chart2"
           trend="+1 esta semana"
           trendUp
         />
@@ -67,8 +65,7 @@ export function DashboardContent() {
           label="Tarefas Pendentes"
           value={DASHBOARD_STATS.tarefasPendentes}
           icon={CheckSquare}
-          iconColor="text-amber-600"
-          iconBg="bg-amber-100"
+          variant="warning"
           trend="-1 hoje"
           trendUp={false}
         />
@@ -76,8 +73,7 @@ export function DashboardContent() {
           label="Clientes Ativos"
           value={DASHBOARD_STATS.clientesAtivos}
           icon={Users}
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-100"
+          variant="success"
           trend="+1 este mês"
           trendUp
         />

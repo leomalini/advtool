@@ -68,6 +68,41 @@ export function useDeleteCase(workflowId: string) {
   })
 }
 
+// ── Bulk actions (table view multi-select) ─────────────────────────────────
+
+export function useBulkUpdateCases(workflowId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      ids,
+      getInput,
+    }: {
+      ids: string[]
+      /** Called per case id — lets bulk edits merge into each case's own current state (e.g. adding a tag). */
+      getInput: (id: string) => Partial<CaseInput>
+    }) => Promise.all(ids.map((id) => updateCaseRecord(id, getInput(id)))),
+    onSuccess: (_data, { ids }) => {
+      queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      toast.success(`${ids.length} caso(s) atualizado(s)!`)
+    },
+    onError: () => toast.error('Erro ao atualizar casos.'),
+  })
+}
+
+export function useBulkDeleteCases(workflowId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map((id) => deleteCaseRecord(id))),
+    onSuccess: (_data, ids) => {
+      queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      toast.success(`${ids.length} caso(s) removido(s).`)
+    },
+    onError: () => toast.error('Erro ao remover casos.'),
+  })
+}
+
 export function useAddCaseMovement(caseId: string, workflowId: string) {
   const queryClient = useQueryClient()
 

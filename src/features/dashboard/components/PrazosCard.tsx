@@ -23,7 +23,7 @@ export function PrazosCard() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Clock className="h-4 w-4 text-amber-500" />
+          <Clock className="h-4 w-4 text-warning" />
           Próximos Prazos e Audiências
         </CardTitle>
       </CardHeader>
@@ -41,20 +41,20 @@ export function PrazosCard() {
               key={prazo.id}
               className={cn(
                 'flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50',
-                prazo.isFatal && 'border-red-200 bg-red-50/40'
+                prazo.isFatal && 'border-destructive/25 bg-destructive/[0.05]'
               )}
             >
               {/* Data */}
               <div
                 className={cn(
                   'flex flex-col items-center justify-center rounded-lg px-2.5 py-1.5 min-w-[44px] text-center',
-                  prazo.isFatal ? 'bg-red-100' : 'bg-muted'
+                  prazo.isFatal ? 'bg-destructive/10' : 'bg-muted'
                 )}
               >
                 <span
                   className={cn(
-                    'text-base font-bold leading-none',
-                    prazo.isFatal ? 'text-red-700' : 'text-foreground'
+                    'text-base font-bold leading-none tabular-nums',
+                    prazo.isFatal ? 'text-destructive' : 'text-foreground'
                   )}
                 >
                   {format(data, 'dd', { locale: ptBR })}
@@ -62,7 +62,7 @@ export function PrazosCard() {
                 <span
                   className={cn(
                     'text-xs uppercase font-medium',
-                    prazo.isFatal ? 'text-red-500' : 'text-muted-foreground'
+                    prazo.isFatal ? 'text-destructive' : 'text-muted-foreground'
                   )}
                 >
                   {format(data, 'MMM', { locale: ptBR })}
@@ -76,7 +76,7 @@ export function PrazosCard() {
                     {prazo.titulo}
                   </span>
                   {prazo.isFatal && (
-                    <Badge className="bg-red-100 text-red-700 border-0 animate-pulse text-xs px-1.5 py-0 h-4">
+                    <Badge className="bg-destructive/12 text-destructive border-0 animate-pulse-urgent text-xs px-1.5 py-0 h-4">
                       <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
                       Prazo Fatal
                     </Badge>
@@ -97,9 +97,9 @@ export function PrazosCard() {
                     className={cn(
                       'text-xs font-medium',
                       diffDias <= 3
-                        ? 'text-red-600'
+                        ? 'text-destructive'
                         : diffDias <= 7
-                          ? 'text-amber-600'
+                          ? 'text-warning'
                           : 'text-muted-foreground'
                     )}
                   >
@@ -115,7 +115,7 @@ export function PrazosCard() {
               {/* Avatar do advogado */}
               <div
                 title={prazo.advogado}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700 text-xs font-semibold"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-xs font-semibold"
               >
                 {iniciais}
               </div>

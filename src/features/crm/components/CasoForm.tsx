@@ -44,25 +44,25 @@ function formatCnjNumber(raw: string): string {
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-[11px] font-semibold text-zinc-400 mb-1.5 uppercase tracking-wider">
+    <label className="block text-[11px] font-semibold text-muted-foreground mb-1.5 uppercase tracking-wider">
       {children}
-      {required && <span className="text-red-500 ml-0.5">*</span>}
+      {required && <span className="text-destructive ml-0.5">*</span>}
     </label>
   )
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
-  return <p className="text-xs text-red-500 mt-1">{message}</p>
+  return <p className="text-xs text-destructive mt-1">{message}</p>
 }
 
 function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       className={cn(
-        'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-800 bg-white',
-        'placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 transition-colors',
-        'disabled:bg-zinc-50 disabled:text-zinc-400',
+        'w-full px-3 py-2 rounded-lg border border-border text-sm text-foreground bg-card',
+        'placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring transition-colors',
+        'disabled:bg-muted/40 disabled:text-muted-foreground',
         className,
       )}
       {...props}
@@ -74,8 +74,8 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
   return (
     <textarea
       className={cn(
-        'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-800 bg-white',
-        'placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 resize-none transition-colors',
+        'w-full px-3 py-2 rounded-lg border border-border text-sm text-foreground bg-card',
+        'placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring resize-none transition-colors',
         className,
       )}
       {...props}
@@ -85,7 +85,7 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
 
 function SidebarLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">
+    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">
       {children}
     </p>
   )
@@ -94,11 +94,11 @@ function SidebarLabel({ children }: { children: React.ReactNode }) {
 function SectionDivider({ icon: Icon, children }: { icon: React.ElementType; children: string }) {
   return (
     <div className="flex items-center gap-2.5 mb-5">
-      <div className="flex items-center justify-center w-6 h-6 rounded-md bg-zinc-100">
-        <Icon className="w-3.5 h-3.5 text-zinc-500" />
+      <div className="flex items-center justify-center w-6 h-6 rounded-md bg-muted">
+        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
       </div>
-      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">{children}</span>
-      <div className="flex-1 h-px bg-zinc-100" />
+      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">{children}</span>
+      <div className="flex-1 h-px bg-muted" />
     </div>
   )
 }
@@ -155,7 +155,7 @@ function TagToggle({
               'px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
               active
                 ? cn(et.color, et.textColor, 'border-transparent')
-                : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50',
+                : 'bg-card border-border text-muted-foreground hover:border-border hover:bg-muted/40',
             )}
           >
             {et.label}
@@ -331,8 +331,8 @@ export function CasoForm({
           className="flex flex-col h-full max-h-[90vh]"
         >
           {/* ── Header ────────────────────────────────────────────────────── */}
-          <DialogHeader className="flex-row items-center justify-between px-6 py-4 border-b border-zinc-100 flex-shrink-0 gap-0">
-            <DialogTitle className="text-sm font-semibold text-zinc-900">
+          <DialogHeader className="flex-row items-center justify-between px-6 py-4 border-b border-border flex-shrink-0 gap-0">
+            <DialogTitle className="text-sm font-semibold text-foreground">
               {isEditing ? 'Editar Caso' : 'Novo Caso'}
             </DialogTitle>
             <div className="flex items-center gap-2">
@@ -350,7 +350,7 @@ export function CasoForm({
           <div className="flex flex-1 overflow-hidden min-h-0">
 
             {/* ── LEFT SIDEBAR — classificação e controle ─────────────────── */}
-            <aside className="w-72 flex-shrink-0 border-r border-zinc-100 overflow-y-auto bg-zinc-50/40">
+            <aside className="w-72 flex-shrink-0 border-r border-border overflow-y-auto bg-muted/40">
               <div className="p-5 space-y-5">
 
                 {/* Workflow */}
@@ -363,7 +363,7 @@ export function CasoForm({
                       const wf = workflows.find((w) => w.id === field.value)
                       return (
                         <Select value={field.value} onValueChange={(v) => { if (v) field.onChange(v) }}>
-                          <SelectTrigger className="w-full text-sm bg-white">
+                          <SelectTrigger className="w-full text-sm bg-card">
                             <ColorDotTriggerValue
                               color={wf?.cor}
                               label={wf?.nome}
@@ -402,7 +402,7 @@ export function CasoForm({
                           onValueChange={(v) => { if (v) field.onChange(v) }}
                           disabled={!watchedWorkflowId}
                         >
-                          <SelectTrigger className="w-full text-sm bg-white">
+                          <SelectTrigger className="w-full text-sm bg-card">
                             <ColorDotTriggerValue
                               color={col?.cor}
                               label={col?.nome}
@@ -441,7 +441,7 @@ export function CasoForm({
                         : undefined
                       return (
                         <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || null)}>
-                          <SelectTrigger className="w-full text-sm bg-white">
+                          <SelectTrigger className="w-full text-sm bg-card">
                             {label
                               ? <span className="truncate text-sm">{label}</span>
                               : <SelectValue placeholder="Selecionar área..." />}
@@ -470,7 +470,7 @@ export function CasoForm({
                       const profile = profiles.find((p) => p.id === field.value)
                       return (
                         <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || null)}>
-                          <SelectTrigger className="w-full text-sm bg-white">
+                          <SelectTrigger className="w-full text-sm bg-card">
                             {profile
                               ? <span className="truncate text-sm">{profile.full_name}</span>
                               : <SelectValue placeholder="Selecionar..." />}
@@ -490,12 +490,12 @@ export function CasoForm({
                 </div>
 
                 {/* Divider */}
-                <div className="h-px bg-zinc-200" />
+                <div className="h-px bg-muted" />
 
                 {/* Próximo Prazo */}
                 <div>
                   <SidebarLabel>Próximo Prazo</SidebarLabel>
-                  <Input type="date" {...register('next_deadline')} className="bg-white" />
+                  <Input type="date" {...register('next_deadline')} className="bg-card" />
                 </div>
 
                 {/* Próxima Tarefa */}
@@ -504,12 +504,12 @@ export function CasoForm({
                   <Input
                     {...register('next_task_summary')}
                     placeholder="Ex: Protocolar contestação"
-                    className="bg-white"
+                    className="bg-card"
                   />
                 </div>
 
                 {/* Divider */}
-                <div className="h-px bg-zinc-200" />
+                <div className="h-px bg-muted" />
 
                 {/* Etiquetas */}
                 <div>
@@ -598,17 +598,17 @@ export function CasoForm({
                               value={field.value ?? ''}
                               onChange={(e) => field.onChange(formatCnjNumber(e.target.value))}
                               placeholder="0000000-00.0000.0.00.0000"
-                              className={cn('font-mono pr-9', lookingUpCnj && 'text-zinc-400')}
+                              className={cn('font-mono pr-9', lookingUpCnj && 'text-muted-foreground')}
                               inputMode="numeric"
                             />
                           )}
                         />
                         {lookingUpCnj
-                          ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-zinc-400" />
-                          : <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-300" />}
+                          ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                          : <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />}
                       </div>
                       <FieldError message={errors.cnj_number?.message} />
-                      <p className="text-xs text-zinc-400 mt-1.5">
+                      <p className="text-xs text-muted-foreground mt-1.5">
                         Ao digitar o número completo, os dados do processo são preenchidos automaticamente.
                       </p>
                     </div>

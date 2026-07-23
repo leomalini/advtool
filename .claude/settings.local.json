@@ -14,7 +14,12 @@
       "Skill(update-config)",
       "WebFetch(domain:docs.buscaprocessos.app.br)",
       "Bash(rm \"D:/Projects/advtool/src/app/api/cnj/[number]/route.ts\")",
-      "Bash(rmdir \"D:/Projects/advtool/src/app/api/cnj/[number]\")"
+      "Bash(rmdir \"D:/Projects/advtool/src/app/api/cnj/[number]\")",
+      "WebFetch(domain:claude.ai)",
+      "Bash(xargs -I {} basename {})",
+      "mcp__claude_design__get_project",
+      "mcp__claude_design__list_files",
+      "mcp__claude_design__read_file"
     ]
   }
 }

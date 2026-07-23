@@ -9,10 +9,10 @@ import { cn } from '@/lib/utils'
 import type { Task, TaskStatus } from '@/types/task.types'
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
-  todo: 'bg-slate-100 text-slate-600',
-  in_progress: 'bg-blue-100 text-blue-600',
-  waiting: 'bg-amber-100 text-amber-600',
-  done: 'bg-green-100 text-green-600',
+  todo: 'bg-muted text-muted-foreground',
+  in_progress: 'bg-info/12 text-info',
+  waiting: 'bg-warning/12 text-warning',
+  done: 'bg-success/12 text-success',
 }
 
 interface TaskColumnProps {

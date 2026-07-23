@@ -24,19 +24,19 @@ const TIPO_CONFIG: Record<
   AtividadeTipo | TimelineItem['tipo'],
   { icon: React.ElementType; color: string; bg: string; label: string }
 > = {
-  caso_criado: { icon: PlusCircle, color: 'text-emerald-700', bg: 'bg-emerald-100', label: 'Caso criado' },
-  cliente_atualizado: { icon: Activity, color: 'text-blue-700', bg: 'bg-blue-100', label: 'Cliente atualizado' },
-  documento_anexado: { icon: FileText, color: 'text-slate-700', bg: 'bg-slate-100', label: 'Documento' },
-  comentario: { icon: MessageSquare, color: 'text-violet-700', bg: 'bg-violet-100', label: 'Comentário' },
-  audiencia_criada: { icon: Gavel, color: 'text-blue-700', bg: 'bg-blue-100', label: 'Audiência' },
-  prazo_criado: { icon: Scale, color: 'text-amber-700', bg: 'bg-amber-100', label: 'Prazo' },
-  tarefa_criada: { icon: CheckCircle2, color: 'text-teal-700', bg: 'bg-teal-100', label: 'Tarefa' },
-  tarefa_concluida: { icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-100', label: 'Concluído' },
-  mudanca_coluna: { icon: MoveRight, color: 'text-violet-700', bg: 'bg-violet-100', label: 'Movido' },
-  mudanca_workflow: { icon: MoveRight, color: 'text-indigo-700', bg: 'bg-indigo-100', label: 'Workflow' },
-  movimentacao_processo: { icon: Scale, color: 'text-blue-700', bg: 'bg-blue-100', label: 'Processo' },
-  peticao_enviada: { icon: Send, color: 'text-cyan-700', bg: 'bg-cyan-100', label: 'Petição' },
-  acordo_proposto: { icon: Handshake, color: 'text-emerald-700', bg: 'bg-emerald-100', label: 'Acordo' },
+  caso_criado: { icon: PlusCircle, color: 'text-success', bg: 'bg-success/12', label: 'Caso criado' },
+  cliente_atualizado: { icon: Activity, color: 'text-info', bg: 'bg-info/12', label: 'Cliente atualizado' },
+  documento_anexado: { icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Documento' },
+  comentario: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Comentário' },
+  audiencia_criada: { icon: Gavel, color: 'text-info', bg: 'bg-info/12', label: 'Audiência' },
+  prazo_criado: { icon: Scale, color: 'text-warning', bg: 'bg-warning/12', label: 'Prazo' },
+  tarefa_criada: { icon: CheckCircle2, color: 'text-info', bg: 'bg-info/12', label: 'Tarefa' },
+  tarefa_concluida: { icon: CheckCircle2, color: 'text-success', bg: 'bg-success/12', label: 'Concluído' },
+  mudanca_coluna: { icon: MoveRight, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Movido' },
+  mudanca_workflow: { icon: MoveRight, color: 'text-accent-foreground', bg: 'bg-accent', label: 'Workflow' },
+  movimentacao_processo: { icon: Scale, color: 'text-info', bg: 'bg-info/12', label: 'Processo' },
+  peticao_enviada: { icon: Send, color: 'text-info', bg: 'bg-info/12', label: 'Petição' },
+  acordo_proposto: { icon: Handshake, color: 'text-success', bg: 'bg-success/12', label: 'Acordo' },
 }
 
 export function ActivityFeed() {
@@ -44,7 +44,7 @@ export function ActivityFeed() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Activity className="h-4 w-4 text-slate-500" />
+          <Activity className="h-4 w-4 text-muted-foreground" />
           Últimas Atividades
         </CardTitle>
       </CardHeader>
@@ -53,8 +53,8 @@ export function ActivityFeed() {
           {ULTIMAS_ATIVIDADES.map((atividade, index) => {
             const config = TIPO_CONFIG[atividade.tipo] ?? {
               icon: Activity,
-              color: 'text-slate-700',
-              bg: 'bg-slate-100',
+              color: 'text-muted-foreground',
+              bg: 'bg-muted',
               label: atividade.tipo,
             }
             const IconeAtividade = config.icon
