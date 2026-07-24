@@ -16,10 +16,10 @@ import {
 import { CasoModal } from "./CasoModal";
 import { CasoForm } from "./CasoForm";
 import { useCrmUiStore } from "../stores/casos.store";
-import { useCases, useCaseCounts } from "../hooks/useCases";
-import { useCreateCase, useUpdateCase } from "../hooks/useCaseMutations";
+import { useCrmItems, useCrmItemCounts } from "../hooks/useCrmItems";
+import { useCreateCrmItem, useUpdateCrmItem } from "../hooks/useCrmItemMutations";
 import { useWorkflows } from "../hooks/useWorkflows";
-import type { CaseInput } from "@/schemas/case.schema";
+import type { CrmItemInput } from "@/schemas/crmItem.schema";
 
 type ViewMode = "kanban" | "table";
 
@@ -41,22 +41,22 @@ export function CrmWorkboard() {
   } = useCrmUiStore();
 
   const { data: workflows = [] } = useWorkflows();
-  const { data: cases = [] } = useCases(selectedWorkflowId);
-  const { data: caseCounts = {} } = useCaseCounts();
+  const { data: cases = [] } = useCrmItems(selectedWorkflowId);
+  const { data: caseCounts = {} } = useCrmItemCounts();
   const selectedCase = selectedCaseId
     ? (cases.find((c) => c.id === selectedCaseId) ?? null)
     : null;
   const selectedWorkflow = workflows.find((w) => w.id === selectedWorkflowId);
 
-  const createCase = useCreateCase(selectedWorkflowId);
-  const updateCase = useUpdateCase(selectedCaseId ?? "", selectedWorkflowId);
+  const createCase = useCreateCrmItem(selectedWorkflowId);
+  const updateCase = useUpdateCrmItem(selectedCaseId ?? "", selectedWorkflowId);
 
-  async function handleCreateSubmit(data: CaseInput) {
+  async function handleCreateSubmit(data: CrmItemInput) {
     await createCase.mutateAsync(data);
     closeCreateModal();
   }
 
-  async function handleEditSubmit(data: CaseInput) {
+  async function handleEditSubmit(data: CrmItemInput) {
     await updateCase.mutateAsync(data);
     setEditModalOpen(false);
   }
@@ -141,7 +141,7 @@ export function CrmWorkboard() {
 
           <Button size="sm" onClick={() => openCreateModal()}>
             <Plus className="h-4 w-4 mr-1.5" />
-            Novo Caso
+            Novo Item
           </Button>
         </div>
       </div>

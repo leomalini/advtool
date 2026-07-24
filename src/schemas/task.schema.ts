@@ -10,7 +10,7 @@ export const createTaskSchema = z.object({
   priority: taskPrioritySchema.optional(),
   assigned_to: z.string().uuid().optional(),
   client_id: z.string().uuid().optional(),
-  case_id: z.string().uuid().optional(),
+  crm_item_id: z.string().uuid().optional(),
   due_date: z.string().optional(),
 })
 

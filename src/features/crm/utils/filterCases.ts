@@ -1,12 +1,12 @@
-import type { CaseWithRelations } from '@/types/case.types'
-import { getCaseClientName } from '@/types/case.types'
-import type { CaseTag, CaseLegalArea } from '@/schemas/case.schema'
+import type { CrmItemWithRelations } from '@/types/crmItem.types'
+import { getCrmItemClientName } from '@/types/crmItem.types'
+import type { CrmTag, CrmLegalArea } from '@/schemas/crmItem.schema'
 
 export interface CrmFilters {
   search: string
-  legalArea: CaseLegalArea | null
+  legalArea: CrmLegalArea | null
   assignedTo: string | null
-  tag: CaseTag | null
+  tag: CrmTag | null
 }
 
 export const emptyCrmFilters: CrmFilters = {
@@ -36,9 +36,9 @@ export function countActiveFilters(f: CrmFilters): number {
 
 /** Applies the CRM filters (text + área + responsável + etiqueta) to a case list. */
 export function filterCases(
-  cases: CaseWithRelations[],
+  cases: CrmItemWithRelations[],
   f: CrmFilters
-): CaseWithRelations[] {
+): CrmItemWithRelations[] {
   const q = f.search.trim().toLowerCase()
 
   return cases.filter((c) => {
@@ -49,14 +49,8 @@ export function filterCases(
     if (q) {
       const haystack = [
         c.title,
-        c.cnj_number,
-        c.plaintiff,
-        c.defendant,
-        c.opposing_counsel,
-        c.court,
-        c.court_division,
         c.next_task_summary,
-        getCaseClientName(c),
+        getCrmItemClientName(c),
       ]
         .filter(Boolean)
         .join(' ')

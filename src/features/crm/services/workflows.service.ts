@@ -81,7 +81,7 @@ export async function deleteWorkflow(id: string): Promise<void> {
 
 export async function countCasesInWorkflow(workflowId: string): Promise<number> {
   const { count, error } = await supabase
-    .from('cases')
+    .from('crm_items')
     .select('id', { count: 'exact', head: true })
     .eq('workflow_id', workflowId)
   if (error) throw error
@@ -121,7 +121,7 @@ export async function deleteColumn(id: string): Promise<void> {
 
 export async function countCasesInColumn(columnId: string): Promise<number> {
   const { count, error } = await supabase
-    .from('cases')
+    .from('crm_items')
     .select('id', { count: 'exact', head: true })
     .eq('column_id', columnId)
   if (error) throw error

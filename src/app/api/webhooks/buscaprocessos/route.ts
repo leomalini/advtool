@@ -64,13 +64,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const cnj = (data['numeroCnj'] ?? data['numero']) as string | undefined
     if (!cnj) return NextResponse.json({ received: true, processed: false })
 
-    const { data: matchingCase } = await supabase
-      .from('cases')
+    const { data: matchingProcess } = await supabase
+      .from('legal_processes')
       .select('id')
       .eq('cnj_number', cnj)
       .maybeSingle()
 
-    if (!matchingCase) {
+    if (!matchingProcess) {
       return NextResponse.json({ received: true, processed: false, reason: 'case_not_found' })
     }
 
@@ -80,8 +80,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       movimentoData['titulo'] ?? movimentoData['descricao'] ?? 'Nova movimentação',
     )
 
-    await supabase.from('case_movements').insert({
-      case_id: matchingCase.id,
+    await supabase.from('legal_process_movements').insert({
+      legal_process_id: matchingProcess.id,
       movement_date: movDate,
       description: movDesc,
       source: 'busca_processos',

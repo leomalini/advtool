@@ -16,20 +16,24 @@ import {
   Construction,
   ArrowRight,
   Plus,
+  Gavel,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import type { AreaJuridica } from '@/data/mock'
-import { useWorkflows, useAllColumns } from '../hooks/useWorkflows'
-import type { CrmItemWithRelations } from '@/types/crmItem.types'
+import { useWorkflow, useAllColumns } from '@/features/crm/hooks/useWorkflows'
+import { useCrmItemColumnHistory } from '@/features/crm/hooks/useCrmItems'
 import { getCrmItemClientName } from '@/types/crmItem.types'
-import { useCrmItemColumnHistory } from '../hooks/useCrmItems'
+import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
+import { useAddLegalProcessMovement } from '../hooks/useLegalProcessMutations'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ModalTab =
   | 'resumo'
-  | 'timeline'
+  | 'identificacao'
+  | 'movimentacoes'
+  | 'etapas'
   | 'agenda'
   | 'tarefas'
   | 'documentos'
@@ -39,7 +43,9 @@ type ModalTab =
 
 const TABS: { id: ModalTab; label: string }[] = [
   { id: 'resumo', label: 'Resumo' },
-  { id: 'timeline', label: 'Timeline' },
+  { id: 'identificacao', label: 'Identificação' },
+  { id: 'movimentacoes', label: 'Movimentações' },
+  { id: 'etapas', label: 'Etapas' },
   { id: 'agenda', label: 'Agenda' },
   { id: 'tarefas', label: 'Tarefas' },
   { id: 'documentos', label: 'Documentos' },
@@ -55,6 +61,16 @@ function formatDate(dateStr: string): string {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+  })
+}
+
+function formatDateTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -97,13 +113,13 @@ function PlaceholderTab({ icon, label }: { icon: React.ReactNode; label: string 
 
 // ── Tab: Resumo ───────────────────────────────────────────────────────────────
 
-function TabResumo({ caso }: { caso: CrmItemWithRelations }) {
-  const area = caso.legal_area ? AREAS_JURIDICAS[caso.legal_area as AreaJuridica] : null
-  const { data: workflows = [] } = useWorkflows()
-  const workflow = workflows.find((w) => w.id === caso.workflow_id)
-  const coluna = workflow?.colunas.find((c) => c.id === caso.column_id)
-  const clientName = getCrmItemClientName(caso)
-  const assignedName = caso.assigned_profile?.full_name
+function TabResumo({ processo }: { processo: LegalProcessWithRelations }) {
+  const item = processo.crm_item
+  const area = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+  const workflow = useWorkflow('wf-processos')
+  const coluna = workflow?.colunas.find((c) => c.id === item.column_id)
+  const clientName = getCrmItemClientName(item)
+  const assignedName = item.assigned_profile?.full_name
 
   return (
     <div className="grid grid-cols-2 gap-6">
@@ -111,12 +127,12 @@ function TabResumo({ caso }: { caso: CrmItemWithRelations }) {
       <div className="space-y-5">
         <div>
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-            Informações do Caso
+            Informações do Processo
           </h4>
           <div className="space-y-3">
             <InfoRow label="Cliente" value={clientName} />
-            {caso.client?.phone && <InfoRow label="Telefone" value={caso.client.phone} />}
-            {caso.client?.email && <InfoRow label="E-mail" value={caso.client.email} />}
+            {item.client?.phone && <InfoRow label="Telefone" value={item.client.phone} />}
+            {item.client?.email && <InfoRow label="E-mail" value={item.client.email} />}
             {area && (
               <div>
                 <SectionLabel>Área Jurídica</SectionLabel>
@@ -127,15 +143,13 @@ function TabResumo({ caso }: { caso: CrmItemWithRelations }) {
             )}
             <InfoRow label="Advogado Responsável" value={assignedName} />
             <div>
-              <SectionLabel>Workflow / Etapa</SectionLabel>
-              <p className="text-sm text-foreground">
-                {workflow?.nome ?? '—'} <span className="text-muted-foreground">›</span> {coluna?.nome ?? '—'}
-              </p>
+              <SectionLabel>Etapa</SectionLabel>
+              <p className="text-sm text-foreground">{coluna?.nome ?? '—'}</p>
             </div>
-            {caso.notes && (
+            {item.notes && (
               <div>
                 <SectionLabel>Observações</SectionLabel>
-                <p className="text-sm text-muted-foreground leading-relaxed">{caso.notes}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.notes}</p>
               </div>
             )}
           </div>
@@ -144,23 +158,22 @@ function TabResumo({ caso }: { caso: CrmItemWithRelations }) {
 
       {/* Right */}
       <div className="space-y-5">
-        {caso.legal_process && (
-          <div>
-            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-              Processo Vinculado
-            </h4>
-            <div className="p-3 rounded-lg border border-info/30 bg-info/5 space-y-1">
-              <p className="font-mono text-xs text-foreground">
-                {caso.legal_process.cnj_number ?? 'Sem CNJ cadastrado'}
-              </p>
-              {caso.legal_process.court && (
-                <p className="text-xs text-muted-foreground">{caso.legal_process.court}</p>
-              )}
-            </div>
+        <div>
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
+            Dados Processuais
+          </h4>
+          <div className="space-y-3">
+            {processo.cnj_number ? (
+              <InfoRow label="Número CNJ" value={processo.cnj_number} />
+            ) : (
+              <p className="text-sm text-muted-foreground italic">CNJ ainda não cadastrado</p>
+            )}
+            <InfoRow label="Tribunal" value={processo.court} />
+            <InfoRow label="Vara" value={processo.court_division} />
           </div>
-        )}
+        </div>
 
-        {caso.next_deadline && (
+        {item.next_deadline && (
           <div>
             <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
               Próximo Prazo
@@ -168,7 +181,7 @@ function TabResumo({ caso }: { caso: CrmItemWithRelations }) {
             <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/25">
               <Clock className="w-4 h-4 text-warning flex-shrink-0" />
               <p className="text-sm font-medium text-warning">
-                {formatDate(caso.next_deadline)}
+                {formatDate(item.next_deadline)}
               </p>
             </div>
           </div>
@@ -178,7 +191,128 @@ function TabResumo({ caso }: { caso: CrmItemWithRelations }) {
   )
 }
 
-// ── Tab: Timeline ────────────────────────────────────────────────────────────
+// ── Tab: Identificação ────────────────────────────────────────────────────────
+
+function TabIdentificacao({ processo }: { processo: LegalProcessWithRelations }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Identificação</h4>
+          <div className="space-y-3">
+            <InfoRow label="Número CNJ" value={processo.cnj_number ?? 'Não cadastrado'} />
+            <InfoRow label="Tribunal" value={processo.court ?? 'Não definido'} />
+            <InfoRow label="Vara" value={processo.court_division ?? 'Não definida'} />
+          </div>
+        </div>
+
+        {(processo.plaintiff || processo.defendant || processo.opposing_counsel) && (
+          <div className="space-y-4">
+            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Partes</h4>
+            <div className="space-y-3">
+              <InfoRow label="Requerente" value={processo.plaintiff} />
+              <InfoRow label="Requerido" value={processo.defendant} />
+              <InfoRow label="Advogado da parte contrária" value={processo.opposing_counsel} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 rounded-xl bg-muted/40 border border-border">
+          <SectionLabel>Criado em</SectionLabel>
+          <p className="text-sm font-medium text-foreground">{formatDate(processo.created_at)}</p>
+        </div>
+        <div className="p-4 rounded-xl bg-muted/40 border border-border">
+          <SectionLabel>Última atualização</SectionLabel>
+          <p className="text-sm font-medium text-foreground">{formatDateTime(processo.updated_at)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tab: Movimentações ────────────────────────────────────────────────────────
+
+function TabMovimentacoes({ processo }: { processo: LegalProcessWithRelations }) {
+  const [description, setDescription] = useState('')
+  const [movementDate, setMovementDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const addMovement = useAddLegalProcessMovement(processo.id)
+
+  const sorted = [...processo.movements].sort(
+    (a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime()
+  )
+
+  function handleAdd() {
+    if (!description.trim()) return
+    addMovement.mutate(
+      { description: description.trim(), movementDate: new Date(movementDate).toISOString() },
+      { onSuccess: () => setDescription('') }
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
+        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+          Adicionar movimentação
+        </h4>
+        <div className="flex gap-3">
+          <input
+            type="date"
+            value={movementDate}
+            onChange={(e) => setMovementDate(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-border text-sm bg-card"
+          />
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Descrição da movimentação..."
+            className="flex-1 px-3 py-2 rounded-lg border border-border text-sm bg-card"
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!description.trim() || addMovement.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Adicionar
+          </button>
+        </div>
+      </div>
+
+      {sorted.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
+          <Activity className="w-7 h-7" />
+          <p className="text-sm">Nenhuma movimentação registrada ainda.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {sorted.map((m) => (
+            <div key={m.id} className="p-3 rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs text-muted-foreground">{formatDateTime(m.movement_date)}</p>
+                <span className={cn(
+                  'text-xs px-1.5 py-0.5 rounded font-medium',
+                  m.source === 'busca_processos'
+                    ? 'bg-info/15 text-info'
+                    : 'bg-muted text-muted-foreground'
+                )}>
+                  {m.source === 'busca_processos' ? 'BuscaProcessos' : 'Manual'}
+                </span>
+              </div>
+              <p className="text-sm text-foreground/80">{m.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Tab: Etapas ───────────────────────────────────────────────────────────────
 
 const AVATAR_COLORS = [
   'bg-violet-500',
@@ -210,21 +344,13 @@ function formatDateShort(dateStr: string): string {
   })
 }
 
-function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
-  const { data: history = [], isLoading, isError } = useCrmItemColumnHistory(caso.id)
-  const { data: workflows = [] } = useWorkflows()
+function TabEtapas({ processo }: { processo: LegalProcessWithRelations }) {
+  const { data: history = [], isLoading, isError } = useCrmItemColumnHistory(processo.crm_item.id)
   const allColumns = useAllColumns()
 
   function findColumn(id: string | null) {
     if (!id) return null
     return allColumns.find((c) => c.id === id) ?? null
-  }
-
-  function findWorkflowByColumn(columnId: string | null) {
-    if (!columnId) return null
-    const col = allColumns.find((c) => c.id === columnId)
-    if (!col) return null
-    return workflows.find((w) => w.id === col.workflow_id) ?? null
   }
 
   if (isLoading) {
@@ -249,11 +375,11 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
   if (isError || history.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
-        <Activity className="w-8 h-8" />
+        <Gavel className="w-8 h-8" />
         <div className="text-center">
-          <p className="text-sm font-medium text-muted-foreground">Nenhuma movimentação registrada</p>
+          <p className="text-sm font-medium text-muted-foreground">Nenhuma movimentação de etapa registrada</p>
           <p className="text-xs text-muted-foreground mt-1">
-            O histórico de etapas aparecerá aqui conforme o caso avança no kanban
+            O histórico de etapas aparecerá aqui conforme o processo avança
           </p>
         </div>
       </div>
@@ -275,9 +401,6 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
           const isCreation = entry.from_column_id === null || entry.from_column_id === entry.to_column_id
           const fromCol = findColumn(entry.from_column_id)
           const toCol = findColumn(entry.to_column_id)
-          const fromWf = findWorkflowByColumn(entry.from_column_id)
-          const toWf = findWorkflowByColumn(entry.to_column_id)
-          const workflowChanged = !isCreation && !!fromWf && !!toWf && fromWf.id !== toWf.id
           const userName = entry.moved_by_profile?.full_name ?? 'Sistema'
           const initials = userName
             .split(' ')
@@ -290,7 +413,6 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
 
           return (
             <div key={entry.id} className="flex gap-4">
-              {/* Dot + vertical line */}
               <div className="flex flex-col items-center flex-shrink-0">
                 <div
                   className="w-3 h-3 rounded-full mt-1.5 ring-2 ring-white shadow-sm"
@@ -299,17 +421,11 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
                 {!isLast && <div className="w-px flex-1 bg-muted mt-1 min-h-[2rem]" />}
               </div>
 
-              {/* Content */}
               <div className={cn('flex-1', isLast ? 'pb-0' : 'pb-6')}>
                 <div className="flex items-start justify-between gap-4">
-                  {/* Left: event info */}
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground leading-snug">
-                      {isCreation
-                        ? 'Caso criado'
-                        : workflowChanged
-                          ? 'Workflow alterado'
-                          : 'Etapa atualizada'}
+                      {isCreation ? 'Processo criado' : 'Etapa atualizada'}
                     </p>
 
                     {isCreation ? (
@@ -317,25 +433,9 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
                         <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                         <span className="text-xs text-muted-foreground">
                           Adicionado em{' '}
-                          <span
-                            className="font-semibold"
-                            style={{ color: toCol?.cor ?? '#71717a' }}
-                          >
+                          <span className="font-semibold" style={{ color: toCol?.cor ?? '#71717a' }}>
                             {toCol?.nome ?? '—'}
                           </span>
-                        </span>
-                      </div>
-                    ) : workflowChanged ? (
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <span className="text-xs text-muted-foreground font-medium">
-                          {fromWf?.nome ?? '—'} · {fromCol?.nome ?? '—'}
-                        </span>
-                        <ArrowRight className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color: toCol?.cor ?? '#71717a' }}
-                        >
-                          {toWf?.nome ?? '—'} · {toCol?.nome ?? '—'}
                         </span>
                       </div>
                     ) : (
@@ -344,29 +444,12 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
                           {fromCol?.nome ?? '—'}
                         </span>
                         <ArrowRight className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color: toCol?.cor ?? '#71717a' }}
-                        >
+                        <span className="text-xs font-semibold" style={{ color: toCol?.cor ?? '#71717a' }}>
                           {toCol?.nome ?? '—'}
                         </span>
                       </div>
                     )}
 
-                    {/* Workflow context — mostra a qual workflow esta etapa pertence */}
-                    {!workflowChanged && toWf && (
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <span
-                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: toWf.cor }}
-                        />
-                        <span className="text-[11px] text-muted-foreground">
-                          {toWf.nome}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* User */}
                     <div className="flex items-center gap-1.5 mt-2">
                       <div
                         className={cn(
@@ -380,7 +463,6 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
                     </div>
                   </div>
 
-                  {/* Right: date + time */}
                   <div className="flex-shrink-0 text-right">
                     <p className="text-xs font-medium text-muted-foreground">
                       {formatDateShort(entry.moved_at)}
@@ -401,13 +483,13 @@ function TabTimeline({ caso }: { caso: CrmItemWithRelations }) {
 
 // ── Tab: Cliente ──────────────────────────────────────────────────────────────
 
-function TabCliente({ caso }: { caso: CrmItemWithRelations }) {
-  const client = caso.client
+function TabCliente({ processo }: { processo: LegalProcessWithRelations }) {
+  const client = processo.crm_item.client
   if (!client) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
         <Building2 className="w-8 h-8 mb-2" />
-        <p className="text-sm">Nenhum cliente vinculado a este caso</p>
+        <p className="text-sm">Nenhum cliente vinculado a este processo</p>
       </div>
     )
   }
@@ -421,7 +503,6 @@ function TabCliente({ caso }: { caso: CrmItemWithRelations }) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/40 border border-border">
         <div className="w-12 h-12 rounded-full bg-violet-500 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
           {displayName
@@ -474,22 +555,20 @@ function TabCliente({ caso }: { caso: CrmItemWithRelations }) {
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
 
-interface CasoModalProps {
-  caso: CrmItemWithRelations
+interface ProcessoModalProps {
+  processo: LegalProcessWithRelations
   open: boolean
   onClose: () => void
   onEdit?: () => void
 }
 
-export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
+export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTab>('resumo')
-  const { data: workflows = [] } = useWorkflows()
+  const item = processo.crm_item
 
-  const area = caso.legal_area ? AREAS_JURIDICAS[caso.legal_area as AreaJuridica] : null
-  const workflow = workflows.find((w) => w.id === caso.workflow_id)
-  const coluna = workflow?.colunas.find((c) => c.id === caso.column_id)
-  const clientName = getCrmItemClientName(caso)
-  const assignedName = caso.assigned_profile?.full_name ?? ''
+  const area = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+  const clientName = getCrmItemClientName(item)
+  const assignedName = item.assigned_profile?.full_name ?? ''
 
   const advInitials = assignedName
     .split(' ')
@@ -513,20 +592,20 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
         {/* ── Modal Header ── */}
         <div className="flex-shrink-0 px-6 pt-5 pb-0 border-b border-border">
           <div className="flex items-start justify-between gap-4 mb-4">
-            {/* Left: Title block */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1 text-xs text-muted-foreground">
-                <span>{workflow?.nome}</span>
-                <span>›</span>
-                <span
-                  className="w-2 h-2 rounded-full inline-block"
-                  style={{ backgroundColor: coluna?.cor }}
-                />
-                <span>{coluna?.nome}</span>
+                <Gavel className="w-3 h-3" />
+                <span>Processo</span>
+                {processo.cnj_number && (
+                  <>
+                    <span>›</span>
+                    <span className="font-mono">{processo.cnj_number}</span>
+                  </>
+                )}
               </div>
               <h2 className="text-xl font-bold text-foreground truncate">{clientName}</h2>
-              {caso.title && caso.title !== clientName && (
-                <p className="text-sm text-muted-foreground truncate">{caso.title}</p>
+              {item.title && item.title !== clientName && (
+                <p className="text-sm text-muted-foreground truncate">{item.title}</p>
               )}
               <div className="flex items-center gap-3 mt-2">
                 {area && (
@@ -545,7 +624,6 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
               </div>
             </div>
 
-            {/* Right: Actions + Close */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {onEdit && (
                 <button
@@ -585,9 +663,11 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
 
         {/* ── Modal Body ── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {activeTab === 'resumo' && <TabResumo caso={caso} />}
-          {activeTab === 'cliente' && <TabCliente caso={caso} />}
-          {activeTab === 'timeline' && <TabTimeline caso={caso} />}
+          {activeTab === 'resumo' && <TabResumo processo={processo} />}
+          {activeTab === 'identificacao' && <TabIdentificacao processo={processo} />}
+          {activeTab === 'movimentacoes' && <TabMovimentacoes processo={processo} />}
+          {activeTab === 'etapas' && <TabEtapas processo={processo} />}
+          {activeTab === 'cliente' && <TabCliente processo={processo} />}
           {activeTab === 'agenda' && (
             <PlaceholderTab icon={<Calendar className="w-8 h-8" />} label="Agenda" />
           )}

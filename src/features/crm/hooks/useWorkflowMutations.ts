@@ -14,13 +14,13 @@ import {
   type WorkflowColumnInput,
 } from '../services/workflows.service'
 import { workflowKeys } from './useWorkflows'
-import { caseKeys } from './useCases'
+import { crmItemKeys } from './useCrmItems'
 
 function useInvalidateWorkflows() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: workflowKeys.all })
-    queryClient.invalidateQueries({ queryKey: caseKeys.counts() })
+    queryClient.invalidateQueries({ queryKey: crmItemKeys.counts() })
   }
 }
 

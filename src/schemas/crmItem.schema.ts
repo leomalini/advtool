@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const CASE_LEGAL_AREAS = [
+export const CRM_LEGAL_AREAS = [
   'trabalhista',
   'civel',
   'familia',
@@ -10,7 +10,7 @@ export const CASE_LEGAL_AREAS = [
   'consumidor',
 ] as const
 
-export const CASE_TAGS = [
+export const CRM_TAGS = [
   'urgente',
   'prazo-fatal',
   'audiencia',
@@ -21,26 +21,21 @@ export const CASE_TAGS = [
   'novo',
 ] as const
 
-export type CaseLegalArea = (typeof CASE_LEGAL_AREAS)[number]
-export type CaseTag = (typeof CASE_TAGS)[number]
+export type CrmLegalArea = (typeof CRM_LEGAL_AREAS)[number]
+export type CrmTag = (typeof CRM_TAGS)[number]
 
-export const caseSchema = z.object({
+export const crmItemSchema = z.object({
   title: z.string().min(1, 'Informe o título do caso').max(200),
   client_id: z.string().uuid('ID de cliente inválido').optional().nullable(),
-  cnj_number: z.string().max(25).optional().nullable(),
-  court: z.string().max(200).optional().nullable(),
-  court_division: z.string().max(200).optional().nullable(),
-  legal_area: z.enum(CASE_LEGAL_AREAS).optional().nullable(),
+  legal_area: z.enum(CRM_LEGAL_AREAS).optional().nullable(),
   workflow_id: z.string().min(1, 'Selecione um workflow'),
   column_id: z.string().min(1, 'Selecione uma etapa'),
   assigned_to: z.string().uuid().optional().nullable(),
-  tags: z.array(z.enum(CASE_TAGS)),
+  tags: z.array(z.enum(CRM_TAGS)),
   next_deadline: z.string().min(1, 'Informe o próximo prazo'),
   next_task_summary: z.string().max(300).optional().nullable(),
-  plaintiff: z.string().max(200).optional().nullable(),
-  defendant: z.string().max(200).optional().nullable(),
-  opposing_counsel: z.string().max(200).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  legal_process_id: z.string().uuid().optional().nullable(),
 })
 
-export type CaseInput = z.infer<typeof caseSchema>
+export type CrmItemInput = z.infer<typeof crmItemSchema>

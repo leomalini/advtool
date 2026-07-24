@@ -17,13 +17,13 @@ import { SortableContext } from '@dnd-kit/sortable'
 import { CrmKanbanColumn } from './CrmKanbanColumn'
 import { CasoCard } from './CasoCard'
 import { useCrmUiStore } from '../stores/casos.store'
-import { useCases, caseKeys } from '../hooks/useCases'
-import { useOptimisticMoveCase } from '../hooks/useCaseMutations'
-import { insertColumnHistory } from '../services/cases.service'
+import { useCrmItems, crmItemKeys } from '../hooks/useCrmItems'
+import { useOptimisticMoveCrmItem } from '../hooks/useCrmItemMutations'
+import { insertColumnHistory } from '../services/crmItems.service'
 import { useAuth } from '@/hooks/useAuth'
 import { filterCases, emptyCrmFilters, type CrmFilters } from '../utils/filterCases'
 import type { Workflow } from '@/types/workflow.types'
-import type { CaseWithRelations } from '@/types/case.types'
+import type { CrmItemWithRelations } from '@/types/crmItem.types'
 
 interface CrmKanbanBoardProps {
   workflow: Workflow
@@ -35,8 +35,8 @@ export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanba
   const openCreateModal = useCrmUiStore((s) => s.openCreateModal)
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const { data: cases = [], isLoading } = useCases(workflow.id)
-  const moveCase = useOptimisticMoveCase(workflow.id)
+  const { data: cases = [], isLoading } = useCrmItems(workflow.id)
+  const moveCase = useOptimisticMoveCrmItem(workflow.id)
 
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null)
 
@@ -51,13 +51,13 @@ export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanba
   )
 
   const columnIds = workflow.colunas.map((c) => c.id)
-  const queryKey = caseKeys.workflow(workflow.id)
+  const queryKey = crmItemKeys.workflow(workflow.id)
 
   // Apply the CRM search filters to what's shown on the board (drag logic below
   // still reads the full cache, so moving filtered cards keeps working).
   const visibleCases = filterCases(cases, filters)
 
-  function getCasesByColumn(columnId: string): CaseWithRelations[] {
+  function getCasesByColumn(columnId: string): CrmItemWithRelations[] {
     return visibleCases
       .filter((c) => c.column_id === columnId)
       .sort((a, b) => a.position - b.position)
@@ -71,7 +71,7 @@ export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanba
     const id = String(event.active.id)
     setActiveCaseId(id)
     // Read from cache (not from `cases` closure) to avoid stale data.
-    const cached = queryClient.getQueryData<CaseWithRelations[]>(queryKey) ?? []
+    const cached = queryClient.getQueryData<CrmItemWithRelations[]>(queryKey) ?? []
     dragStartColumnRef.current = cached.find((c) => c.id === id)?.column_id ?? null
   }
 
@@ -101,8 +101,8 @@ export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanba
   }
 
   // dragEnd does NOT send another PATCH — the DB is already updated by dragOver.
-  // Its only job is to record the move in case_column_history by comparing the
-  // original column (captured at dragStart) with the final column (from cache).
+  // Its only job is to record the move in crm_item_column_history by comparing
+  // the original column (captured at dragStart) with the final column (from cache).
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     setActiveCaseId(null)
@@ -118,7 +118,7 @@ export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanba
 
     // Read final column from cache — onMutate in useOptimisticMoveCase has already
     // applied the optimistic update, so this reflects the last dragOver destination.
-    const cached = queryClient.getQueryData<CaseWithRelations[]>(queryKey) ?? []
+    const cached = queryClient.getQueryData<CrmItemWithRelations[]>(queryKey) ?? []
     const finalCase = cached.find((c) => c.id === activeId)
     if (!finalCase) return
 
@@ -127,7 +127,7 @@ export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanba
 
     // Fire the POST directly — no need for another mutation lifecycle.
     insertColumnHistory(activeId, fromColumnId, toColumnId, user.id).then(() => {
-      queryClient.invalidateQueries({ queryKey: caseKeys.columnHistory(activeId) })
+      queryClient.invalidateQueries({ queryKey: crmItemKeys.columnHistory(activeId) })
     })
   }
 

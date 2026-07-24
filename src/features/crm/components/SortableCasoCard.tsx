@@ -3,10 +3,10 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { CasoCard } from './CasoCard'
-import type { CaseWithRelations } from '@/types/case.types'
+import type { CrmItemWithRelations } from '@/types/crmItem.types'
 
 interface SortableCasoCardProps {
-  caso: CaseWithRelations
+  caso: CrmItemWithRelations
   onClick: () => void
 }
 

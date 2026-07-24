@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2, FileText, SlidersHorizontal, Gavel } from 'lucide-react'
+import { Loader2, Search, FileText, SlidersHorizontal } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -19,14 +20,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { crmItemSchema, CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
-import type { CrmItemInput, CrmTag, CrmLegalArea } from '@/schemas/crmItem.schema'
-import type { CrmItemWithRelations } from '@/types/crmItem.types'
+import { legalProcessSchema } from '@/schemas/legalProcess.schema'
+import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
+import { CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
+import type { CrmTag } from '@/schemas/crmItem.schema'
+import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
-import { useWorkflows } from '../hooks/useWorkflows'
+import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
 import { useClientes } from '@/features/clientes/hooks/useClientes'
 import { useProfiles } from '@/hooks/useProfiles'
-import { VincularProcessoField } from './VincularProcessoField'
+import { formatCnjNumber } from '@/utils/cnj'
+import { findLegalProcessByCnj } from '../services/legalProcesses.service'
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -92,11 +96,6 @@ function SectionDivider({ icon: Icon, children }: { icon: React.ElementType; chi
   )
 }
 
-// ── Color-dot trigger helper ──────────────────────────────────────────────────
-// SelectValue can't reliably extract text from complex JSX children in
-// controlled mode — it shows the raw value string. Render the label directly
-// and fall back to SelectValue only when nothing is selected.
-
 function ColorDotTriggerValue({
   color,
   label,
@@ -114,8 +113,6 @@ function ColorDotTriggerValue({
     </span>
   )
 }
-
-// ── Tag toggle ────────────────────────────────────────────────────────────────
 
 function TagToggle({
   tags,
@@ -157,27 +154,28 @@ function TagToggle({
 
 // ── Main form ─────────────────────────────────────────────────────────────────
 
-interface CasoFormProps {
+interface ProcessoFormProps {
   open: boolean
   onClose: () => void
-  onSuccess?: () => void
-  defaultValues?: Partial<CrmItemInput>
-  editingCase?: CrmItemWithRelations | null
+  defaultValues?: Partial<LegalProcessInput>
+  editingProcess?: LegalProcessWithRelations | null
   isLoading?: boolean
-  onSubmit: (data: CrmItemInput) => void
+  onSubmit: (data: LegalProcessInput) => void
 }
 
-export function CasoForm({
+export function ProcessoForm({
   open,
   onClose,
-  editingCase,
+  editingProcess,
   isLoading = false,
   onSubmit,
   defaultValues,
-}: CasoFormProps) {
-  const isEditing = !!editingCase
+}: ProcessoFormProps) {
+  const isEditing = !!editingProcess
+  const [lookingUpCnj, setLookingUpCnj] = useState(false)
+  const lastFetchedCnjRef = useRef<string | null>(null)
 
-  const { data: workflows = [] } = useWorkflows()
+  const workflow = useWorkflow('wf-processos')
   const { data: clients = [] } = useClientes()
   const { data: profiles = [] } = useProfiles()
 
@@ -189,63 +187,113 @@ export function CasoForm({
     setValue,
     reset,
     formState: { errors },
-  } = useForm<CrmItemInput>({
+  } = useForm<LegalProcessInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(crmItemSchema) as any,
+    resolver: zodResolver(legalProcessSchema) as any,
     defaultValues: defaultValues ?? {
-      workflow_id: 'wf-negociacao',
-      column_id: 'neg-1',
+      column_id: workflow?.colunas[0]?.id ?? '',
       tags: [] as CrmTag[],
     },
   })
 
   useEffect(() => {
     if (open) {
-      if (editingCase) {
+      if (editingProcess) {
+        const item = editingProcess.crm_item
+        lastFetchedCnjRef.current = editingProcess.cnj_number ?? null
         reset({
-          title: editingCase.title ?? undefined,
-          client_id: editingCase.client_id ?? undefined,
-          legal_area: (editingCase.legal_area as CrmItemInput['legal_area']) ?? undefined,
-          workflow_id: editingCase.workflow_id,
-          column_id: editingCase.column_id,
-          assigned_to: editingCase.assigned_to ?? undefined,
-          tags: (editingCase.tags as CrmTag[]) ?? [],
-          next_deadline: editingCase.next_deadline ?? undefined,
-          next_task_summary: editingCase.next_task_summary ?? undefined,
-          notes: editingCase.notes ?? undefined,
-          legal_process_id: editingCase.legal_process_id ?? undefined,
+          title: item.title ?? undefined,
+          client_id: item.client_id ?? undefined,
+          legal_area: (item.legal_area as LegalProcessInput['legal_area']) ?? undefined,
+          column_id: item.column_id,
+          assigned_to: item.assigned_to ?? undefined,
+          tags: (item.tags as CrmTag[]) ?? [],
+          next_deadline: item.next_deadline ?? undefined,
+          next_task_summary: item.next_task_summary ?? undefined,
+          notes: item.notes ?? undefined,
+          cnj_number: editingProcess.cnj_number ?? undefined,
+          court: editingProcess.court ?? undefined,
+          court_division: editingProcess.court_division ?? undefined,
+          plaintiff: editingProcess.plaintiff ?? undefined,
+          defendant: editingProcess.defendant ?? undefined,
+          opposing_counsel: editingProcess.opposing_counsel ?? undefined,
         })
       } else {
+        lastFetchedCnjRef.current = null
         reset(
           defaultValues ?? {
-            workflow_id: 'wf-negociacao',
-            column_id: 'neg-1',
+            column_id: workflow?.colunas[0]?.id ?? '',
             tags: [] as CrmTag[],
           },
         )
       }
     }
-  }, [open, editingCase, defaultValues, reset])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingProcess, defaultValues, reset])
 
-  const watchedWorkflowId = watch('workflow_id')
-  const watchedColumnId = watch('column_id')
-  const watchedClientId = watch('client_id')
-  const watchedLegalArea = watch('legal_area')
-  const watchedAssignedTo = watch('assigned_to')
+  const watchedCnjNumber = watch('cnj_number')
 
-  // Reset the etapa to the workflow's first column ONLY when the current column
-  // doesn't belong to the selected workflow (i.e. the user switched workflows).
-  // When editing an existing case, its column already belongs to the workflow,
-  // so we must NOT overwrite it — that was resetting the select to the 1st etapa.
+  // Auto-lookup: fires 600ms after the user stops typing a complete CNJ (20 digits)
   useEffect(() => {
-    const wf = workflows.find((w) => w.id === watchedWorkflowId)
-    if (!wf) return
-    const columnBelongs = wf.colunas.some((c) => c.id === watchedColumnId)
-    if (!columnBelongs) {
-      const firstCol = wf.colunas[0] // já ordenado pelo service
-      if (firstCol) setValue('column_id', firstCol.id)
+    const cnj = watchedCnjNumber?.trim() ?? ''
+    const digits = cnj.replace(/\D/g, '')
+
+    if (digits.length !== 20) return
+    if (cnj === lastFetchedCnjRef.current) return
+
+    const controller = new AbortController()
+
+    const timeout = setTimeout(async () => {
+      lastFetchedCnjRef.current = cnj
+      setLookingUpCnj(true)
+      try {
+        // Check our own database first — avoids an unnecessary BuscaProcessos
+        // call when this processo is already tracked.
+        const existing = await findLegalProcessByCnj(cnj)
+        if (controller.signal.aborted) return
+
+        if (existing) {
+          setValue('court', existing.court ?? '')
+          setValue('court_division', existing.court_division ?? '')
+          setValue('plaintiff', existing.plaintiff ?? '')
+          setValue('defendant', existing.defendant ?? '')
+          setValue('opposing_counsel', existing.opposing_counsel ?? '')
+          toast.info('Este CNJ já está cadastrado — dados preenchidos a partir do registro existente.')
+          return
+        }
+
+        const res = await fetch(
+          `/api/buscaprocessos/processos/${encodeURIComponent(cnj)}`,
+          { signal: controller.signal },
+        )
+        if (controller.signal.aborted) return
+
+        const json = await res.json()
+
+        if (!res.ok) {
+          toast.error(json.error ?? 'Processo não encontrado.')
+          return
+        }
+
+        if (json.cnj_number) setValue('cnj_number', json.cnj_number)
+        if (json.court) setValue('court', json.court)
+        if (json.court_division) setValue('court_division', json.court_division)
+        if (json.plaintiff) setValue('plaintiff', json.plaintiff)
+        if (json.defendant) setValue('defendant', json.defendant)
+        toast.success('Dados do processo preenchidos automaticamente.')
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        toast.error('Erro ao consultar processo.')
+      } finally {
+        if (!controller.signal.aborted) setLookingUpCnj(false)
+      }
+    }, 600)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
     }
-  }, [watchedWorkflowId, watchedColumnId, setValue, workflows])
+  }, [watchedCnjNumber, setValue])
 
   function getClientDisplayName(client: (typeof clients)[number]): string {
     if (client.type === 'individual') return client.name ?? '(sem nome)'
@@ -254,15 +302,11 @@ export function CasoForm({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleFormSubmit(data: any) {
-    onSubmit(data as CrmItemInput)
+    onSubmit(data as LegalProcessInput)
   }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      {/*
-        sm:max-w-5xl overrides the base sm:max-w-sm from DialogContent.
-        p-0 gap-0 removes default padding/gap so we control layout internally.
-      */}
       <DialogContent
         showCloseButton={false}
         className="sm:max-w-5xl max-h-[90vh] overflow-hidden p-0 gap-0"
@@ -274,7 +318,7 @@ export function CasoForm({
           {/* ── Header ────────────────────────────────────────────────────── */}
           <DialogHeader className="flex-row items-center justify-between px-6 py-4 border-b border-border flex-shrink-0 gap-0">
             <DialogTitle className="text-sm font-semibold text-foreground">
-              {isEditing ? 'Editar Caso' : 'Novo Caso'}
+              {isEditing ? 'Editar Processo' : 'Novo Processo'}
             </DialogTitle>
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isLoading}>
@@ -282,7 +326,7 @@ export function CasoForm({
               </Button>
               <Button type="submit" size="sm" disabled={isLoading}>
                 {isLoading && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
-                {isEditing ? 'Salvar alterações' : 'Cadastrar caso'}
+                {isEditing ? 'Salvar alterações' : 'Cadastrar processo'}
               </Button>
             </div>
           </DialogHeader>
@@ -294,55 +338,16 @@ export function CasoForm({
             <aside className="w-72 flex-shrink-0 border-r border-border overflow-y-auto bg-muted/40">
               <div className="p-5 space-y-5">
 
-                {/* Workflow */}
-                <div>
-                  <SidebarLabel required>Workflow</SidebarLabel>
-                  <Controller
-                    name="workflow_id"
-                    control={control}
-                    render={({ field }) => {
-                      const wf = workflows.find((w) => w.id === field.value)
-                      return (
-                        <Select value={field.value} onValueChange={(v) => { if (v) field.onChange(v) }}>
-                          <SelectTrigger className="w-full text-sm bg-card">
-                            <ColorDotTriggerValue
-                              color={wf?.cor}
-                              label={wf?.nome}
-                              placeholder="Selecionar..."
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {workflows.map((w) => (
-                              <SelectItem key={w.id} value={w.id}>
-                                <span className="flex items-center gap-2">
-                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: w.cor }} />
-                                  {w.nome}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )
-                    }}
-                  />
-                  <FieldError message={errors.workflow_id?.message} />
-                </div>
-
-                {/* Etapa */}
+                {/* Etapa (workflow fixo: Processos) */}
                 <div>
                   <SidebarLabel required>Etapa</SidebarLabel>
                   <Controller
                     name="column_id"
                     control={control}
                     render={({ field }) => {
-                      const wf = workflows.find((w) => w.id === watchedWorkflowId)
-                      const col = wf?.colunas.find((c) => c.id === field.value)
+                      const col = workflow?.colunas.find((c) => c.id === field.value)
                       return (
-                        <Select
-                          value={field.value}
-                          onValueChange={(v) => { if (v) field.onChange(v) }}
-                          disabled={!watchedWorkflowId}
-                        >
+                        <Select value={field.value} onValueChange={(v) => { if (v) field.onChange(v) }}>
                           <SelectTrigger className="w-full text-sm bg-card">
                             <ColorDotTriggerValue
                               color={col?.cor}
@@ -351,7 +356,7 @@ export function CasoForm({
                             />
                           </SelectTrigger>
                           <SelectContent>
-                            {wf?.colunas
+                            {workflow?.colunas
                               .slice()
                               .sort((a, b) => a.posicao - b.posicao)
                               .map((c) => (
@@ -471,7 +476,7 @@ export function CasoForm({
               </div>
             </aside>
 
-            {/* ── RIGHT MAIN — dados do caso ──────────────────────────────── */}
+            {/* ── RIGHT MAIN — dados do processo ──────────────────────────── */}
             <main className="flex-1 overflow-y-auto">
               <div className="p-6 space-y-8">
 
@@ -512,7 +517,7 @@ export function CasoForm({
 
                     {/* Título */}
                     <div>
-                      <FieldLabel required>Título do Caso</FieldLabel>
+                      <FieldLabel>Título do Processo</FieldLabel>
                       <Input
                         {...register('title')}
                         placeholder="Ex: Reclamação Trabalhista — João Silva vs Empresa XYZ"
@@ -522,24 +527,67 @@ export function CasoForm({
                   </div>
                 </section>
 
-                {/* ── Processo Vinculado ────────────────────────────────── */}
+                {/* ── Processo Judicial ─────────────────────────────────── */}
                 <section>
-                  <SectionDivider icon={Gavel}>Processo Vinculado</SectionDivider>
-                  <Controller
-                    name="legal_process_id"
-                    control={control}
-                    render={({ field }) => (
-                      <VincularProcessoField
-                        value={field.value ?? null}
-                        onChange={field.onChange}
-                        defaults={{
-                          client_id: watchedClientId,
-                          legal_area: watchedLegalArea as CrmLegalArea | null,
-                          assigned_to: watchedAssignedTo,
-                        }}
-                      />
-                    )}
-                  />
+                  <SectionDivider icon={Search}>Processo Judicial</SectionDivider>
+
+                  <div className="space-y-4">
+                    {/* CNJ Number */}
+                    <div>
+                      <FieldLabel required>Número CNJ</FieldLabel>
+                      <div className="relative">
+                        <Controller
+                          name="cnj_number"
+                          control={control}
+                          render={({ field }) => (
+                            <Input
+                              {...field}
+                              value={field.value ?? ''}
+                              onChange={(e) => field.onChange(formatCnjNumber(e.target.value))}
+                              placeholder="0000000-00.0000.0.00.0000"
+                              className={cn('font-mono pr-9', lookingUpCnj && 'text-muted-foreground')}
+                              inputMode="numeric"
+                            />
+                          )}
+                        />
+                        {lookingUpCnj
+                          ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                          : <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />}
+                      </div>
+                      <FieldError message={errors.cnj_number?.message} />
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Ao digitar o número completo, os dados do processo são preenchidos automaticamente.
+                      </p>
+                    </div>
+
+                    {/* Tribunal + Vara */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <FieldLabel>Tribunal</FieldLabel>
+                        <Input {...register('court')} placeholder="Ex: TJSP" />
+                      </div>
+                      <div className="col-span-2">
+                        <FieldLabel>Vara / Câmara</FieldLabel>
+                        <Input {...register('court_division')} placeholder="Ex: 3ª Vara do Trabalho de São Paulo" />
+                      </div>
+                    </div>
+
+                    {/* Partes */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <FieldLabel>Requerente / Autor</FieldLabel>
+                        <Input {...register('plaintiff')} placeholder="Nome do requerente" />
+                      </div>
+                      <div>
+                        <FieldLabel>Requerido / Réu</FieldLabel>
+                        <Input {...register('defendant')} placeholder="Nome do requerido" />
+                      </div>
+                      <div>
+                        <FieldLabel>Adv. da Parte Contrária</FieldLabel>
+                        <Input {...register('opposing_counsel')} placeholder="Nome do advogado" />
+                      </div>
+                    </div>
+                  </div>
                 </section>
 
                 {/* ── Observações ───────────────────────────────────────── */}
@@ -548,7 +596,7 @@ export function CasoForm({
                   <Textarea
                     {...register('notes')}
                     rows={5}
-                    placeholder="Informações relevantes sobre o caso, estratégia, pontos de atenção..."
+                    placeholder="Informações relevantes sobre o processo, estratégia, pontos de atenção..."
                   />
                   <FieldError message={errors.notes?.message} />
                 </section>

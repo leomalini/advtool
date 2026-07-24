@@ -12,8 +12,8 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
-import { CASE_LEGAL_AREAS, CASE_TAGS } from '@/schemas/case.schema'
-import type { CaseLegalArea, CaseTag } from '@/schemas/case.schema'
+import { CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
+import type { CrmLegalArea, CrmTag } from '@/schemas/crmItem.schema'
 import { useProfiles } from '@/hooks/useProfiles'
 import { hasActiveFilters, countActiveFilters, type CrmFilters } from '../utils/filterCases'
 
@@ -60,18 +60,18 @@ export function CrmFilterBar({ filters, onChange, resultCount }: CrmFilterBarPro
       {/* Área jurídica */}
       <Select
         value={filters.legalArea ?? ALL}
-        onValueChange={(v) => set('legalArea', v === ALL ? null : (v as CaseLegalArea))}
+        onValueChange={(v) => set('legalArea', v === ALL ? null : (v as CrmLegalArea))}
       >
         <SelectTrigger className="h-9 w-[150px] text-sm">
           <SelectValue>
             {(v: string) =>
-              !v || v === ALL ? 'Todas as áreas' : AREAS_JURIDICAS[v as CaseLegalArea]?.label
+              !v || v === ALL ? 'Todas as áreas' : AREAS_JURIDICAS[v as CrmLegalArea]?.label
             }
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Todas as áreas</SelectItem>
-          {CASE_LEGAL_AREAS.map((a) => (
+          {CRM_LEGAL_AREAS.map((a) => (
             <SelectItem key={a} value={a}>
               {AREAS_JURIDICAS[a].label}
             </SelectItem>
@@ -106,18 +106,18 @@ export function CrmFilterBar({ filters, onChange, resultCount }: CrmFilterBarPro
       {/* Etiqueta */}
       <Select
         value={filters.tag ?? ALL}
-        onValueChange={(v) => set('tag', v === ALL ? null : (v as CaseTag))}
+        onValueChange={(v) => set('tag', v === ALL ? null : (v as CrmTag))}
       >
         <SelectTrigger className="h-9 w-[150px] text-sm">
           <SelectValue>
             {(v: string) =>
-              !v || v === ALL ? 'Todas etiquetas' : ETIQUETAS[v as CaseTag]?.label
+              !v || v === ALL ? 'Todas etiquetas' : ETIQUETAS[v as CrmTag]?.label
             }
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Todas etiquetas</SelectItem>
-          {CASE_TAGS.map((t) => (
+          {CRM_TAGS.map((t) => (
             <SelectItem key={t} value={t}>
               {ETIQUETAS[t].label}
             </SelectItem>

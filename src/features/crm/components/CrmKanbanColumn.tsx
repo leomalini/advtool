@@ -5,13 +5,13 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WorkflowColumn } from '@/types/workflow.types'
-import type { CaseWithRelations } from '@/types/case.types'
+import type { CrmItemWithRelations } from '@/types/crmItem.types'
 import { SortableCasoCard } from './SortableCasoCard'
 
 interface CrmKanbanColumnProps {
   coluna: WorkflowColumn
-  cases: CaseWithRelations[]
-  onCardClick: (caso: CaseWithRelations) => void
+  cases: CrmItemWithRelations[]
+  onCardClick: (caso: CrmItemWithRelations) => void
   onAddCase: () => void
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProcessoByCnj, BpApiError } from '@/lib/buscaprocessos/client'
 import type { BpParte, BpMovimento } from '@/lib/buscaprocessos/types'
-import type { CnjLookupResult } from '@/types/case.types'
+import type { CnjLookupResult } from '@/types/legalProcess.types'
 
 function extractParty(partes: BpParte[], polo: 'ativo' | 'passivo'): string | null {
   return partes.find((p) => p.polo === polo)?.nome ?? null

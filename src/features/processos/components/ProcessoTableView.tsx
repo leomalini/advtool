@@ -23,14 +23,15 @@ import {
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { useProfiles } from '@/hooks/useProfiles'
-import { useBulkUpdateCrmItems, useBulkDeleteCrmItems } from '../hooks/useCrmItemMutations'
-import { formatPrazo, formatRelativeDate } from '../utils/prazo'
-import type { CrmItemWithRelations } from '@/types/crmItem.types'
+import { useBulkUpdateCrmItems } from '@/features/crm/hooks/useCrmItemMutations'
+import { useDeleteLegalProcess } from '../hooks/useLegalProcessMutations'
+import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { getCrmItemClientName } from '@/types/crmItem.types'
+import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import type { Workflow } from '@/types/workflow.types'
 
 const GRID_COLS =
-  '38px minmax(210px,1.6fr) 108px 158px 148px 118px minmax(150px,1fr) 84px 38px'
+  '38px minmax(210px,1.6fr) 150px 108px 158px 148px minmax(150px,1fr) 84px 38px'
 
 function getInitials(name: string): string {
   return name
@@ -42,37 +43,39 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-interface CrmTableViewProps {
+interface ProcessoTableViewProps {
   workflow: Workflow
-  cases: CrmItemWithRelations[]
-  onRowClick: (caso: CrmItemWithRelations) => void
+  processos: LegalProcessWithRelations[]
+  onRowClick: (processo: LegalProcessWithRelations) => void
 }
 
-export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps) {
+export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoTableViewProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
 
   const { data: profiles = [] } = useProfiles()
   const bulkUpdate = useBulkUpdateCrmItems(workflow.id)
-  const bulkDelete = useBulkDeleteCrmItems(workflow.id)
+  const deleteProcess = useDeleteLegalProcess()
 
-  const sortedCases = useMemo(() => {
-    if (!sortDir) return cases
-    return [...cases].sort((a, b) => {
-      const aTime = a.next_deadline ? new Date(a.next_deadline).getTime() : Infinity
-      const bTime = b.next_deadline ? new Date(b.next_deadline).getTime() : Infinity
+  const sorted = useMemo(() => {
+    if (!sortDir) return processos
+    return [...processos].sort((a, b) => {
+      const aDeadline = a.crm_item.next_deadline
+      const bDeadline = b.crm_item.next_deadline
+      const aTime = aDeadline ? new Date(aDeadline).getTime() : Infinity
+      const bTime = bDeadline ? new Date(bDeadline).getTime() : Infinity
       return sortDir === 'asc' ? aTime - bTime : bTime - aTime
     })
-  }, [cases, sortDir])
+  }, [processos, sortDir])
 
-  const allVisibleSelected = sortedCases.length > 0 && sortedCases.every((c) => selected.has(c.id))
+  const allVisibleSelected = sorted.length > 0 && sorted.every((p) => selected.has(p.crm_item.id))
   const selectedIds = Array.from(selected)
 
   function toggleAll() {
     if (allVisibleSelected) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(sortedCases.map((c) => c.id)))
+      setSelected(new Set(sorted.map((p) => p.crm_item.id)))
     }
   }
 
@@ -104,7 +107,7 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
   }
 
   function handleAddTag(tagId: EtiquetaId) {
-    const byId = new Map(cases.map((c) => [c.id, c]))
+    const byId = new Map(processos.map((p) => [p.crm_item.id, p.crm_item]))
     bulkUpdate.mutate(
       {
         ids: selectedIds,
@@ -118,14 +121,21 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
     )
   }
 
+  const crmItemIdToProcessoId = new Map(processos.map((p) => [p.crm_item.id, p.id]))
+
   function handleDelete() {
-    if (!confirm(`Excluir ${selectedIds.length} caso(s)? Esta ação não pode ser desfeita.`)) return
-    bulkDelete.mutate(selectedIds, { onSuccess: clearSelection })
+    if (!confirm(`Excluir ${selectedIds.length} processo(s)? Esta ação não pode ser desfeita.`)) return
+    Promise.all(
+      selectedIds
+        .map((crmItemId) => crmItemIdToProcessoId.get(crmItemId))
+        .filter((id): id is string => !!id)
+        .map((processoId) => deleteProcess.mutateAsync(processoId))
+    ).then(clearSelection)
   }
 
-  function handleDeleteOne(id: string) {
-    if (!confirm('Excluir este caso? Esta ação não pode ser desfeita.')) return
-    bulkDelete.mutate([id])
+  function handleDeleteOne(processoId: string) {
+    if (!confirm('Excluir este processo? Esta ação não pode ser desfeita.')) return
+    deleteProcess.mutate(processoId)
   }
 
   return (
@@ -134,7 +144,7 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
       {selected.size > 0 && (
         <div className="flex items-center gap-3 px-6 py-2 bg-accent/60 border-b border-accent">
           <span className="text-xs font-semibold text-accent-foreground">
-            {selected.size} caso{selected.size > 1 ? 's' : ''} selecionado{selected.size > 1 ? 's' : ''}
+            {selected.size} processo{selected.size > 1 ? 's' : ''} selecionado{selected.size > 1 ? 's' : ''}
           </span>
           <div className="w-px h-4 bg-border" />
 
@@ -199,8 +209,9 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
         >
           <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} />
           <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground pr-2">
-            Caso / Cliente
+            Cliente / CNJ
           </div>
+          <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Tribunal / Vara</div>
           <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Área</div>
           <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Etapa</div>
           <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Responsável</div>
@@ -216,23 +227,22 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
             {sortDir === 'desc' && <ArrowUp className="w-3 h-3 rotate-180" />}
             {!sortDir && <ArrowUpDown className="w-3 h-3 opacity-40" />}
           </button>
-          <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Etiquetas</div>
           <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Atual.</div>
           <div />
         </div>
 
-        {sortedCases.map((caso) => {
-          const legalArea = caso.legal_area ? AREAS_JURIDICAS[caso.legal_area as AreaJuridica] : null
-          const coluna = workflow.colunas.find((c) => c.id === caso.column_id)
-          const tags = caso.tags as EtiquetaId[]
-          const prazoInfo = caso.next_deadline ? formatPrazo(caso.next_deadline) : null
-          const assignedName = caso.assigned_profile?.full_name ?? ''
-          const isSelected = selected.has(caso.id)
+        {sorted.map((processo) => {
+          const item = processo.crm_item
+          const legalArea = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+          const coluna = workflow.colunas.find((c) => c.id === item.column_id)
+          const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
+          const assignedName = item.assigned_profile?.full_name ?? ''
+          const isSelected = selected.has(item.id)
           const isCritical = prazoInfo?.tone === 'critical'
 
           return (
             <div
-              key={caso.id}
+              key={processo.id}
               className={cn(
                 'grid items-center px-4 min-h-[52px] border-b border-border/70 transition-colors cursor-pointer',
                 isSelected && 'bg-accent/50',
@@ -240,25 +250,26 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
                 !isSelected && !isCritical && 'hover:bg-muted/40'
               )}
               style={{ gridTemplateColumns: GRID_COLS }}
-              onClick={() => onRowClick(caso)}
+              onClick={() => onRowClick(processo)}
             >
               <div onClick={(e) => e.stopPropagation()}>
-                <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(caso.id)} />
+                <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(item.id)} />
               </div>
 
               <div className="min-w-0 pr-2">
                 <div className="text-[13px] font-semibold text-foreground truncate">
-                  {getCrmItemClientName(caso)}
+                  {getCrmItemClientName(item)}
                 </div>
-                {caso.legal_process?.cnj_number ? (
-                  <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
-                    {caso.legal_process.cnj_number}
-                  </div>
-                ) : caso.next_task_summary ? (
-                  <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                    {caso.next_task_summary}
-                  </div>
-                ) : null}
+                <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
+                  {processo.cnj_number ?? 'Sem CNJ cadastrado'}
+                </div>
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-xs text-foreground/80 truncate">{processo.court ?? '—'}</p>
+                {processo.court_division && (
+                  <p className="text-[10.5px] text-muted-foreground truncate">{processo.court_division}</p>
+                )}
               </div>
 
               <div>
@@ -309,25 +320,8 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
                 )}
               </div>
 
-              <div className="flex gap-1 flex-wrap">
-                {tags.slice(0, 2).map((tagId) => {
-                  const et = ETIQUETAS[tagId]
-                  if (!et) return null
-                  return (
-                    <span key={tagId} className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-semibold', et.color, et.textColor)}>
-                      {et.label}
-                    </span>
-                  )
-                })}
-                {tags.length > 2 && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-muted text-muted-foreground">
-                    +{tags.length - 2}
-                  </span>
-                )}
-              </div>
-
               <div className="text-[11px] text-muted-foreground">
-                {formatRelativeDate(caso.updated_at)}
+                {formatRelativeDate(item.updated_at)}
               </div>
 
               <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
@@ -336,8 +330,8 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
                     <Ellipsis className="w-4 h-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => onRowClick(caso)}>Abrir caso</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(caso.id)}>
+                    <DropdownMenuItem onClick={() => onRowClick(processo)}>Abrir processo</DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(processo.id)}>
                       Excluir
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -347,16 +341,16 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
           )
         })}
 
-        {sortedCases.length === 0 && (
+        {sorted.length === 0 && (
           <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-            Nenhum caso nesta visualização.
+            Nenhum processo encontrado.
           </div>
         )}
       </div>
 
       {/* Footer */}
       <div className="flex items-center px-6 py-2 border-t border-border bg-card text-[11.5px] text-muted-foreground shrink-0">
-        {cases.length} caso{cases.length !== 1 ? 's' : ''}
+        {processos.length} processo{processos.length !== 1 ? 's' : ''}
         {selected.size > 0 && <> · {selected.size} selecionado{selected.size > 1 ? 's' : ''}</>}
       </div>
     </div>

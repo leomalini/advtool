@@ -4,12 +4,12 @@ import { AlertTriangle, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
-import type { CaseWithRelations } from '@/types/case.types'
-import { getCaseClientName } from '@/types/case.types'
+import type { CrmItemWithRelations } from '@/types/crmItem.types'
+import { getCrmItemClientName } from '@/types/crmItem.types'
 import { formatPrazo, formatRelativeDate } from '../utils/prazo'
 
 interface CasoCardProps {
-  caso: CaseWithRelations
+  caso: CrmItemWithRelations
   onClick: () => void
   dragHandleProps?: Record<string, unknown>
 }
@@ -31,7 +31,7 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
   const prazoInfo = caso.next_deadline ? formatPrazo(caso.next_deadline) : null
   const assignedName = caso.assigned_profile?.full_name ?? ''
   const advInitials = assignedName ? getInitials(assignedName) : '??'
-  const clientName = getCaseClientName(caso)
+  const clientName = getCrmItemClientName(caso)
 
   return (
     <div
@@ -56,9 +56,9 @@ export function CasoCard({ caso, onClick, dragHandleProps }: CasoCardProps) {
           <p className="text-[13px] font-semibold text-foreground leading-snug line-clamp-2">
             {clientName}
           </p>
-          {caso.cnj_number && (
+          {caso.legal_process?.cnj_number && (
             <p className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
-              {caso.cnj_number}
+              {caso.legal_process.cnj_number}
             </p>
           )}
         </div>

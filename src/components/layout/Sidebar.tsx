@@ -14,6 +14,7 @@ import {
   DollarSign,
   Settings,
   AlertCircle,
+  Gavel,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
@@ -33,6 +34,7 @@ const navGroups = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/crm", label: "CRM", icon: Briefcase },
+      { href: "/processos", label: "Processos", icon: Gavel },
       { href: "/agenda", label: "Agenda", icon: Calendar },
     ],
   },

@@ -12,7 +12,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   const [casesResult, meetingsResult, tasksResult, clientsResult] = await Promise.all([
     supabase
-      .from('cases')
+      .from('crm_items')
       .select('id', { count: 'exact', head: true }),
     supabase
       .from('events')

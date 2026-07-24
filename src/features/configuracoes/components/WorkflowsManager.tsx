@@ -24,6 +24,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useWorkflows } from "@/features/crm/hooks/useWorkflows";
 import {
   useCreateWorkflow,
@@ -578,15 +583,36 @@ export function WorkflowsManager() {
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setDeletingWf(wf)}
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label="Excluir workflow"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {wf.id === "wf-processos" ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled
+                          className="text-muted-foreground/50"
+                          aria-label="Excluir workflow"
+                        />
+                      }
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      Workflow reservado para o módulo Processos
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setDeletingWf(wf)}
+                    className="text-muted-foreground hover:text-destructive"
+                    aria-label="Excluir workflow"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </div>
 
