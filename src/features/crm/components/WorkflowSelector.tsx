@@ -16,7 +16,7 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
   const { data: workflows = [] } = useWorkflows()
 
   return (
-    <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+    <div className="flex items-center gap-1 bg-muted rounded-lg p-1 max-w-full overflow-x-auto crm-tabs-scroll">
       {workflows.map((wf) => {
         const count = counts[wf.id] ?? 0
         const isActive = selectedId === wf.id
@@ -26,7 +26,7 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
             key={wf.id}
             onClick={() => onChange(wf.id)}
             className={cn(
-              'flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200',
+              'flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex-shrink-0',
               isActive
                 ? 'bg-card text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-card/60'
@@ -36,7 +36,7 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ backgroundColor: wf.cor }}
             />
-            <span>{wf.nome}</span>
+            <span className="whitespace-nowrap">{wf.nome}</span>
             <span
               className={cn(
                 'inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-semibold transition-all duration-200',

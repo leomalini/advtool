@@ -25,7 +25,7 @@ export type CaseLegalArea = (typeof CASE_LEGAL_AREAS)[number]
 export type CaseTag = (typeof CASE_TAGS)[number]
 
 export const caseSchema = z.object({
-  title: z.string().max(200).optional().nullable(),
+  title: z.string().min(1, 'Informe o título do caso').max(200),
   client_id: z.string().uuid('ID de cliente inválido').optional().nullable(),
   cnj_number: z.string().max(25).optional().nullable(),
   court: z.string().max(200).optional().nullable(),
@@ -35,7 +35,7 @@ export const caseSchema = z.object({
   column_id: z.string().min(1, 'Selecione uma etapa'),
   assigned_to: z.string().uuid().optional().nullable(),
   tags: z.array(z.enum(CASE_TAGS)),
-  next_deadline: z.string().optional().nullable(),
+  next_deadline: z.string().min(1, 'Informe o próximo prazo'),
   next_task_summary: z.string().max(300).optional().nullable(),
   plaintiff: z.string().max(200).optional().nullable(),
   defendant: z.string().max(200).optional().nullable(),

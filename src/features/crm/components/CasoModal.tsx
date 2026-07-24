@@ -223,11 +223,19 @@ function formatDateShort(dateStr: string): string {
 
 function TabTimeline({ caso }: { caso: CaseWithRelations }) {
   const { data: history = [], isLoading, isError } = useCaseColumnHistory(caso.id)
+  const { data: workflows = [] } = useWorkflows()
   const allColumns = useAllColumns()
 
   function findColumn(id: string | null) {
     if (!id) return null
     return allColumns.find((c) => c.id === id) ?? null
+  }
+
+  function findWorkflowByColumn(columnId: string | null) {
+    if (!columnId) return null
+    const col = allColumns.find((c) => c.id === columnId)
+    if (!col) return null
+    return workflows.find((w) => w.id === col.workflow_id) ?? null
   }
 
   if (isLoading) {
@@ -278,6 +286,9 @@ function TabTimeline({ caso }: { caso: CaseWithRelations }) {
           const isCreation = entry.from_column_id === null || entry.from_column_id === entry.to_column_id
           const fromCol = findColumn(entry.from_column_id)
           const toCol = findColumn(entry.to_column_id)
+          const fromWf = findWorkflowByColumn(entry.from_column_id)
+          const toWf = findWorkflowByColumn(entry.to_column_id)
+          const workflowChanged = !isCreation && !!fromWf && !!toWf && fromWf.id !== toWf.id
           const userName = entry.moved_by_profile?.full_name ?? 'Sistema'
           const initials = userName
             .split(' ')
@@ -305,7 +316,11 @@ function TabTimeline({ caso }: { caso: CaseWithRelations }) {
                   {/* Left: event info */}
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground leading-snug">
-                      {isCreation ? 'Caso criado' : 'Etapa atualizada'}
+                      {isCreation
+                        ? 'Caso criado'
+                        : workflowChanged
+                          ? 'Workflow alterado'
+                          : 'Etapa atualizada'}
                     </p>
 
                     {isCreation ? (
@@ -321,6 +336,19 @@ function TabTimeline({ caso }: { caso: CaseWithRelations }) {
                           </span>
                         </span>
                       </div>
+                    ) : workflowChanged ? (
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="text-xs text-muted-foreground font-medium">
+                          {fromWf?.nome ?? '—'} · {fromCol?.nome ?? '—'}
+                        </span>
+                        <ArrowRight className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: toCol?.cor ?? '#71717a' }}
+                        >
+                          {toWf?.nome ?? '—'} · {toCol?.nome ?? '—'}
+                        </span>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <span className="text-xs text-muted-foreground font-medium">
@@ -332,6 +360,19 @@ function TabTimeline({ caso }: { caso: CaseWithRelations }) {
                           style={{ color: toCol?.cor ?? '#71717a' }}
                         >
                           {toCol?.nome ?? '—'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Workflow context — mostra a qual workflow esta etapa pertence */}
+                    {!workflowChanged && toWf && (
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: toWf.cor }}
+                        />
+                        <span className="text-[11px] text-muted-foreground">
+                          {toWf.nome}
                         </span>
                       </div>
                     )}

@@ -21,14 +21,16 @@ import { useCases, caseKeys } from '../hooks/useCases'
 import { useOptimisticMoveCase } from '../hooks/useCaseMutations'
 import { insertColumnHistory } from '../services/cases.service'
 import { useAuth } from '@/hooks/useAuth'
+import { filterCases, emptyCrmFilters, type CrmFilters } from '../utils/filterCases'
 import type { Workflow } from '@/types/workflow.types'
 import type { CaseWithRelations } from '@/types/case.types'
 
 interface CrmKanbanBoardProps {
   workflow: Workflow
+  filters?: CrmFilters
 }
 
-export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
+export function CrmKanbanBoard({ workflow, filters = emptyCrmFilters }: CrmKanbanBoardProps) {
   const openModal = useCrmUiStore((s) => s.openModal)
   const openCreateModal = useCrmUiStore((s) => s.openCreateModal)
   const queryClient = useQueryClient()
@@ -51,8 +53,12 @@ export function CrmKanbanBoard({ workflow }: CrmKanbanBoardProps) {
   const columnIds = workflow.colunas.map((c) => c.id)
   const queryKey = caseKeys.workflow(workflow.id)
 
+  // Apply the CRM search filters to what's shown on the board (drag logic below
+  // still reads the full cache, so moving filtered cards keeps working).
+  const visibleCases = filterCases(cases, filters)
+
   function getCasesByColumn(columnId: string): CaseWithRelations[] {
-    return cases
+    return visibleCases
       .filter((c) => c.column_id === columnId)
       .sort((a, b) => a.position - b.position)
   }

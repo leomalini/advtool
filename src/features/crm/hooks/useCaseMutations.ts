@@ -22,6 +22,7 @@ export function useCreateCase(workflowId: string) {
     mutationFn: (input: CaseInput) => createCaseRecord(input, user!.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      queryClient.invalidateQueries({ queryKey: caseKeys.counts() })
       toast.success('Caso cadastrado!')
     },
     onError: () => toast.error('Erro ao cadastrar caso.'),
@@ -30,12 +31,15 @@ export function useCreateCase(workflowId: string) {
 
 export function useUpdateCase(id: string, workflowId: string) {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   return useMutation({
-    mutationFn: (input: Partial<CaseInput>) => updateCaseRecord(id, input),
+    mutationFn: (input: Partial<CaseInput>) => updateCaseRecord(id, input, user?.id ?? null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: caseKeys.detail(id) })
       queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      queryClient.invalidateQueries({ queryKey: caseKeys.columnHistory(id) })
+      queryClient.invalidateQueries({ queryKey: caseKeys.counts() })
       toast.success('Caso atualizado!')
     },
     onError: () => toast.error('Erro ao atualizar caso.'),
@@ -50,6 +54,7 @@ export function useMoveCase(workflowId: string) {
       moveCaseColumn(id, columnId, position),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      queryClient.invalidateQueries({ queryKey: caseKeys.counts() })
     },
     onError: () => toast.error('Erro ao mover caso.'),
   })
@@ -84,6 +89,7 @@ export function useBulkUpdateCases(workflowId: string) {
     }) => Promise.all(ids.map((id) => updateCaseRecord(id, getInput(id)))),
     onSuccess: (_data, { ids }) => {
       queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      queryClient.invalidateQueries({ queryKey: caseKeys.counts() })
       toast.success(`${ids.length} caso(s) atualizado(s)!`)
     },
     onError: () => toast.error('Erro ao atualizar casos.'),
@@ -97,6 +103,7 @@ export function useBulkDeleteCases(workflowId: string) {
     mutationFn: (ids: string[]) => Promise.all(ids.map((id) => deleteCaseRecord(id))),
     onSuccess: (_data, ids) => {
       queryClient.invalidateQueries({ queryKey: caseKeys.workflow(workflowId) })
+      queryClient.invalidateQueries({ queryKey: caseKeys.counts() })
       toast.success(`${ids.length} caso(s) removido(s).`)
     },
     onError: () => toast.error('Erro ao remover casos.'),

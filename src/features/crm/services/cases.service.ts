@@ -22,6 +22,19 @@ export async function getCasesByWorkflow(workflowId: string): Promise<CaseWithRe
   return data as CaseWithRelations[]
 }
 
+/** Retorna o número de casos por workflow_id: { [workflowId]: total }. */
+export async function getCaseCountsByWorkflow(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from('cases').select('workflow_id')
+
+  if (error) throw error
+
+  const counts: Record<string, number> = {}
+  for (const row of (data ?? []) as { workflow_id: string }[]) {
+    counts[row.workflow_id] = (counts[row.workflow_id] ?? 0) + 1
+  }
+  return counts
+}
+
 export async function getCaseById(id: string): Promise<CaseWithRelations> {
   const { data, error } = await supabase
     .from('cases')
@@ -67,8 +80,22 @@ export async function createCaseRecord(
 
 export async function updateCaseRecord(
   id: string,
-  input: Partial<CaseInput>
+  input: Partial<CaseInput>,
+  movedBy?: string | null
 ): Promise<void> {
+  // If the edit moves the case to a different etapa/workflow, record it in the
+  // column history so the timeline reflects manual edits (not just kanban drags).
+  if (input.column_id) {
+    const { data: current } = await supabase
+      .from('cases')
+      .select('column_id')
+      .eq('id', id)
+      .single()
+    if (current && current.column_id !== input.column_id) {
+      await insertColumnHistory(id, current.column_id, input.column_id, movedBy ?? null)
+    }
+  }
+
   const { error } = await supabase.from('cases').update(input).eq('id', id)
   if (error) throw error
 }
@@ -89,7 +116,7 @@ export async function insertColumnHistory(
   caseId: string,
   fromColumnId: string,
   toColumnId: string,
-  userId: string
+  userId: string | null
 ): Promise<void> {
   const { error } = await supabase
     .from('case_column_history')

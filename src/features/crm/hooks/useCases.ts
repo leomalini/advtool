@@ -1,10 +1,16 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { getCasesByWorkflow, getCaseById, getCaseColumnHistory } from '../services/cases.service'
+import {
+  getCasesByWorkflow,
+  getCaseById,
+  getCaseColumnHistory,
+  getCaseCountsByWorkflow,
+} from '../services/cases.service'
 
 export const caseKeys = {
   all: ['cases'] as const,
+  counts: () => ['cases', 'counts'] as const,
   workflow: (workflowId: string) => ['cases', 'workflow', workflowId] as const,
   detail: (id: string) => ['cases', id] as const,
   columnHistory: (id: string) => ['cases', id, 'column-history'] as const,
@@ -15,6 +21,14 @@ export function useCases(workflowId: string) {
     queryKey: caseKeys.workflow(workflowId),
     queryFn: () => getCasesByWorkflow(workflowId),
     enabled: !!workflowId,
+  })
+}
+
+/** Contagem de casos por workflow — usado para os badges das tabs do CRM. */
+export function useCaseCounts() {
+  return useQuery({
+    queryKey: caseKeys.counts(),
+    queryFn: getCaseCountsByWorkflow,
   })
 }
 

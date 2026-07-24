@@ -83,10 +83,11 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
   )
 }
 
-function SidebarLabel({ children }: { children: React.ReactNode }) {
+function SidebarLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">
       {children}
+      {required && <span className="text-destructive ml-0.5">*</span>}
     </p>
   )
 }
@@ -248,16 +249,22 @@ export function CasoForm({
   }, [open, editingCase, defaultValues, reset])
 
   const watchedWorkflowId = watch('workflow_id')
+  const watchedColumnId = watch('column_id')
   const watchedCnjNumber = watch('cnj_number')
 
-  // Reset column when workflow changes
+  // Reset the etapa to the workflow's first column ONLY when the current column
+  // doesn't belong to the selected workflow (i.e. the user switched workflows).
+  // When editing an existing case, its column already belongs to the workflow,
+  // so we must NOT overwrite it — that was resetting the select to the 1st etapa.
   useEffect(() => {
     const wf = workflows.find((w) => w.id === watchedWorkflowId)
-    if (wf) {
+    if (!wf) return
+    const columnBelongs = wf.colunas.some((c) => c.id === watchedColumnId)
+    if (!columnBelongs) {
       const firstCol = wf.colunas[0] // já ordenado pelo service
       if (firstCol) setValue('column_id', firstCol.id)
     }
-  }, [watchedWorkflowId, setValue, workflows])
+  }, [watchedWorkflowId, watchedColumnId, setValue, workflows])
 
   // Auto-lookup: fires 600ms after the user stops typing a complete CNJ (20 digits)
   useEffect(() => {
@@ -355,7 +362,7 @@ export function CasoForm({
 
                 {/* Workflow */}
                 <div>
-                  <SidebarLabel>Workflow</SidebarLabel>
+                  <SidebarLabel required>Workflow</SidebarLabel>
                   <Controller
                     name="workflow_id"
                     control={control}
@@ -389,7 +396,7 @@ export function CasoForm({
 
                 {/* Etapa */}
                 <div>
-                  <SidebarLabel>Etapa</SidebarLabel>
+                  <SidebarLabel required>Etapa</SidebarLabel>
                   <Controller
                     name="column_id"
                     control={control}
@@ -494,8 +501,9 @@ export function CasoForm({
 
                 {/* Próximo Prazo */}
                 <div>
-                  <SidebarLabel>Próximo Prazo</SidebarLabel>
+                  <SidebarLabel required>Próximo Prazo</SidebarLabel>
                   <Input type="date" {...register('next_deadline')} className="bg-card" />
+                  <FieldError message={errors.next_deadline?.message} />
                 </div>
 
                 {/* Próxima Tarefa */}
@@ -570,7 +578,7 @@ export function CasoForm({
 
                     {/* Título */}
                     <div>
-                      <FieldLabel>Título do Caso</FieldLabel>
+                      <FieldLabel required>Título do Caso</FieldLabel>
                       <Input
                         {...register('title')}
                         placeholder="Ex: Reclamação Trabalhista — João Silva vs Empresa XYZ"

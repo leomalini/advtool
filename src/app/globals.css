@@ -194,6 +194,22 @@
   animation: adv-pulse-urgent 2s ease-in-out infinite;
 }
 
+/* Slim horizontal scrollbar for the CRM workflow tabs */
+.crm-tabs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.crm-tabs-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.crm-tabs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.crm-tabs-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 9999px;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

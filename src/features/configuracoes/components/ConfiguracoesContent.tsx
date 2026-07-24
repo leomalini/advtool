@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ADVOGADOS, AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
-import { useWorkflows } from '@/features/crm/hooks/useWorkflows'
+import { WorkflowsManager } from './WorkflowsManager'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 
@@ -375,81 +375,6 @@ function TabAreas() {
   )
 }
 
-// ── Aba Workflows ──────────────────────────────────────────────
-
-function TabWorkflows() {
-  const { data: workflows = [], isLoading } = useWorkflows()
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Workflows</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Configure os fluxos de trabalho do escritório
-          </p>
-        </div>
-        <Button size="sm">
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Novo Workflow
-        </Button>
-      </div>
-
-      <div className="space-y-3">
-        {isLoading && (
-          <div className="space-y-3">
-            {[0, 1].map((i) => (
-              <div key={i} className="rounded-xl border p-5 animate-pulse h-24 bg-muted/10" />
-            ))}
-          </div>
-        )}
-        {workflows.map((wf) => (
-          <div key={wf.id} className="rounded-xl border p-5 hover:bg-muted/10 transition-colors">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className="h-9 w-9 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: wf.cor + '20' }}
-                >
-                  <GitBranch className="h-4.5 w-4.5" style={{ color: wf.cor }} />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">{wf.nome}</p>
-                  <p className="text-xs text-muted-foreground">{wf.descricao}</p>
-                </div>
-              </div>
-              <Button size="sm" variant="outline">
-                <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                Editar Colunas
-              </Button>
-            </div>
-
-            {/* Colunas */}
-            <div className="flex flex-wrap gap-2">
-              {wf.colunas.map((col) => (
-                <div
-                  key={col.id}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium bg-background"
-                >
-                  <div
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ backgroundColor: col.cor }}
-                  />
-                  <span className="text-foreground">{col.nome}</span>
-                </div>
-              ))}
-            </div>
-
-            <p className="mt-3 text-[11px] text-muted-foreground">
-              {wf.colunas.length} etapas
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 // ── Aba Etiquetas ──────────────────────────────────────────────
 
 function TabEtiquetas() {
@@ -654,7 +579,7 @@ export function ConfiguracoesContent() {
             <TabAreas />
           </TabsContent>
           <TabsContent value="workflows">
-            <TabWorkflows />
+            <WorkflowsManager />
           </TabsContent>
           <TabsContent value="etiquetas">
             <TabEtiquetas />
