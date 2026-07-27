@@ -15,6 +15,7 @@ import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
 import type { CrmLegalArea, CrmTag } from '@/schemas/crmItem.schema'
 import { useProfiles } from '@/hooks/useProfiles'
+import { ProfileOption, ProfileOptionCompact } from '@/components/shared/ProfileOption'
 import { hasActiveFilters, countActiveFilters, type CrmFilters } from '../utils/filterCases'
 
 const ALL = '__all__'
@@ -84,20 +85,20 @@ export function CrmFilterBar({ filters, onChange, resultCount }: CrmFilterBarPro
         value={filters.assignedTo ?? ALL}
         onValueChange={(v) => set('assignedTo', v === ALL ? null : v)}
       >
-        <SelectTrigger className="h-9 w-[160px] text-sm">
+        <SelectTrigger className="h-9 w-[190px] text-sm">
           <SelectValue>
-            {(v: string) =>
-              !v || v === ALL
-                ? 'Todos responsáveis'
-                : profiles.find((p) => p.id === v)?.full_name ?? 'Responsável'
-            }
+            {(v: string) => {
+              if (!v || v === ALL) return 'Todos responsáveis'
+              const profile = profiles.find((p) => p.id === v)
+              return profile ? <ProfileOptionCompact profile={profile} /> : 'Responsável'
+            }}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Todos responsáveis</SelectItem>
           {profiles.map((p) => (
             <SelectItem key={p.id} value={p.id}>
-              {p.full_name}
+              <ProfileOption profile={p} />
             </SelectItem>
           ))}
         </SelectContent>

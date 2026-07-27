@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import {
   Dialog,
   DialogContent,
@@ -10,20 +11,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
-import { formatDate } from '@/utils/date'
-import {
-  MapPin,
-  Mail,
-  Phone,
-  FileText,
-  User,
-  Building2,
-  Scale,
-  Pencil,
-  ExternalLink,
-} from 'lucide-react'
+import { getInitials } from '@/utils/profile'
+import { useWorkflows } from '@/features/crm/hooks/useWorkflows'
+import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalProcesses'
+import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
+import { getCrmItemDisplayTitle } from '@/types/crmItem.types'
+import type { AreaJuridica } from '@/data/mock'
+import { FileText, Scale, Pencil, ArrowRight, Briefcase, Plus } from 'lucide-react'
 import type { ClientWithRelations } from '@/types/cliente.types'
-import { getClientDisplayName, getClientDocument } from '@/types/cliente.types'
+import { getClientDisplayName } from '@/types/cliente.types'
+import { ClienteResumo } from './ClienteResumo'
 
 interface ClienteDetailModalProps {
   cliente: ClientWithRelations | null
@@ -32,202 +29,130 @@ interface ClienteDetailModalProps {
   onEdit?: (cliente: ClientWithRelations) => void
 }
 
-function formatBRL(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 0,
-  }).format(value)
-}
+// ── Aba: Casos ────────────────────────────────────────────────
 
-// ── Aba: Resumo ───────────────────────────────────────────────
+function AbaCasos({ clientId }: { clientId: string }) {
+  const { data: processos = [], isLoading } = useLegalProcessesByClient(clientId)
+  const { data: workflows = [] } = useWorkflows()
 
-function AbaResumo({ cliente }: { cliente: ClientWithRelations }) {
-  const isPF = cliente.type === 'individual'
-  const TipoIcon = isPF ? User : Building2
-  const doc = getClientDocument(cliente)
+  const novoProcessoHref = `/processos?create=1&clientId=${clientId}`
 
-  const phones = [
-    ...(cliente.phone ? [{ value: cliente.phone, label: 'Principal' }] : []),
-    ...(cliente.contacts?.filter((c) => c.type === 'phone').map((c) => ({
-      value: c.value,
-      label: c.label ?? 'Telefone',
-    })) ?? []),
-  ]
-
-  const emails = [
-    ...(cliente.email ? [{ value: cliente.email, label: 'Principal' }] : []),
-    ...(cliente.contacts?.filter((c) => c.type === 'email').map((c) => ({
-      value: c.value,
-      label: c.label ?? 'E-mail',
-    })) ?? []),
-  ]
-
-  const hasAddress =
-    cliente.address_street ||
-    cliente.address_city ||
-    cliente.address_state
-
-  return (
-    <div className="space-y-4 pt-2">
-      {/* Dados pessoais */}
-      <section className="rounded-lg border p-4 space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Dados {isPF ? 'pessoais' : 'da empresa'}
-        </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex items-start gap-2">
-            <TipoIcon className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <div>
-              <p className="text-xs text-muted-foreground">{isPF ? 'Nome' : 'Razão Social'}</p>
-              <p className="text-sm font-medium">
-                {isPF ? cliente.name : cliente.company_name}
-              </p>
-            </div>
-          </div>
-
-          {!isPF && cliente.trade_name && (
-            <div className="flex items-start gap-2">
-              <Building2 className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-xs text-muted-foreground">Nome Fantasia</p>
-                <p className="text-sm font-medium">{cliente.trade_name}</p>
-              </div>
-            </div>
-          )}
-
-          {doc && (
-            <div className="flex items-start gap-2">
-              <FileText className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {isPF ? 'CPF' : 'CNPJ'}
-                </p>
-                <p className="text-sm font-medium font-mono">{doc}</p>
-              </div>
-            </div>
-          )}
-
-          {!isPF && cliente.contact_person && (
-            <div className="flex items-start gap-2">
-              <User className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-xs text-muted-foreground">Responsável</p>
-                <p className="text-sm font-medium">{cliente.contact_person}</p>
-              </div>
-            </div>
-          )}
-
-          {cliente.legal_area && (
-            <div className="flex items-start gap-2">
-              <Scale className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-xs text-muted-foreground">Área jurídica</p>
-                <span
-                  className={cn(
-                    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium mt-0.5',
-                    AREAS_JURIDICAS[cliente.legal_area].bg,
-                    AREAS_JURIDICAS[cliente.legal_area].color
-                  )}
-                >
-                  {AREAS_JURIDICAS[cliente.legal_area].label}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-start gap-2">
-            <FileText className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <div>
-              <p className="text-xs text-muted-foreground">Cliente desde</p>
-              <p className="text-sm font-medium">{formatDate(cliente.created_at)}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Contatos */}
-      {(phones.length > 0 || emails.length > 0) && (
-        <section className="rounded-lg border p-4 space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Contato
-          </h3>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {phones.map((p, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <Phone className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                <div>
-                  <p className="text-xs text-muted-foreground">{p.label}</p>
-                  <p className="text-sm font-medium">{p.value}</p>
-                </div>
-              </div>
-            ))}
-            {emails.map((e, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <Mail className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                <div>
-                  <p className="text-xs text-muted-foreground">{e.label}</p>
-                  <a
-                    href={`mailto:${e.value}`}
-                    className="text-sm font-medium break-all hover:underline flex items-center gap-1"
-                  >
-                    {e.value}
-                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Endereço */}
-      {hasAddress && (
-        <section className="rounded-lg border p-4 space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Endereço
-          </h3>
-          <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <p className="text-sm leading-relaxed">
-              {[
-                cliente.address_street,
-                cliente.address_number,
-                cliente.address_complement,
-                cliente.address_neighborhood,
-                [cliente.address_city, cliente.address_state].filter(Boolean).join('/'),
-                cliente.address_zip ? `CEP ${cliente.address_zip}` : null,
-              ]
-                .filter(Boolean)
-                .join(', ')}
-            </p>
-          </div>
-        </section>
-      )}
-
-      {/* Observações */}
-      {cliente.notes && (
-        <section className="rounded-lg border p-4 space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Observações
-          </h3>
-          <p className="text-sm text-foreground/80 leading-relaxed">{cliente.notes}</p>
-        </section>
-      )}
+  const header = (
+    <div className="flex items-center justify-between pt-2 pb-1">
+      <span className="text-xs text-muted-foreground">
+        {processos.length} processo{processos.length !== 1 ? 's' : ''}
+      </span>
+      <Button size="sm" className="h-7 gap-1.5 text-xs" render={<Link href={novoProcessoHref} />}>
+        <Plus className="h-3.5 w-3.5" />
+        Novo Processo
+      </Button>
     </div>
   )
-}
 
-// ── Aba: Casos (placeholder até módulo de processos) ─────────
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-sm text-muted-foreground">Carregando processos...</p>
+      </div>
+    )
+  }
 
-function AbaCasos() {
+  if (processos.length === 0) {
+    return (
+      <div className="space-y-2">
+        {header}
+        <div className="flex flex-col items-center justify-center py-14 text-center border rounded-lg border-dashed">
+          <Scale className="h-8 w-8 text-muted-foreground mb-3" />
+          <p className="text-sm font-medium">Nenhum processo vinculado a este cliente</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Cadastre um processo e ele já aparecerá vinculado a este cliente.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <Scale className="h-8 w-8 text-muted-foreground mb-3" />
-      <p className="text-sm font-medium">Integração com processos em desenvolvimento</p>
-      <p className="text-xs text-muted-foreground mt-1">
-        Os casos deste cliente aparecerão aqui quando o módulo de processos for implementado.
-      </p>
+    <div className="space-y-2">
+      {header}
+      {processos.map((processo) => {
+        const item = processo.crm_item
+        const workflow = workflows.find((w) => w.id === item.workflow_id)
+        const coluna = workflow?.colunas.find((c) => c.id === item.column_id)
+        const legalArea = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+        const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
+
+        return (
+          <Link
+            key={processo.id}
+            href={`/processos?id=${processo.id}`}
+            className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/40 transition-colors group"
+          >
+            {legalArea && (
+              <span
+                className="w-[3px] self-stretch rounded-full shrink-0"
+                style={{ backgroundColor: legalArea.accent }}
+              />
+            )}
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-medium truncate">{getCrmItemDisplayTitle(item)}</p>
+                {legalArea && (
+                  <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0', legalArea.bg, legalArea.color)}>
+                    {legalArea.label}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                {workflow && <span>{workflow.nome}</span>}
+                {coluna && (
+                  <>
+                    <span>·</span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: coluna.cor }} />
+                      {coluna.nome}
+                    </span>
+                  </>
+                )}
+                {processo.cnj_number && (
+                  <>
+                    <span>·</span>
+                    <span className="font-mono">{processo.cnj_number}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              {prazoInfo && (
+                <span
+                  className={cn(
+                    'text-[11px] font-medium',
+                    prazoInfo.tone === 'critical' && 'text-destructive animate-pulse-urgent',
+                    prazoInfo.tone === 'warning' && 'text-warning',
+                    prazoInfo.tone === 'neutral' && 'text-muted-foreground'
+                  )}
+                >
+                  {prazoInfo.label}
+                </span>
+              )}
+              {item.assigned_profile && (
+                <div
+                  title={item.assigned_profile.full_name}
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[9.5px] font-bold bg-accent text-accent-foreground"
+                >
+                  {getInitials(item.assigned_profile.full_name)}
+                </div>
+              )}
+              <span className="text-[10.5px] text-muted-foreground hidden sm:block">
+                {formatRelativeDate(item.updated_at)}
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          </Link>
+        )
+      })}
     </div>
   )
 }
@@ -261,9 +186,9 @@ export function ClienteDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 pr-8">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted text-lg font-bold text-muted-foreground">
               {name.slice(0, 2).toUpperCase()}
             </div>
@@ -305,19 +230,22 @@ export function ClienteDetailModal({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto -mx-6 px-6">
+        <div className="flex-1 overflow-y-auto -mx-6 px-6 min-h-[360px]">
           <Tabs defaultValue="resumo">
             <TabsList className="w-full mb-4">
               <TabsTrigger value="resumo" className="flex-1">Resumo</TabsTrigger>
-              <TabsTrigger value="casos" className="flex-1">Casos</TabsTrigger>
+              <TabsTrigger value="casos" className="flex-1 gap-1.5">
+                <Briefcase className="h-3.5 w-3.5" />
+                Casos
+              </TabsTrigger>
               <TabsTrigger value="financeiro" className="flex-1">Financeiro</TabsTrigger>
             </TabsList>
 
             <TabsContent value="resumo">
-              <AbaResumo cliente={cliente} />
+              <ClienteResumo cliente={cliente} />
             </TabsContent>
             <TabsContent value="casos">
-              <AbaCasos />
+              <AbaCasos clientId={cliente.id} />
             </TabsContent>
             <TabsContent value="financeiro">
               <AbaFinanceiro />

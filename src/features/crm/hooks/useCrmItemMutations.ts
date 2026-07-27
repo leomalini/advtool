@@ -76,6 +76,7 @@ export function useDeleteCrmItem(workflowId: string) {
 
 export function useBulkUpdateCrmItems(workflowId: string) {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   return useMutation({
     mutationFn: ({
@@ -85,7 +86,7 @@ export function useBulkUpdateCrmItems(workflowId: string) {
       ids: string[]
       /** Called per item id — lets bulk edits merge into each item's own current state (e.g. adding a tag). */
       getInput: (id: string) => Partial<CrmItemInput>
-    }) => Promise.all(ids.map((id) => updateCrmItemRecord(id, getInput(id)))),
+    }) => Promise.all(ids.map((id) => updateCrmItemRecord(id, getInput(id), user?.id ?? null))),
     onSuccess: (_data, { ids }) => {
       queryClient.invalidateQueries({ queryKey: crmItemKeys.workflow(workflowId) })
       queryClient.invalidateQueries({ queryKey: crmItemKeys.counts() })

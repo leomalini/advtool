@@ -40,6 +40,7 @@ export function filterCases(
   f: CrmFilters
 ): CrmItemWithRelations[] {
   const q = f.search.trim().toLowerCase()
+  const qDigits = q.replace(/\D/g, '')
 
   return cases.filter((c) => {
     if (f.legalArea && c.legal_area !== f.legalArea) return false
@@ -51,11 +52,17 @@ export function filterCases(
         c.title,
         c.next_task_summary,
         getCrmItemClientName(c),
+        c.legal_process?.cnj_number,
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
-      if (!haystack.includes(q)) return false
+
+      const matchesText = haystack.includes(q)
+      const matchesDigits =
+        qDigits.length > 0 && (c.legal_process?.cnj_number?.replace(/\D/g, '') ?? '').includes(qDigits)
+
+      if (!matchesText && !matchesDigits) return false
     }
 
     return true
