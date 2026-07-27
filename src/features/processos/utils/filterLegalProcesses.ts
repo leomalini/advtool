@@ -40,6 +40,7 @@ export function filterLegalProcesses(
   f: ProcessoFilters
 ): LegalProcessWithRelations[] {
   const q = f.search.trim().toLowerCase()
+  const qDigits = q.replace(/\D/g, '')
 
   return processos.filter((p) => {
     const item = p.crm_item
@@ -62,7 +63,11 @@ export function filterLegalProcesses(
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
-      if (!haystack.includes(q)) return false
+
+      const matchesText = haystack.includes(q)
+      const matchesDigits = qDigits.length > 0 && (p.cnj_number?.replace(/\D/g, '') ?? '').includes(qDigits)
+
+      if (!matchesText && !matchesDigits) return false
     }
 
     return true

@@ -57,6 +57,25 @@ export async function getLegalProcesses(): Promise<LegalProcessWithRelations[]> 
   )
 }
 
+/** All legal processes whose master crm_item (in wf-processos) belongs to a given client — used by the client detail modal. */
+export async function getLegalProcessesByClient(clientId: string): Promise<LegalProcessWithRelations[]> {
+  const { data, error } = await supabase
+    .from('legal_processes')
+    .select(`
+      *,
+      crm_items:crm_items!crm_items_legal_process_id_fkey!inner(${CRM_ITEM_FIELDS}),
+      movements:legal_process_movements(*)
+    `)
+    .eq('crm_items.client_id', clientId)
+    .eq('crm_items.workflow_id', 'wf-processos')
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return (data as unknown[]).map((row) =>
+    toLegalProcessWithRelations(row as Parameters<typeof toLegalProcessWithRelations>[0])
+  )
+}
+
 export async function getLegalProcessById(id: string): Promise<LegalProcessWithRelations> {
   const { data, error } = await supabase
     .from('legal_processes')
@@ -66,6 +85,32 @@ export async function getLegalProcessById(id: string): Promise<LegalProcessWithR
 
   if (error) throw error
   return toLegalProcessWithRelations(data as Parameters<typeof toLegalProcessWithRelations>[0])
+}
+
+/** Prefix search over our own CNJ numbers, fired as the user types (before the
+ * number is complete) — lets the UI suggest already-tracked processos early,
+ * instead of waiting for all 20 digits before checking anything. */
+export async function searchLegalProcessesByCnjPrefix(
+  prefix: string,
+  limit = 6
+): Promise<LegalProcessWithRelations[]> {
+  const clean = prefix.trim()
+  if (!clean) return []
+
+  const { data, error } = await supabase
+    .from('legal_processes')
+    .select(`
+      *,
+      crm_items:crm_items!crm_items_legal_process_id_fkey!inner(${CRM_ITEM_FIELDS}),
+      movements:legal_process_movements(*)
+    `)
+    .ilike('cnj_number', `${clean}%`)
+    .limit(limit)
+
+  if (error) throw error
+  return (data as unknown[]).map((row) =>
+    toLegalProcessWithRelations(row as Parameters<typeof toLegalProcessWithRelations>[0])
+  )
 }
 
 /** Busca um processo já cadastrado na nossa base pelo número CNJ — usado para

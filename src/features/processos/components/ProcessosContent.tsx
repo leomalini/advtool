@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
@@ -23,9 +24,35 @@ export function ProcessosContent() {
   const { data: processos = [], isLoading } = useLegalProcesses()
   const [filters, setFilters] = useState<ProcessoFilters>(emptyProcessoFilters)
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  // A URL é a fonte da verdade para qual processo está aberto (ou se o form de criação
+  // está aberto) — assim um link para /processos?id=X funciona tanto vindo de outra
+  // página quanto a partir da própria tela de Processos.
+  const selectedId = searchParams.get('id')
+  const createOpen = searchParams.get('create') === '1'
+  const deepLinkClientId = searchParams.get('clientId')
   const [editOpen, setEditOpen] = useState(false)
+
+  function openDetail(id: string) {
+    setEditOpen(false)
+    router.push(`${pathname}?id=${id}`)
+  }
+
+  function closeDetail() {
+    setEditOpen(false)
+    router.replace(pathname)
+  }
+
+  function openCreate() {
+    router.push(`${pathname}?create=1`)
+  }
+
+  function closeCreate() {
+    router.replace(pathname)
+  }
 
   const { data: selectedProcesso } = useLegalProcess(selectedId ?? '')
 
@@ -34,7 +61,7 @@ export function ProcessosContent() {
 
   async function handleCreateSubmit(data: LegalProcessInput) {
     await createProcess.mutateAsync(data)
-    setCreateOpen(false)
+    closeCreate()
   }
 
   async function handleEditSubmit(data: LegalProcessInput) {
@@ -56,7 +83,7 @@ export function ProcessosContent() {
             Todos os processos judiciais em andamento no escritório
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4 mr-1.5" />
           Novo Processo
         </Button>
@@ -82,13 +109,13 @@ export function ProcessosContent() {
             <ProcessoTableView
               workflow={workflow}
               processos={filtered}
-              onRowClick={(p) => setSelectedId(p.id)}
+              onRowClick={(p) => openDetail(p.id)}
             />
           )}
         </div>
 
         <div className="w-[320px] shrink-0 hidden lg:block">
-          <MovimentacoesFeed onSelectProcess={setSelectedId} />
+          <MovimentacoesFeed onSelectProcess={openDetail} />
         </div>
       </div>
 
@@ -97,7 +124,7 @@ export function ProcessosContent() {
         <ProcessoModal
           processo={selectedProcesso}
           open={!!selectedId && !editOpen}
-          onClose={() => setSelectedId(null)}
+          onClose={closeDetail}
           onEdit={() => setEditOpen(true)}
         />
       )}
@@ -116,9 +143,10 @@ export function ProcessosContent() {
       {/* Create form */}
       <ProcessoForm
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={closeCreate}
         defaultValues={{
           column_id: workflow.colunas[0]?.id ?? '',
+          client_id: deepLinkClientId ?? undefined,
           tags: [],
         }}
         onSubmit={handleCreateSubmit}

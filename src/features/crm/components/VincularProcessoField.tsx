@@ -8,7 +8,11 @@ import { formatCnjNumber } from '@/utils/cnj'
 import { useWorkflow } from '../hooks/useWorkflows'
 import { useLegalProcess } from '@/features/processos/hooks/useLegalProcesses'
 import { useCreateLegalProcess } from '@/features/processos/hooks/useLegalProcessMutations'
-import { findLegalProcessByCnj } from '@/features/processos/services/legalProcesses.service'
+import {
+  findLegalProcessByCnj,
+  searchLegalProcessesByCnjPrefix,
+} from '@/features/processos/services/legalProcesses.service'
+import { useDebounce } from '@/hooks/useDebounce'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import type { CrmLegalArea } from '@/schemas/crmItem.schema'
@@ -45,11 +49,15 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
   const [searched, setSearched] = useState(false)
   const [localResult, setLocalResult] = useState<LegalProcessWithRelations | null>(null)
   const [judicialFields, setJudicialFields] = useState<JudicialFields>(EMPTY_JUDICIAL_FIELDS)
+  const [suggestions, setSuggestions] = useState<LegalProcessWithRelations[]>([])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const lastSearchedRef = useRef<string | null>(null)
 
   const workflow = useWorkflow('wf-processos')
   const { data: linkedProcesso } = useLegalProcess(value ?? '')
   const createProcess = useCreateLegalProcess()
+
+  const debouncedCnjInput = useDebounce(cnjInput, 300)
 
   function reset() {
     setCnjInput('')
@@ -57,7 +65,40 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
     setSearched(false)
     setLocalResult(null)
     setJudicialFields(EMPTY_JUDICIAL_FIELDS)
+    setSuggestions([])
+    setSuggestionsOpen(false)
     lastSearchedRef.current = null
+  }
+
+  // Incremental search on our own base as the user types (from 4+ digits) — surfaces
+  // already-tracked processos before the number is complete.
+  useEffect(() => {
+    const digits = debouncedCnjInput.replace(/\D/g, '')
+    const shouldSearch = digits.length >= 4 && digits.length !== 20
+    let cancelled = false
+
+    const task = shouldSearch
+      ? searchLegalProcessesByCnjPrefix(debouncedCnjInput)
+      : Promise.resolve<LegalProcessWithRelations[]>([])
+
+    task
+      .then((results) => {
+        if (cancelled) return
+        setSuggestions(results)
+        setSuggestionsOpen(results.length > 0)
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedCnjInput])
+
+  function handleSelectSuggestion(suggestion: LegalProcessWithRelations) {
+    onChange(suggestion.id)
+    reset()
   }
 
   // Debounced lookup: fires 600ms after the user types a complete CNJ (20 digits).
@@ -197,6 +238,8 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
           type="text"
           value={cnjInput}
           onChange={(e) => setCnjInput(formatCnjNumber(e.target.value))}
+          onFocus={() => setSuggestionsOpen(suggestions.length > 0)}
+          onBlur={() => setTimeout(() => setSuggestionsOpen(false), 150)}
           placeholder="0000000-00.0000.0.00.0000"
           inputMode="numeric"
           className={cn(
@@ -207,6 +250,27 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
         {searching
           ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
           : <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />}
+
+        {suggestionsOpen && suggestions.length > 0 && (
+          <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-border bg-popover shadow-md py-1">
+            <p className="px-3 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Já cadastrados
+            </p>
+            {suggestions.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onMouseDown={() => handleSelectSuggestion(s)}
+                className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+              >
+                <span className="text-sm font-mono">{s.cnj_number}</span>
+                <span className="text-xs text-muted-foreground truncate w-full">
+                  {getCrmItemClientName(s.crm_item)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         Digite o número CNJ para vincular um processo já cadastrado ou criar um novo.

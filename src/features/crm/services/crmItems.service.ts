@@ -22,6 +22,18 @@ export async function getCrmItemsByWorkflow(workflowId: string): Promise<CrmItem
   return data as unknown as CrmItemWithRelations[]
 }
 
+/** All CRM items (any workflow) linked to a given client — used by the client detail modal. */
+export async function getCrmItemsByClient(clientId: string): Promise<CrmItemWithRelations[]> {
+  const { data, error } = await supabase
+    .from('crm_items')
+    .select(CRM_ITEM_SELECT)
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data as unknown as CrmItemWithRelations[]
+}
+
 /** Retorna o número de itens por workflow_id: { [workflowId]: total }. */
 export async function getCrmItemCountsByWorkflow(): Promise<Record<string, number>> {
   const { data, error } = await supabase.from('crm_items').select('workflow_id')

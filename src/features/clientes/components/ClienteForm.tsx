@@ -22,6 +22,8 @@ import {
 } from '@/schemas/cliente.schema'
 import type { ClientWithRelations } from '@/types/cliente.types'
 import { AREAS_JURIDICAS } from '@/data/mock'
+import { formatCPF, formatCNPJ, formatPhone, formatCEP } from '@/utils/format'
+import { cn } from '@/lib/utils'
 
 const CONTACT_LABELS = {
   phone: ['Celular', 'WhatsApp', 'Trabalho', 'Residencial'],
@@ -41,9 +43,13 @@ interface ContactFieldsProps {
   control: Control<any>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   register: ReturnType<typeof useForm<any>>['register']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setValue: ReturnType<typeof useForm<any>>['setValue']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  errors?: any
 }
 
-function ContactFields({ control, register }: ContactFieldsProps) {
+function ContactFields({ control, register, setValue, errors }: ContactFieldsProps) {
   const { fields, append, remove } = useFieldArray({ control, name: 'contacts' })
 
   return (
@@ -85,32 +91,44 @@ function ContactFields({ control, register }: ContactFieldsProps) {
       {fields.map((field, index) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const contactType = (field as any).type as 'phone' | 'email'
+        const errorMessage = errors?.contacts?.[index]?.value?.message as string | undefined
         return (
-          <div key={field.id} className="flex gap-2 items-start">
-            <div className="w-24 shrink-0">
-              <select
-                {...register(`contacts.${index}.label`)}
-                className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+          <div key={field.id} className="space-y-1">
+            <div className="flex gap-2 items-start">
+              <div className="w-24 shrink-0">
+                <select
+                  {...register(`contacts.${index}.label`)}
+                  className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                >
+                  {CONTACT_LABELS[contactType].map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <Input
+                {...register(`contacts.${index}.value`)}
+                type={contactType === 'email' ? 'email' : 'text'}
+                inputMode={contactType === 'phone' ? 'numeric' : undefined}
+                maxLength={contactType === 'phone' ? 15 : 254}
+                onChange={
+                  contactType === 'phone'
+                    ? (e) => setValue(`contacts.${index}.value`, formatPhone(e.target.value))
+                    : undefined
+                }
+                placeholder={contactType === 'phone' ? '(11) 98765-4321' : 'email@exemplo.com'}
+                className={cn('h-8 text-sm flex-1', errorMessage && 'border-destructive')}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={() => remove(index)}
               >
-                {CONTACT_LABELS[contactType].map((l) => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-              </select>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             </div>
-            <Input
-              {...register(`contacts.${index}.value`)}
-              placeholder={contactType === 'phone' ? '(11) 98765-4321' : 'email@exemplo.com'}
-              className="h-8 text-sm flex-1"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={() => remove(index)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {errorMessage && <p className="text-xs text-destructive">{errorMessage}</p>}
           </div>
         )
       })}
@@ -205,18 +223,19 @@ function PFForm({
 
         {/* CPF */}
         <div className="col-span-2 space-y-1.5">
-          <Label>CPF</Label>
+          <Label>CPF *</Label>
           <div className="flex gap-2">
             <Input
               {...form.register('cpf')}
               placeholder="000.000.000-00"
+              maxLength={14}
               className="flex-1"
+              onChange={(e) => form.setValue('cpf', formatCPF(e.target.value), { shouldValidate: form.formState.isSubmitted })}
             />
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-9 px-3 gap-1.5 shrink-0"
+              className="h-8 px-3 gap-1.5 shrink-0"
               onClick={handleCpfSearch}
               disabled={isFetchingCpf}
             >
@@ -235,13 +254,15 @@ function PFForm({
 
         {/* Área jurídica */}
         <div className="col-span-2 space-y-1.5">
-          <Label>Área jurídica</Label>
+          <Label>Área jurídica *</Label>
           <Select
             value={form.watch('legal_area') ?? ''}
-            onValueChange={(v) => form.setValue('legal_area', v as typeof LEGAL_AREAS[number])}
+            onValueChange={(v) => form.setValue('legal_area', v as typeof LEGAL_AREAS[number], { shouldValidate: form.formState.isSubmitted })}
           >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Selecione a área..." />
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="Selecione a área...">
+                {(v: string) => (v ? AREAS_JURIDICAS[v as typeof LEGAL_AREAS[number]]?.label : undefined)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {LEGAL_AREAS.map((area) => (
@@ -251,12 +272,23 @@ function PFForm({
               ))}
             </SelectContent>
           </Select>
+          {form.formState.errors.legal_area && (
+            <p className="text-xs text-destructive">{form.formState.errors.legal_area.message}</p>
+          )}
         </div>
 
         {/* Telefone principal */}
         <div className="space-y-1.5">
           <Label>Telefone principal</Label>
-          <Input {...form.register('phone')} placeholder="(11) 98765-4321" />
+          <Input
+            {...form.register('phone')}
+            placeholder="(11) 98765-4321"
+            maxLength={15}
+            onChange={(e) => form.setValue('phone', formatPhone(e.target.value), { shouldValidate: form.formState.isSubmitted })}
+          />
+          {form.formState.errors.phone && (
+            <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
+          )}
         </div>
 
         {/* E-mail principal */}
@@ -269,8 +301,14 @@ function PFForm({
         </div>
 
         {/* Contatos adicionais */}
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        <ContactFields control={form.control as any} register={form.register as any} />
+        {/* eslint-disable @typescript-eslint/no-explicit-any */}
+        <ContactFields
+          control={form.control as any}
+          register={form.register as any}
+          setValue={form.setValue as any}
+          errors={form.formState.errors}
+        />
+        {/* eslint-enable @typescript-eslint/no-explicit-any */}
 
         {/* Endereço */}
         <div className="col-span-2 pt-1">
@@ -283,12 +321,20 @@ function PFForm({
               <Input
                 {...form.register('address_zip')}
                 placeholder="00000-000"
+                maxLength={9}
+                onChange={(e) => form.setValue('address_zip', formatCEP(e.target.value))}
                 onBlur={(e) => handleCepBlur(e.target.value)}
               />
+              {form.formState.errors.address_zip && (
+                <p className="text-xs text-destructive">{form.formState.errors.address_zip.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>UF</Label>
-              <Input {...form.register('address_state')} placeholder="SP" maxLength={2} />
+              <Input {...form.register('address_state')} placeholder="SP" maxLength={2} className="uppercase" />
+              {form.formState.errors.address_state && (
+                <p className="text-xs text-destructive">{form.formState.errors.address_state.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Logradouro</Label>
@@ -425,18 +471,19 @@ function PJForm({
       <div className="grid grid-cols-2 gap-3">
         {/* CNPJ */}
         <div className="col-span-2 space-y-1.5">
-          <Label>CNPJ</Label>
+          <Label>CNPJ *</Label>
           <div className="flex gap-2">
             <Input
               {...form.register('cnpj')}
               placeholder="00.000.000/0001-00"
+              maxLength={18}
               className="flex-1"
+              onChange={(e) => form.setValue('cnpj', formatCNPJ(e.target.value), { shouldValidate: form.formState.isSubmitted })}
             />
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-9 px-3 gap-1.5 shrink-0"
+              className="h-8 px-3 gap-1.5 shrink-0"
               onClick={handleCnpjSearch}
               disabled={isFetchingCnpj}
             >
@@ -476,13 +523,15 @@ function PJForm({
 
         {/* Área jurídica */}
         <div className="space-y-1.5">
-          <Label>Área jurídica</Label>
+          <Label>Área jurídica *</Label>
           <Select
             value={form.watch('legal_area') ?? ''}
-            onValueChange={(v) => form.setValue('legal_area', v as typeof LEGAL_AREAS[number])}
+            onValueChange={(v) => form.setValue('legal_area', v as typeof LEGAL_AREAS[number], { shouldValidate: form.formState.isSubmitted })}
           >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Selecione..." />
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="Selecione...">
+                {(v: string) => (v ? AREAS_JURIDICAS[v as typeof LEGAL_AREAS[number]]?.label : undefined)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {LEGAL_AREAS.map((area) => (
@@ -492,12 +541,23 @@ function PJForm({
               ))}
             </SelectContent>
           </Select>
+          {form.formState.errors.legal_area && (
+            <p className="text-xs text-destructive">{form.formState.errors.legal_area.message}</p>
+          )}
         </div>
 
         {/* Telefone principal */}
         <div className="space-y-1.5">
           <Label>Telefone principal</Label>
-          <Input {...form.register('phone')} placeholder="(11) 3000-0000" />
+          <Input
+            {...form.register('phone')}
+            placeholder="(11) 3000-0000"
+            maxLength={15}
+            onChange={(e) => form.setValue('phone', formatPhone(e.target.value), { shouldValidate: form.formState.isSubmitted })}
+          />
+          {form.formState.errors.phone && (
+            <p className="text-xs text-destructive">{form.formState.errors.phone.message}</p>
+          )}
         </div>
 
         {/* E-mail principal */}
@@ -510,8 +570,14 @@ function PJForm({
         </div>
 
         {/* Contatos adicionais */}
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        <ContactFields control={form.control as any} register={form.register as any} />
+        {/* eslint-disable @typescript-eslint/no-explicit-any */}
+        <ContactFields
+          control={form.control as any}
+          register={form.register as any}
+          setValue={form.setValue as any}
+          errors={form.formState.errors}
+        />
+        {/* eslint-enable @typescript-eslint/no-explicit-any */}
 
         {/* Endereço */}
         <div className="col-span-2 pt-1">
@@ -524,12 +590,20 @@ function PJForm({
               <Input
                 {...form.register('address_zip')}
                 placeholder="00000-000"
+                maxLength={9}
+                onChange={(e) => form.setValue('address_zip', formatCEP(e.target.value))}
                 onBlur={(e) => handleCepBlur(e.target.value)}
               />
+              {form.formState.errors.address_zip && (
+                <p className="text-xs text-destructive">{form.formState.errors.address_zip.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>UF</Label>
-              <Input {...form.register('address_state')} placeholder="SP" maxLength={2} />
+              <Input {...form.register('address_state')} placeholder="SP" maxLength={2} className="uppercase" />
+              {form.formState.errors.address_state && (
+                <p className="text-xs text-destructive">{form.formState.errors.address_state.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Logradouro</Label>

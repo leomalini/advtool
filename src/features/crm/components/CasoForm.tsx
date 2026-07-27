@@ -24,7 +24,7 @@ import type { CrmItemInput, CrmTag, CrmLegalArea } from '@/schemas/crmItem.schem
 import type { CrmItemWithRelations } from '@/types/crmItem.types'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { useWorkflows } from '../hooks/useWorkflows'
-import { useClientes } from '@/features/clientes/hooks/useClientes'
+import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { useProfiles } from '@/hooks/useProfiles'
 import { VincularProcessoField } from './VincularProcessoField'
 
@@ -178,7 +178,6 @@ export function CasoForm({
   const isEditing = !!editingCase
 
   const { data: workflows = [] } = useWorkflows()
-  const { data: clients = [] } = useClientes()
   const { data: profiles = [] } = useProfiles()
 
   const {
@@ -246,11 +245,6 @@ export function CasoForm({
       if (firstCol) setValue('column_id', firstCol.id)
     }
   }, [watchedWorkflowId, watchedColumnId, setValue, workflows])
-
-  function getClientDisplayName(client: (typeof clients)[number]): string {
-    if (client.type === 'individual') return client.name ?? '(sem nome)'
-    return client.trade_name ?? client.company_name ?? '(sem nome)'
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleFormSubmit(data: any) {
@@ -486,27 +480,13 @@ export function CasoForm({
                       <Controller
                         name="client_id"
                         control={control}
-                        render={({ field }) => {
-                          const selected = clients.find((c) => c.id === field.value)
-                          const label = selected ? getClientDisplayName(selected) : undefined
-                          return (
-                            <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || null)}>
-                              <SelectTrigger className="w-full text-sm">
-                                {label
-                                  ? <span className="truncate text-left">{label}</span>
-                                  : <SelectValue placeholder="Selecionar cliente..." />}
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="">Nenhum</SelectItem>
-                                {clients.map((c) => (
-                                  <SelectItem key={c.id} value={c.id}>
-                                    {getClientDisplayName(c)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )
-                        }}
+                        render={({ field }) => (
+                          <ClienteCombobox
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Buscar cliente..."
+                          />
+                        )}
                       />
                     </div>
 

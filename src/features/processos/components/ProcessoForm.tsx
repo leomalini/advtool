@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2, Search, FileText, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Loader2, Search, FileText, SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,10 +28,12 @@ import type { CrmTag } from '@/schemas/crmItem.schema'
 import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
-import { useClientes } from '@/features/clientes/hooks/useClientes'
+import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { useProfiles } from '@/hooks/useProfiles'
+import { useDebounce } from '@/hooks/useDebounce'
 import { formatCnjNumber } from '@/utils/cnj'
-import { findLegalProcessByCnj } from '../services/legalProcesses.service'
+import { getCrmItemClientName } from '@/types/crmItem.types'
+import { findLegalProcessByCnj, searchLegalProcessesByCnjPrefix } from '../services/legalProcesses.service'
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -174,9 +177,11 @@ export function ProcessoForm({
   const isEditing = !!editingProcess
   const [lookingUpCnj, setLookingUpCnj] = useState(false)
   const lastFetchedCnjRef = useRef<string | null>(null)
+  const [cnjSuggestions, setCnjSuggestions] = useState<LegalProcessWithRelations[]>([])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+  const [duplicateProcess, setDuplicateProcess] = useState<LegalProcessWithRelations | null>(null)
 
   const workflow = useWorkflow('wf-processos')
-  const { data: clients = [] } = useClientes()
   const { data: profiles = [] } = useProfiles()
 
   const {
@@ -232,6 +237,38 @@ export function ProcessoForm({
   }, [open, editingProcess, defaultValues, reset])
 
   const watchedCnjNumber = watch('cnj_number')
+  const debouncedCnjNumber = useDebounce(watchedCnjNumber ?? '', 300)
+
+  // Incremental search on our own base as the user types (from 4+ digits) — surfaces
+  // already-tracked processos before the number is even complete.
+  useEffect(() => {
+    const cnj = debouncedCnjNumber.trim()
+    const digits = cnj.replace(/\D/g, '')
+    const shouldSearch = digits.length >= 4 && digits.length !== 20
+    let cancelled = false
+
+    if (digits.length !== 20) {
+      setDuplicateProcess(null)
+    }
+
+    const task = shouldSearch
+      ? searchLegalProcessesByCnjPrefix(cnj)
+      : Promise.resolve<LegalProcessWithRelations[]>([])
+
+    task
+      .then((results) => {
+        if (cancelled) return
+        setCnjSuggestions(results)
+        setSuggestionsOpen(results.length > 0)
+      })
+      .catch(() => {
+        if (!cancelled) setCnjSuggestions([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedCnjNumber])
 
   // Auto-lookup: fires 600ms after the user stops typing a complete CNJ (20 digits)
   useEffect(() => {
@@ -253,14 +290,18 @@ export function ProcessoForm({
         if (controller.signal.aborted) return
 
         if (existing) {
-          setValue('court', existing.court ?? '')
-          setValue('court_division', existing.court_division ?? '')
-          setValue('plaintiff', existing.plaintiff ?? '')
-          setValue('defendant', existing.defendant ?? '')
-          setValue('opposing_counsel', existing.opposing_counsel ?? '')
-          toast.info('Este CNJ já está cadastrado — dados preenchidos a partir do registro existente.')
+          const isSelf = isEditing && existing.id === editingProcess?.id
+          if (isSelf) {
+            setDuplicateProcess(null)
+          } else {
+            // CNJ must be unique — block saving instead of merging into the existing record.
+            setDuplicateProcess(existing)
+            toast.error('Este número de processo já está cadastrado.')
+          }
           return
         }
+
+        setDuplicateProcess(null)
 
         const res = await fetch(
           `/api/buscaprocessos/processos/${encodeURIComponent(cnj)}`,
@@ -293,15 +334,14 @@ export function ProcessoForm({
       clearTimeout(timeout)
       controller.abort()
     }
-  }, [watchedCnjNumber, setValue])
-
-  function getClientDisplayName(client: (typeof clients)[number]): string {
-    if (client.type === 'individual') return client.name ?? '(sem nome)'
-    return client.trade_name ?? client.company_name ?? '(sem nome)'
-  }
+  }, [watchedCnjNumber, setValue, isEditing, editingProcess])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleFormSubmit(data: any) {
+    if (duplicateProcess) {
+      toast.error('Não é possível salvar: número de processo já cadastrado.')
+      return
+    }
     onSubmit(data as LegalProcessInput)
   }
 
@@ -324,7 +364,7 @@ export function ProcessoForm({
               <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isLoading}>
                 Cancelar
               </Button>
-              <Button type="submit" size="sm" disabled={isLoading}>
+              <Button type="submit" size="sm" disabled={isLoading || !!duplicateProcess}>
                 {isLoading && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
                 {isEditing ? 'Salvar alterações' : 'Cadastrar processo'}
               </Button>
@@ -491,27 +531,13 @@ export function ProcessoForm({
                       <Controller
                         name="client_id"
                         control={control}
-                        render={({ field }) => {
-                          const selected = clients.find((c) => c.id === field.value)
-                          const label = selected ? getClientDisplayName(selected) : undefined
-                          return (
-                            <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || null)}>
-                              <SelectTrigger className="w-full text-sm">
-                                {label
-                                  ? <span className="truncate text-left">{label}</span>
-                                  : <SelectValue placeholder="Selecionar cliente..." />}
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="">Nenhum</SelectItem>
-                                {clients.map((c) => (
-                                  <SelectItem key={c.id} value={c.id}>
-                                    {getClientDisplayName(c)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )
-                        }}
+                        render={({ field }) => (
+                          <ClienteCombobox
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Buscar cliente..."
+                          />
+                        )}
                       />
                     </div>
 
@@ -544,6 +570,8 @@ export function ProcessoForm({
                               {...field}
                               value={field.value ?? ''}
                               onChange={(e) => field.onChange(formatCnjNumber(e.target.value))}
+                              onFocus={() => setSuggestionsOpen(cnjSuggestions.length > 0)}
+                              onBlur={() => setTimeout(() => setSuggestionsOpen(false), 150)}
                               placeholder="0000000-00.0000.0.00.0000"
                               className={cn('font-mono pr-9', lookingUpCnj && 'text-muted-foreground')}
                               inputMode="numeric"
@@ -553,11 +581,54 @@ export function ProcessoForm({
                         {lookingUpCnj
                           ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
                           : <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />}
+
+                        {suggestionsOpen && cnjSuggestions.length > 0 && (
+                          <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-border bg-popover shadow-md py-1">
+                            <p className="px-3 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Já cadastrados
+                            </p>
+                            {cnjSuggestions.map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onMouseDown={() => {
+                                  setValue('cnj_number', s.cnj_number ?? '')
+                                  setSuggestionsOpen(false)
+                                }}
+                                className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                              >
+                                <span className="text-sm font-mono">{s.cnj_number}</span>
+                                <span className="text-xs text-muted-foreground truncate w-full">
+                                  {getCrmItemClientName(s.crm_item)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <FieldError message={errors.cnj_number?.message} />
-                      <p className="text-xs text-muted-foreground mt-1.5">
-                        Ao digitar o número completo, os dados do processo são preenchidos automaticamente.
-                      </p>
+                      {duplicateProcess ? (
+                        <div className="flex items-start gap-2 mt-1.5 p-2.5 rounded-lg bg-destructive/10 border border-destructive/25">
+                          <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-destructive">
+                              Este número de processo já está cadastrado
+                              {getCrmItemClientName(duplicateProcess.crm_item) ? ` para ${getCrmItemClientName(duplicateProcess.crm_item)}` : ''}.
+                            </p>
+                            <Link
+                              href={`/processos?id=${duplicateProcess.id}`}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-destructive hover:underline mt-0.5"
+                            >
+                              Ver processo existente
+                              <ArrowUpRight className="w-3 h-3" />
+                            </Link>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                          Ao digitar o número completo, os dados do processo são preenchidos automaticamente.
+                        </p>
+                      )}
                     </div>
 
                     {/* Tribunal + Vara */}

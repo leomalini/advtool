@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Plus, Search, Users, Phone, Mail, ArrowRight, Pencil, Trash2, AlertCircle } from 'lucide-react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { Plus, Search, Users, Phone, Mail, ArrowRight, Pencil, Trash2, AlertCircle, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -17,7 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import { formatRelative } from '@/utils/date'
-import { useClientes } from '../hooks/useClientes'
+import { useClientes, useClientesPendencies } from '../hooks/useClientes'
 import { useCreateCliente, useUpdateCliente, useDeleteCliente } from '../hooks/useClienteMutations'
 import type { ClientWithRelations, LegalArea } from '@/types/cliente.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
@@ -106,12 +107,13 @@ function DeleteDialog({ client, onConfirm, onCancel, isLoading }: DeleteDialogPr
 
 interface ClienteRowProps {
   cliente: ClientWithRelations
+  hasPendency?: boolean
   onVerDetalhe: (c: ClientWithRelations) => void
   onEdit: (c: ClientWithRelations) => void
   onDelete: (c: ClientWithRelations) => void
 }
 
-function ClienteRow({ cliente, onVerDetalhe, onEdit, onDelete }: ClienteRowProps) {
+function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: ClienteRowProps) {
   const name = getClientDisplayName(cliente)
   const doc = getClientDocument(cliente)
   const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area] : null
@@ -121,7 +123,10 @@ function ClienteRow({ cliente, onVerDetalhe, onEdit, onDelete }: ClienteRowProps
   const primaryEmail = cliente.contacts?.find((c) => c.type === 'email')?.value ?? cliente.email
 
   return (
-    <tr className="group border-b last:border-0 hover:bg-muted/30 transition-colors">
+    <tr
+      className="group border-b last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
+      onClick={() => onVerDetalhe(cliente)}
+    >
       {/* Nome */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
@@ -129,7 +134,14 @@ function ClienteRow({ cliente, onVerDetalhe, onEdit, onDelete }: ClienteRowProps
             {initials}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{name}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium truncate">{name}</p>
+              {hasPendency && (
+                <span title="Cadastro com pendências" className="inline-flex shrink-0">
+                  <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+                </span>
+              )}
+            </div>
             <span
               className={cn(
                 'inline-flex items-center rounded border px-1 py-0 text-xs font-medium',
@@ -199,7 +211,7 @@ function ClienteRow({ cliente, onVerDetalhe, onEdit, onDelete }: ClienteRowProps
       </td>
 
       {/* Ações */}
-      <td className="px-4 py-3">
+      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             size="sm"
@@ -240,21 +252,45 @@ export function ClientesContent() {
   const [search, setSearch] = useState('')
   const [areaFiltro, setAreaFiltro] = useState<LegalArea | 'todas'>('todas')
 
-  const [detailClient, setDetailClient] = useState<ClientWithRelations | null>(null)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  // A URL é a fonte da verdade — assim /clientes?id=X funciona vindo de outra página
+  // ou a partir da própria tela de Clientes (ex: clicar em outro cliente na sequência).
+  const detailClientId = searchParams.get('id')
   const [editClient, setEditClient] = useState<ClientWithRelations | null>(null)
   const [deleteClient, setDeleteClient] = useState<ClientWithRelations | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data: clientes = [], isLoading, isError } = useClientes()
+  const { data: pendencias = [] } = useClientesPendencies()
   const createMutation = useCreateCliente()
   const updateMutation = useUpdateCliente(editClient?.id ?? '')
   const deleteMutation = useDeleteCliente()
 
+  const detailClient = detailClientId ? clientes.find((c) => c.id === detailClientId) ?? null : null
+
+  function openDetail(id: string) {
+    router.push(`${pathname}?id=${id}`)
+  }
+
+  function closeDetail() {
+    router.replace(pathname)
+  }
+
+  const pendingClientIds = useMemo(
+    () => new Set(pendencias.map((p) => p.clientId)),
+    [pendencias]
+  )
+
   const clientesFiltrados = useMemo(() => {
     const q = search.toLowerCase()
+    const qDigits = q.replace(/\D/g, '')
     return clientes.filter((c) => {
       const name = getClientDisplayName(c).toLowerCase()
       const doc = getClientDocument(c)
+      const docDigits = doc.replace(/\D/g, '')
       const phone = c.phone ?? ''
       const email = c.email ?? ''
 
@@ -264,6 +300,7 @@ export function ClientesContent() {
         email.toLowerCase().includes(q) ||
         doc.includes(q) ||
         phone.includes(q) ||
+        (qDigits.length > 0 && docDigits.includes(qDigits)) ||
         c.contacts?.some((ct) => ct.value.toLowerCase().includes(q))
 
       const matchArea = areaFiltro === 'todas' || c.legal_area === areaFiltro
@@ -306,7 +343,7 @@ export function ClientesContent() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nome, email, CPF..."
+              placeholder="Buscar por nome, email, CPF/CNPJ..."
               className="pl-9 h-8 w-[220px] text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -374,7 +411,8 @@ export function ClientesContent() {
                 <ClienteRow
                   key={cliente.id}
                   cliente={cliente}
-                  onVerDetalhe={setDetailClient}
+                  hasPendency={pendingClientIds.has(cliente.id)}
+                  onVerDetalhe={(c) => openDetail(c.id)}
                   onEdit={setEditClient}
                   onDelete={setDeleteClient}
                 />
@@ -433,8 +471,8 @@ export function ClientesContent() {
       {/* ── Modal de detalhe ── */}
       <ClienteDetailModal
         cliente={detailClient}
-        open={!!detailClient}
-        onOpenChange={(open) => !open && setDetailClient(null)}
+        open={!!detailClientId}
+        onOpenChange={(open) => !open && closeDetail()}
         onEdit={setEditClient}
       />
     </div>
