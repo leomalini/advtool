@@ -25,7 +25,8 @@ interface CrmBulkActionBarProps {
   currentWorkflowId: string
   onMoveColumn: (targetWorkflowId: string, columnId: string) => void
   onAssign: (profileId: string) => void
-  onAddTag: (tagId: EtiquetaId) => void
+  /** Omit to hide the "Etiqueta" bulk action (e.g. Processos does not support bulk tagging). */
+  onAddTag?: (tagId: EtiquetaId) => void
   onDelete: () => void
 }
 
@@ -112,19 +113,21 @@ export function CrmBulkActionBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-border bg-card text-[11.5px] font-medium text-foreground/80 hover:bg-accent/60 transition-colors">
-          <Tag className="w-3.5 h-3.5" />
-          Etiqueta
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          {Object.values(ETIQUETAS).map((et) => (
-            <DropdownMenuItem key={et.id} onClick={() => onAddTag(et.id)}>
-              {et.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {onAddTag && (
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-border bg-card text-[11.5px] font-medium text-foreground/80 hover:bg-accent/60 transition-colors">
+            <Tag className="w-3.5 h-3.5" />
+            Etiqueta
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {Object.values(ETIQUETAS).map((et) => (
+              <DropdownMenuItem key={et.id} onClick={() => onAddTag(et.id)}>
+                {et.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <button
         onClick={onDelete}

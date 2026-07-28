@@ -13,7 +13,7 @@ import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
 import { useAuth } from '@/hooks/useAuth'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
 
-function useInvalidateLegalProcesses() {
+export function useInvalidateLegalProcesses() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.all })

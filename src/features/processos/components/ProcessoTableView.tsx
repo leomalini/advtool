@@ -21,12 +21,13 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { CrmBulkActionBar } from '@/features/crm/components/CrmBulkActionBar'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { AREAS_JURIDICAS } from '@/data/mock'
-import type { AreaJuridica, EtiquetaId } from '@/data/mock'
+import type { AreaJuridica } from '@/data/mock'
 import { getInitials } from '@/utils/profile'
 import { useBulkUpdateCrmItems } from '@/features/crm/hooks/useCrmItemMutations'
 import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
-import { useDeleteLegalProcess } from '../hooks/useLegalProcessMutations'
+import { useDeleteLegalProcess, useInvalidateLegalProcesses } from '../hooks/useLegalProcessMutations'
 import { useColumnPrefs, type ColumnConfig } from '@/hooks/useColumnPrefs'
 import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { getCrmItemClientName } from '@/types/crmItem.types'
@@ -86,12 +87,19 @@ interface ProcessoTableViewProps {
   onRowClick: (processo: LegalProcessWithRelations) => void
 }
 
+type SortField = 'prazo' | 'atualizacao'
+
 export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoTableViewProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [sortField, setSortField] = useState<SortField | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<
+    { mode: 'bulk' } | { mode: 'one'; processoId: string } | null
+  >(null)
 
   const bulkUpdate = useBulkUpdateCrmItems(workflow.id)
   const deleteProcess = useDeleteLegalProcess()
+  const invalidateLegalProcesses = useInvalidateLegalProcesses()
   const queryClient = useQueryClient()
 
   const { visible, widths, toggleVisible, setWidth, resetPrefs } = useColumnPrefs(
@@ -106,15 +114,32 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
   ].join(' ')
 
   const sorted = useMemo(() => {
-    if (!sortDir) return processos
+    if (!sortField || !sortDir) return processos
     return [...processos].sort((a, b) => {
-      const aDeadline = a.crm_item.next_deadline
-      const bDeadline = b.crm_item.next_deadline
-      const aTime = aDeadline ? new Date(aDeadline).getTime() : Infinity
-      const bTime = bDeadline ? new Date(bDeadline).getTime() : Infinity
+      const aTime =
+        sortField === 'prazo'
+          ? a.crm_item.next_deadline
+            ? new Date(a.crm_item.next_deadline).getTime()
+            : Infinity
+          : new Date(a.crm_item.updated_at).getTime()
+      const bTime =
+        sortField === 'prazo'
+          ? b.crm_item.next_deadline
+            ? new Date(b.crm_item.next_deadline).getTime()
+            : Infinity
+          : new Date(b.crm_item.updated_at).getTime()
       return sortDir === 'asc' ? aTime - bTime : bTime - aTime
     })
-  }, [processos, sortDir])
+  }, [processos, sortField, sortDir])
+
+  function toggleSort(field: SortField) {
+    if (sortField !== field) {
+      setSortField(field)
+      setSortDir('asc')
+    } else {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    }
+  }
 
   const allVisibleSelected = sorted.length > 0 && sorted.every((p) => selected.has(p.crm_item.id))
   const selectedIds = Array.from(selected)
@@ -152,6 +177,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
           if (crossWorkflow) {
             queryClient.invalidateQueries({ queryKey: crmItemKeys.workflow(targetWorkflowId) })
           }
+          invalidateLegalProcesses()
           clearSelection()
         },
       }
@@ -161,40 +187,40 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
   function handleAssign(profileId: string) {
     bulkUpdate.mutate(
       { ids: selectedIds, getInput: () => ({ assigned_to: profileId }) },
-      { onSuccess: clearSelection }
-    )
-  }
-
-  function handleAddTag(tagId: EtiquetaId) {
-    const byId = new Map(processos.map((p) => [p.crm_item.id, p.crm_item]))
-    bulkUpdate.mutate(
       {
-        ids: selectedIds,
-        getInput: (id) => {
-          const current = (byId.get(id)?.tags ?? []) as EtiquetaId[]
-          const tags = current.includes(tagId) ? current : [...current, tagId]
-          return { tags }
+        onSuccess: () => {
+          invalidateLegalProcesses()
+          clearSelection()
         },
-      },
-      { onSuccess: clearSelection }
+      }
     )
   }
 
   const crmItemIdToProcessoId = new Map(processos.map((p) => [p.crm_item.id, p.id]))
 
   function handleDelete() {
-    if (!confirm(`Excluir ${selectedIds.length} processo(s)? Esta ação não pode ser desfeita.`)) return
-    Promise.all(
-      selectedIds
-        .map((crmItemId) => crmItemIdToProcessoId.get(crmItemId))
-        .filter((id): id is string => !!id)
-        .map((processoId) => deleteProcess.mutateAsync(processoId))
-    ).then(clearSelection)
+    setPendingDelete({ mode: 'bulk' })
   }
 
   function handleDeleteOne(processoId: string) {
-    if (!confirm('Excluir este processo? Esta ação não pode ser desfeita.')) return
-    deleteProcess.mutate(processoId)
+    setPendingDelete({ mode: 'one', processoId })
+  }
+
+  function confirmPendingDelete() {
+    if (!pendingDelete) return
+    if (pendingDelete.mode === 'bulk') {
+      Promise.all(
+        selectedIds
+          .map((crmItemId) => crmItemIdToProcessoId.get(crmItemId))
+          .filter((id): id is string => !!id)
+          .map((processoId) => deleteProcess.mutateAsync(processoId))
+      ).then(() => {
+        clearSelection()
+        setPendingDelete(null)
+      })
+    } else {
+      deleteProcess.mutate(pendingDelete.processoId, { onSuccess: () => setPendingDelete(null) })
+    }
   }
 
   function renderCell(colKey: string, processo: LegalProcessWithRelations) {
@@ -297,7 +323,6 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
           currentWorkflowId={workflow.id}
           onMoveColumn={handleMoveColumn}
           onAssign={handleAssign}
-          onAddTag={handleAddTag}
           onDelete={handleDelete}
         />
       )}
@@ -333,19 +358,19 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         >
           <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} />
           {visibleColumns.map((col) =>
-            col.key === 'prazo' ? (
+            col.key === 'prazo' || col.key === 'atualizacao' ? (
               <button
                 key={col.key}
                 className={cn(
                   'relative flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide pr-2',
-                  sortDir ? 'text-accent-foreground' : 'text-muted-foreground'
+                  sortField === col.key ? 'text-accent-foreground' : 'text-muted-foreground'
                 )}
-                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                onClick={() => toggleSort(col.key as SortField)}
               >
                 {col.label}
-                {sortDir === 'asc' && <ArrowUp className="w-3 h-3" />}
-                {sortDir === 'desc' && <ArrowUp className="w-3 h-3 rotate-180" />}
-                {!sortDir && <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                {sortField === col.key && sortDir === 'asc' && <ArrowUp className="w-3 h-3" />}
+                {sortField === col.key && sortDir === 'desc' && <ArrowUp className="w-3 h-3 rotate-180" />}
+                {sortField !== col.key && <ArrowUpDown className="w-3 h-3 opacity-40" />}
                 <ResizeHandle startWidth={widths[col.key]} minWidth={col.minWidth} onChange={(w) => setWidth(col.key, w)} />
               </button>
             ) : (
@@ -416,6 +441,23 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         {processos.length} processo{processos.length !== 1 ? 's' : ''}
         {selected.size > 0 && <> · {selected.size} selecionado{selected.size > 1 ? 's' : ''}</>}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title={
+          pendingDelete?.mode === 'bulk'
+            ? `Excluir ${selectedIds.length} processo${selectedIds.length > 1 ? 's' : ''}?`
+            : 'Excluir processo?'
+        }
+        description={
+          pendingDelete?.mode === 'bulk'
+            ? `Os ${selectedIds.length} processos selecionados serão removidos permanentemente. Esta ação não pode ser desfeita.`
+            : 'Este processo será removido permanentemente, junto com suas movimentações. Esta ação não pode ser desfeita.'
+        }
+        isLoading={deleteProcess.isPending}
+        onConfirm={confirmPendingDelete}
+      />
     </div>
   )
 }

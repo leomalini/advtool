@@ -2,22 +2,24 @@
 
 import { useState } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
-import { useLegalProcesses, useLegalProcess } from '../hooks/useLegalProcesses'
+import { useLegalProcesses, useLegalProcess, legalProcessKeys } from '../hooks/useLegalProcesses'
 import { useCreateLegalProcess, useUpdateLegalProcess } from '../hooks/useLegalProcessMutations'
 import { ProcessoTableView } from './ProcessoTableView'
 import { ProcessoForm } from './ProcessoForm'
 import { ProcessoModal } from './ProcessoModal'
 import { MovimentacoesFeed } from './MovimentacoesFeed'
-import { CrmFilterBar } from '@/features/crm/components/CrmFilterBar'
+import { ProcessoFilterBar } from './ProcessoFilterBar'
 import {
   filterLegalProcesses,
   emptyProcessoFilters,
   type ProcessoFilters,
 } from '../utils/filterLegalProcesses'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
+import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 
 export function ProcessosContent() {
   const workflow = useWorkflow('wf-processos')
@@ -27,23 +29,37 @@ export function ProcessosContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
+  const queryClient = useQueryClient()
 
-  // A URL é a fonte da verdade para qual processo está aberto (ou se o form de criação
-  // está aberto) — assim um link para /processos?id=X funciona tanto vindo de outra
-  // página quanto a partir da própria tela de Processos.
-  const selectedId = searchParams.get('id')
+  // A id na URL só existe para permitir um deep-link vindo de outra tela (ex: link para
+  // /processos?id=X a partir do Clientes ou do feed de movimentações). Ao clicar numa linha
+  // da própria tabela evitamos a navegação — já temos os dados do processo em mãos, então
+  // primamos o cache da query com eles e só guardamos o id localmente (mais rápido, sem
+  // round-trip, e continua reativo a invalidations futuras).
+  const deepLinkId = searchParams.get('id')
   const createOpen = searchParams.get('create') === '1'
   const deepLinkClientId = searchParams.get('clientId')
   const [editOpen, setEditOpen] = useState(false)
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null)
 
-  function openDetail(id: string) {
+  const selectedId = localSelectedId ?? deepLinkId
+
+  function openDetail(processo: LegalProcessWithRelations) {
     setEditOpen(false)
+    queryClient.setQueryData(legalProcessKeys.detail(processo.id), processo)
+    setLocalSelectedId(processo.id)
+  }
+
+  function openDetailById(id: string) {
+    setEditOpen(false)
+    setLocalSelectedId(null)
     router.push(`${pathname}?id=${id}`)
   }
 
   function closeDetail() {
     setEditOpen(false)
-    router.replace(pathname)
+    setLocalSelectedId(null)
+    if (deepLinkId) router.replace(pathname)
   }
 
   function openCreate() {
@@ -91,7 +107,8 @@ export function ProcessosContent() {
 
       {/* Filter bar */}
       <div className="px-6 py-2.5 border-b bg-card shrink-0">
-        <CrmFilterBar
+        <ProcessoFilterBar
+          workflow={workflow}
           filters={filters}
           onChange={setFilters}
           resultCount={filtered.length}
@@ -109,13 +126,13 @@ export function ProcessosContent() {
             <ProcessoTableView
               workflow={workflow}
               processos={filtered}
-              onRowClick={(p) => openDetail(p.id)}
+              onRowClick={openDetail}
             />
           )}
         </div>
 
         <div className="w-[320px] shrink-0 hidden lg:block">
-          <MovimentacoesFeed onSelectProcess={openDetail} />
+          <MovimentacoesFeed onSelectProcess={openDetailById} />
         </div>
       </div>
 
@@ -123,7 +140,7 @@ export function ProcessosContent() {
       {selectedProcesso && (
         <ProcessoModal
           processo={selectedProcesso}
-          open={!!selectedId && !editOpen}
+          open={!!selectedProcesso && !editOpen}
           onClose={closeDetail}
           onEdit={() => setEditOpen(true)}
         />

@@ -19,7 +19,8 @@
       "Bash(xargs -I {} basename {})",
       "mcp__claude_design__get_project",
       "mcp__claude_design__list_files",
-      "mcp__claude_design__read_file"
+      "mcp__claude_design__read_file",
+      "Bash(powershell -Command \"Get-ChildItem -Recurse 'D:\\\\Projects\\\\advtool\\\\src\\\\features\\\\processos' | Select-Object FullName\")"
     ]
   }
 }

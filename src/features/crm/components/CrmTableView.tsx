@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { CrmBulkActionBar } from './CrmBulkActionBar'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { getInitials } from '@/utils/profile'
@@ -88,6 +89,9 @@ interface CrmTableViewProps {
 export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ mode: 'bulk' } | { mode: 'one'; id: string } | null>(
+    null
+  )
 
   const bulkUpdate = useBulkUpdateCrmItems(workflow.id)
   const bulkDelete = useBulkDeleteCrmItems(workflow.id)
@@ -178,13 +182,22 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
   }
 
   function handleDelete() {
-    if (!confirm(`Excluir ${selectedIds.length} caso(s)? Esta ação não pode ser desfeita.`)) return
-    bulkDelete.mutate(selectedIds, { onSuccess: clearSelection })
+    setPendingDelete({ mode: 'bulk' })
   }
 
   function handleDeleteOne(id: string) {
-    if (!confirm('Excluir este caso? Esta ação não pode ser desfeita.')) return
-    bulkDelete.mutate([id])
+    setPendingDelete({ mode: 'one', id })
+  }
+
+  function confirmPendingDelete() {
+    if (!pendingDelete) return
+    const ids = pendingDelete.mode === 'bulk' ? selectedIds : [pendingDelete.id]
+    bulkDelete.mutate(ids, {
+      onSuccess: () => {
+        if (pendingDelete.mode === 'bulk') clearSelection()
+        setPendingDelete(null)
+      },
+    })
   }
 
   function renderCell(colKey: string, caso: CrmItemWithRelations) {
@@ -420,6 +433,23 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
         {cases.length} caso{cases.length !== 1 ? 's' : ''}
         {selected.size > 0 && <> · {selected.size} selecionado{selected.size > 1 ? 's' : ''}</>}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title={
+          pendingDelete?.mode === 'bulk'
+            ? `Excluir ${selectedIds.length} caso${selectedIds.length > 1 ? 's' : ''}?`
+            : 'Excluir caso?'
+        }
+        description={
+          pendingDelete?.mode === 'bulk'
+            ? `Os ${selectedIds.length} casos selecionados serão removidos permanentemente. Esta ação não pode ser desfeita.`
+            : 'Este caso será removido permanentemente. Esta ação não pode ser desfeita.'
+        }
+        isLoading={bulkDelete.isPending}
+        onConfirm={confirmPendingDelete}
+      />
     </div>
   )
 }

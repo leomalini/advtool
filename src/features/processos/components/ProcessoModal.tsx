@@ -13,6 +13,14 @@ import {
   Construction,
   Plus,
   Gavel,
+  User,
+  Phone,
+  Mail,
+  Landmark,
+  Users2,
+  History,
+  Hash,
+  StickyNote,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
@@ -21,6 +29,7 @@ import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import { useAddLegalProcessMovement, useUpdateLegalProcess } from '../hooks/useLegalProcessMutations'
+import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { CrmItemTimeline } from '@/features/crm/components/CrmItemTimeline'
 import { CrmItemClienteTab } from '@/features/crm/components/CrmItemClienteTab'
 
@@ -91,6 +100,125 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   )
 }
 
+/** Compact icon + label + value tile used for the Resumo tab's key-facts strip. */
+function StatChip({
+  icon,
+  label,
+  value,
+  tone = 'default',
+}: {
+  icon: React.ReactNode
+  label: string
+  value: React.ReactNode
+  tone?: 'default' | 'warning' | 'critical'
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-muted/20 px-3.5 py-3 min-w-0">
+      <div
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+          tone === 'critical' && 'bg-destructive/10 text-destructive',
+          tone === 'warning' && 'bg-warning/10 text-warning',
+          tone === 'default' && 'bg-accent text-accent-foreground'
+        )}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p
+          className={cn(
+            'text-[13px] font-semibold truncate',
+            tone === 'critical' && 'text-destructive',
+            tone === 'warning' && 'text-warning',
+            tone === 'default' && 'text-foreground'
+          )}
+        >
+          {value}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Icon-led key/value row used inside the Resumo tab's info cards. */
+function InfoBlockRow({
+  icon,
+  label,
+  value,
+  showEmpty = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string | null | undefined
+  /** When true, renders the row with a "—" placeholder instead of hiding it if `value` is missing. */
+  showEmpty?: boolean
+}) {
+  if (!value && !showEmpty) return null
+  return (
+    <div className="flex items-start gap-2.5">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        {icon}
+      </div>
+      <div className="min-w-0 pt-0.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className={cn('text-sm truncate', value ? 'text-foreground' : 'text-muted-foreground')}>
+          {value || '—'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+const PREVIEW_TONE_CLASSES = {
+  info: 'bg-info/10 text-info',
+  accent: 'bg-accent text-accent-foreground',
+  warning: 'bg-warning/10 text-warning',
+  success: 'bg-success/10 text-success',
+} as const
+
+function SummaryPreviewCard({
+  icon,
+  title,
+  tone,
+  lines,
+  footer,
+  onClick,
+}: {
+  icon: React.ReactNode
+  title: string
+  tone: keyof typeof PREVIEW_TONE_CLASSES
+  lines: string[]
+  footer: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative text-left p-3.5 rounded-xl border border-border bg-card hover:border-border/80 hover:shadow-sm transition-all group"
+    >
+      <span className="absolute top-2.5 right-2.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+        Exemplo
+      </span>
+      <div className="flex items-center gap-2 mb-3 pr-14">
+        <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', PREVIEW_TONE_CLASSES[tone])}>
+          {icon}
+        </div>
+        <span className="text-xs font-semibold text-foreground/90">{title}</span>
+      </div>
+      <ul className="space-y-1.5 mb-3">
+        {lines.map((line) => (
+          <li key={line} className="text-xs text-muted-foreground leading-snug truncate">
+            {line}
+          </li>
+        ))}
+      </ul>
+      <span className="text-[11px] font-medium text-foreground/70">{footer}</span>
+    </button>
+  )
+}
+
 function PlaceholderTab({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
@@ -110,79 +238,143 @@ function PlaceholderTab({ icon, label }: { icon: React.ReactNode; label: string 
 
 // ── Tab: Resumo ───────────────────────────────────────────────────────────────
 
-function TabResumo({ processo }: { processo: LegalProcessWithRelations }) {
+function TabResumo({
+  processo,
+  onNavigateTab,
+}: {
+  processo: LegalProcessWithRelations
+  onNavigateTab: (tab: ModalTab) => void
+}) {
   const item = processo.crm_item
   const area = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
   const workflow = useWorkflow('wf-processos')
   const coluna = workflow?.colunas.find((c) => c.id === item.column_id)
   const clientName = getCrmItemClientName(item)
   const assignedName = item.assigned_profile?.full_name
+  const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
 
   return (
-    <div className="grid grid-cols-2 gap-6">
-      {/* Left */}
-      <div className="space-y-5">
-        <div>
-          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-            Informações do Processo
-          </h4>
-          <div className="space-y-3">
-            <InfoRow label="Cliente" value={clientName} />
-            {item.client?.phone && <InfoRow label="Telefone" value={item.client.phone} />}
-            {item.client?.email && <InfoRow label="E-mail" value={item.client.email} />}
-            {area && (
-              <div>
-                <SectionLabel>Área Jurídica</SectionLabel>
-                <span className={cn('inline-flex px-2 py-0.5 rounded-full text-xs font-medium', area.bg, area.color)}>
-                  {area.label}
-                </span>
-              </div>
-            )}
-            <InfoRow label="Advogado Responsável" value={assignedName} />
-            <div>
-              <SectionLabel>Etapa</SectionLabel>
-              <p className="text-sm text-foreground">{coluna?.nome ?? '—'}</p>
-            </div>
-            {item.notes && (
-              <div>
-                <SectionLabel>Observações</SectionLabel>
-                <p className="text-sm text-muted-foreground leading-relaxed">{item.notes}</p>
-              </div>
-            )}
+    <div className="space-y-7">
+      {/* Key-facts strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatChip
+          icon={<span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: coluna?.cor ?? '#9CA3AF' }} />}
+          label="Etapa atual"
+          value={coluna?.nome ?? '—'}
+        />
+        <StatChip
+          icon={prazoInfo?.tone === 'critical' ? <Clock className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}
+          label="Próximo prazo"
+          value={prazoInfo ? prazoInfo.label : 'Sem prazo definido'}
+          tone={prazoInfo?.tone === 'critical' ? 'critical' : prazoInfo?.tone === 'warning' ? 'warning' : 'default'}
+        />
+        <StatChip icon={<User className="w-4 h-4" />} label="Advogado" value={assignedName ?? '—'} />
+        <StatChip
+          icon={<History className="w-4 h-4" />}
+          label="Última atualização"
+          value={formatRelativeDate(item.updated_at)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Left: Informações do Processo */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Informações do Processo
+            </h4>
+            <span
+              className={cn(
+                'inline-flex px-2 py-0.5 rounded-full text-[10.5px] font-medium',
+                area ? [area.bg, area.color] : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {area ? area.label : '—'}
+            </span>
           </div>
+          <div className="space-y-3.5">
+            <InfoBlockRow icon={<User className="w-3.5 h-3.5" />} label="Cliente" value={clientName} showEmpty />
+            <InfoBlockRow icon={<Phone className="w-3.5 h-3.5" />} label="Telefone" value={item.client?.phone} showEmpty />
+            <InfoBlockRow icon={<Mail className="w-3.5 h-3.5" />} label="E-mail" value={item.client?.email} showEmpty />
+          </div>
+          {item.notes && (
+            <div className="flex items-start gap-2.5 pt-3.5 border-t border-border/70">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <StickyNote className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0 pt-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Observações</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{item.notes}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Dados Processuais */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3.5">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            Dados Processuais
+          </h4>
+          {processo.cnj_number ? (
+            <InfoBlockRow icon={<Hash className="w-3.5 h-3.5" />} label="Número CNJ" value={processo.cnj_number} />
+          ) : (
+            <p className="text-sm text-muted-foreground italic">CNJ ainda não cadastrado</p>
+          )}
+          <InfoBlockRow icon={<Landmark className="w-3.5 h-3.5" />} label="Tribunal" value={processo.court} />
+          <InfoBlockRow icon={<Gavel className="w-3.5 h-3.5" />} label="Vara" value={processo.court_division} />
+          {(processo.plaintiff || processo.defendant) && (
+            <InfoBlockRow
+              icon={<Users2 className="w-3.5 h-3.5" />}
+              label="Partes"
+              value={[processo.plaintiff, processo.defendant].filter(Boolean).join(' × ') || null}
+            />
+          )}
         </div>
       </div>
 
-      {/* Right */}
-      <div className="space-y-5">
-        <div>
-          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-            Dados Processuais
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            Outras áreas do processo
           </h4>
-          <div className="space-y-3">
-            {processo.cnj_number ? (
-              <InfoRow label="Número CNJ" value={processo.cnj_number} />
-            ) : (
-              <p className="text-sm text-muted-foreground italic">CNJ ainda não cadastrado</p>
-            )}
-            <InfoRow label="Tribunal" value={processo.court} />
-            <InfoRow label="Vara" value={processo.court_division} />
-          </div>
+          <span className="text-[10.5px] text-muted-foreground">
+            Prévia — integração ainda em desenvolvimento
+          </span>
         </div>
-
-        {item.next_deadline && (
-          <div>
-            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-              Próximo Prazo
-            </h4>
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/25">
-              <Clock className="w-4 h-4 text-warning flex-shrink-0" />
-              <p className="text-sm font-medium text-warning">
-                {formatDate(item.next_deadline)}
-              </p>
-            </div>
-          </div>
-        )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <SummaryPreviewCard
+            icon={<Calendar className="w-4 h-4" />}
+            title="Agenda"
+            tone="info"
+            lines={['Audiência de conciliação — 12/08', 'Reunião com cliente — 20/08']}
+            footer="2 compromissos"
+            onClick={() => onNavigateTab('agenda')}
+          />
+          <SummaryPreviewCard
+            icon={<CheckSquare className="w-4 h-4" />}
+            title="Tarefas"
+            tone="accent"
+            lines={['Protocolar petição de réplica', 'Revisar contrato social']}
+            footer="2 pendentes"
+            onClick={() => onNavigateTab('tarefas')}
+          />
+          <SummaryPreviewCard
+            icon={<FileText className="w-4 h-4" />}
+            title="Documentos"
+            tone="warning"
+            lines={['Petição inicial.pdf', 'Procuração.pdf', 'Contrato de honorários.pdf']}
+            footer="5 arquivos"
+            onClick={() => onNavigateTab('documentos')}
+          />
+          <SummaryPreviewCard
+            icon={<Scale className="w-4 h-4" />}
+            title="Financeiro"
+            tone="success"
+            lines={['Valor da causa: R$ 45.000,00', 'Honorários: R$ 4.500,00 (10%)']}
+            footer="Em aberto"
+            onClick={() => onNavigateTab('financeiro')}
+          />
+        </div>
       </div>
     </div>
   )
@@ -420,7 +612,7 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
 
         {/* ── Modal Body ── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {activeTab === 'resumo' && <TabResumo processo={processo} />}
+          {activeTab === 'resumo' && <TabResumo processo={processo} onNavigateTab={setActiveTab} />}
           {activeTab === 'identificacao' && <TabIdentificacao processo={processo} />}
           {activeTab === 'movimentacoes' && <TabMovimentacoes processo={processo} />}
           {activeTab === 'etapas' && <CrmItemTimeline crmItemId={item.id} itemLabel="processo" />}

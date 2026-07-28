@@ -1,19 +1,24 @@
 import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import { getCrmItemClientName } from '@/types/crmItem.types'
-import type { CrmTag, CrmLegalArea } from '@/schemas/crmItem.schema'
+import type { CrmLegalArea } from '@/schemas/crmItem.schema'
 
 export interface ProcessoFilters {
   search: string
   legalArea: CrmLegalArea | null
   assignedTo: string | null
-  tag: CrmTag | null
+  columnId: string | null
+  /** Prazo (next_deadline) range, ISO date strings (yyyy-mm-dd), inclusive. */
+  deadlineFrom: string | null
+  deadlineTo: string | null
 }
 
 export const emptyProcessoFilters: ProcessoFilters = {
   search: '',
   legalArea: null,
   assignedTo: null,
-  tag: null,
+  columnId: null,
+  deadlineFrom: null,
+  deadlineTo: null,
 }
 
 export function hasActiveProcessoFilters(f: ProcessoFilters): boolean {
@@ -21,7 +26,9 @@ export function hasActiveProcessoFilters(f: ProcessoFilters): boolean {
     f.search.trim() !== '' ||
     f.legalArea !== null ||
     f.assignedTo !== null ||
-    f.tag !== null
+    f.columnId !== null ||
+    f.deadlineFrom !== null ||
+    f.deadlineTo !== null
   )
 }
 
@@ -30,23 +37,33 @@ export function countActiveProcessoFilters(f: ProcessoFilters): number {
   if (f.search.trim() !== '') n++
   if (f.legalArea !== null) n++
   if (f.assignedTo !== null) n++
-  if (f.tag !== null) n++
+  if (f.columnId !== null) n++
+  if (f.deadlineFrom !== null || f.deadlineTo !== null) n++
   return n
 }
 
-/** Applies the Processos filters (texto + área + responsável + etiqueta) a uma lista de processos. */
+/** Applies the Processos filters (texto + área + responsável + etapa + prazo) a uma lista de processos. */
 export function filterLegalProcesses(
   processos: LegalProcessWithRelations[],
   f: ProcessoFilters
 ): LegalProcessWithRelations[] {
   const q = f.search.trim().toLowerCase()
   const qDigits = q.replace(/\D/g, '')
+  const from = f.deadlineFrom ? new Date(f.deadlineFrom).getTime() : null
+  const to = f.deadlineTo ? new Date(f.deadlineTo).getTime() : null
 
   return processos.filter((p) => {
     const item = p.crm_item
     if (f.legalArea && item.legal_area !== f.legalArea) return false
     if (f.assignedTo && item.assigned_to !== f.assignedTo) return false
-    if (f.tag && !(item.tags ?? []).includes(f.tag)) return false
+    if (f.columnId && item.column_id !== f.columnId) return false
+
+    if (from !== null || to !== null) {
+      if (!item.next_deadline) return false
+      const deadline = new Date(item.next_deadline).getTime()
+      if (from !== null && deadline < from) return false
+      if (to !== null && deadline > to) return false
+    }
 
     if (q) {
       const haystack = [
