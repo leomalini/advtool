@@ -195,9 +195,11 @@ export function ProcessoForm({
   } = useForm<LegalProcessInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(legalProcessSchema) as any,
-    defaultValues: defaultValues ?? {
+    defaultValues: {
       column_id: workflow?.colunas[0]?.id ?? '',
       tags: [] as CrmTag[],
+      cnj_number: '',
+      ...defaultValues,
     },
   })
 
@@ -216,7 +218,7 @@ export function ProcessoForm({
           next_deadline: item.next_deadline ?? undefined,
           next_task_summary: item.next_task_summary ?? undefined,
           notes: item.notes ?? undefined,
-          cnj_number: editingProcess.cnj_number ?? undefined,
+          cnj_number: editingProcess.cnj_number ?? '',
           court: editingProcess.court ?? undefined,
           court_division: editingProcess.court_division ?? undefined,
           plaintiff: editingProcess.plaintiff ?? undefined,
@@ -225,12 +227,12 @@ export function ProcessoForm({
         })
       } else {
         lastFetchedCnjRef.current = null
-        reset(
-          defaultValues ?? {
-            column_id: workflow?.colunas[0]?.id ?? '',
-            tags: [] as CrmTag[],
-          },
-        )
+        reset({
+          column_id: workflow?.colunas[0]?.id ?? '',
+          tags: [] as CrmTag[],
+          cnj_number: '',
+          ...defaultValues,
+        })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

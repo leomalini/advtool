@@ -46,7 +46,7 @@ const addressSchema = z.object({
 const CPF_REGEX = /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/
 const CNPJ_REGEX = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/
 
-/** Empty is fine (phone is optional overall — see the per-schema "at least one contact" refine below), but if filled it must be a valid 10/11-digit BR phone. */
+/** Empty is fine — phone and email are both fully optional — but if filled it must be a valid 10/11-digit BR phone. */
 const optionalPhoneField = z
   .string()
   .max(30)
@@ -59,16 +59,14 @@ export const createIndividualClientSchema = addressSchema
     type: z.literal('individual'),
     name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres').max(150),
     cpf: z.string().regex(CPF_REGEX, 'CPF inválido (formato: 000.000.000-00)'),
-    legal_area: z.enum(LEGAL_AREAS, { message: 'Selecione a área jurídica' }),
+    // Optional — um mesmo cliente pode ter processos em várias áreas jurídicas,
+    // então a área não é uma propriedade fixa do cliente.
+    legal_area: z.enum(LEGAL_AREAS).optional().nullable(),
     phone: optionalPhoneField,
     email: z.string().email('E-mail inválido').optional().or(z.literal('')),
     notes: z.string().max(2000).optional(),
     assigned_to: z.string().uuid().optional(),
     contacts: z.array(contactSchema).optional(),
-  })
-  .refine((data) => !!data.phone || !!data.email, {
-    message: 'Informe ao menos um telefone ou e-mail de contato',
-    path: ['phone'],
   })
 
 export const createCompanyClientSchema = addressSchema
@@ -78,16 +76,12 @@ export const createCompanyClientSchema = addressSchema
     trade_name: z.string().max(200).optional(),
     cnpj: z.string().regex(CNPJ_REGEX, 'CNPJ inválido (formato: 00.000.000/0001-00)'),
     contact_person: z.string().max(150).optional(),
-    legal_area: z.enum(LEGAL_AREAS, { message: 'Selecione a área jurídica' }),
+    legal_area: z.enum(LEGAL_AREAS).optional().nullable(),
     phone: optionalPhoneField,
     email: z.string().email('E-mail inválido').optional().or(z.literal('')),
     notes: z.string().max(2000).optional(),
     assigned_to: z.string().uuid().optional(),
     contacts: z.array(contactSchema).optional(),
-  })
-  .refine((data) => !!data.phone || !!data.email, {
-    message: 'Informe ao menos um telefone ou e-mail de contato',
-    path: ['phone'],
   })
 
 export type ContactInput = z.infer<typeof contactSchema>

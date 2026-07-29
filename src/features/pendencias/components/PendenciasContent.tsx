@@ -90,29 +90,31 @@ function ResolveDialog({ clientId, onClose }: ResolveDialogProps) {
     updateMutation.mutate(data, { onSuccess: onClose })
   }
 
+  if (clientId && !cliente) {
+    return (
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Completar cadastro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
   return (
-    <Dialog open={!!clientId} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Completar cadastro</DialogTitle>
-        </DialogHeader>
-        <div className="flex-1 overflow-y-auto -mx-6 px-6 pb-2">
-          {cliente ? (
-            <ClienteForm
-              onSubmit={handleSubmit}
-              isLoading={updateMutation.isPending}
-              defaultValues={cliente}
-            />
-          ) : (
-            <div className="space-y-3 py-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-9 w-full" />
-              ))}
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+    <ClienteForm
+      open={!!clientId && !!cliente}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      isLoading={updateMutation.isPending}
+      defaultValues={cliente}
+    />
   )
 }
 

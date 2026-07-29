@@ -14,7 +14,7 @@ export const legalProcessSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
 
   // Campos jurídicos (legal_processes)
-  cnj_number: z.string().min(1, 'Número CNJ obrigatório').max(25),
+  cnj_number: z.string({ error: 'Número CNJ obrigatório' }).min(1, 'Número CNJ obrigatório').max(25),
   court: z.string().max(200).optional().nullable(),
   court_division: z.string().max(200).optional().nullable(),
   plaintiff: z.string().max(200).optional().nullable(),

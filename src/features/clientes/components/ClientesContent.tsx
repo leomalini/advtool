@@ -426,39 +426,23 @@ export function ClientesContent() {
       )}
 
       {/* ── Dialog: Criar cliente ── */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Novo Cliente</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto -mx-6 px-6 pb-2">
-            <ClienteForm
-              onSubmit={handleCreate}
-              isLoading={createMutation.isPending}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ClienteForm
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreate}
+        isLoading={createMutation.isPending}
+      />
 
       {/* ── Dialog: Editar cliente ── */}
-      <Dialog open={!!editClient} onOpenChange={(open) => !open && setEditClient(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>
-              Editar — {editClient ? getClientDisplayName(editClient) : ''}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto -mx-6 px-6 pb-2">
-            {editClient && (
-              <ClienteForm
-                onSubmit={handleEdit}
-                isLoading={updateMutation.isPending}
-                defaultValues={editClient}
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {editClient && (
+        <ClienteForm
+          open={!!editClient}
+          onClose={() => setEditClient(null)}
+          onSubmit={handleEdit}
+          isLoading={updateMutation.isPending}
+          defaultValues={editClient}
+        />
+      )}
 
       {/* ── Dialog: Confirmar exclusão ── */}
       <DeleteDialog
