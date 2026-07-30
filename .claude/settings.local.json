@@ -21,7 +21,8 @@
       "mcp__claude_design__list_files",
       "mcp__claude_design__read_file",
       "Bash(powershell -Command \"Get-ChildItem -Recurse 'D:\\\\Projects\\\\advtool\\\\src\\\\features\\\\processos' | Select-Object FullName\")",
-      "Bash(powershell -Command \"Get-ChildItem -Path 'D:\\\\Projects\\\\advtool\\\\src\\\\features\\\\clientes' -Recurse -File | Select-Object -ExpandProperty FullName\")"
+      "Bash(powershell -Command \"Get-ChildItem -Path 'D:\\\\Projects\\\\advtool\\\\src\\\\features\\\\clientes' -Recurse -File | Select-Object -ExpandProperty FullName\")",
+      "Bash(grep -v \"src\\\\\\\\\\\\\\\\lib\\\\\\\\\\\\\\\\buscaprocessos\\\\\\\\\\\\\\\\client.ts\\\\|src\\\\\\\\\\\\\\\\app\\\\\\\\\\\\\\\\api\\\\\\\\\\\\\\\\buscaprocessos\")"
     ]
   }
 }
