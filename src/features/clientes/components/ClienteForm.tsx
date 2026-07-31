@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { NONE_VALUE, toSelectValue, fromSelectValue } from '@/utils/select'
 import { cn } from '@/lib/utils'
 import {
   createIndividualClientSchema,
@@ -154,12 +155,15 @@ function LegalAreaSelect({
 }) {
   const label = value ? AREAS_JURIDICAS[value]?.label : undefined
   return (
-    <Select value={value ?? ''} onValueChange={(v) => onChange((v || null) as (typeof LEGAL_AREAS)[number] | null)}>
+    <Select
+      value={toSelectValue(value)}
+      onValueChange={(v) => onChange(fromSelectValue(v) as (typeof LEGAL_AREAS)[number] | null)}
+    >
       <SelectTrigger className="w-full text-sm bg-card">
         {label ? <span className="truncate text-sm">{label}</span> : <SelectValue placeholder="Selecionar área..." />}
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="">Não definida</SelectItem>
+        <SelectItem value={NONE_VALUE}>Não definida</SelectItem>
         {LEGAL_AREAS.map((area) => (
           <SelectItem key={area} value={area}>
             {AREAS_JURIDICAS[area].label}

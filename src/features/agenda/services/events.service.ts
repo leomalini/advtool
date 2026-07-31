@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { recordActivity } from '@/lib/activities'
 import type { CalendarEvent } from '@/types/event.types'
 import type { EventFormInput, UpdateEventInput } from '@/schemas/event.schema'
 import { format, parseISO } from 'date-fns'
@@ -135,7 +136,7 @@ export async function createEvent(input: EventFormInput, userId: string): Promis
     )
   }
 
-  await supabase.from('activities').insert({
+  await recordActivity({
     type: 'event_created',
     entity_type: 'event',
     entity_id: data.id,

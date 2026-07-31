@@ -1,7 +1,23 @@
 # Design System — AdvTool
 
 > Documento de referência para decisões visuais do produto.
-> Criado: 2026-07-21 | Status: Ativo
+> Criado: 2026-07-21 | Status: **Histórico** (substituído pelo redesign "Graphite")
+>
+> ## ⚠️ DESATUALIZADO — não usar como referência de cores/fonte
+>
+> Este documento descreve o sistema **"Cool Slate + Blue"** (Plus Jakarta Sans,
+> valores em OKLCH), substituído pelo redesign **"Graphite"**. O sistema real em
+> produção está em [`src/app/globals.css`](../src/app/globals.css) — que é a
+> **única fonte da verdade** para tokens:
+>
+> - Paleta monocromática quase-preto/branco (`--primary: #1a1c22` no claro,
+>   `#eef0f4` no escuro) + accent índigo `#5165f0` — valores em **hex**, não OKLCH
+> - Fonte **Hanken Grotesk** (+ JetBrains Mono para `--font-mono`), não Plus Jakarta Sans
+> - `--success`/`--warning`/`--info`/`--destructive` e `--chart-1..5` **são** tokens
+>   de primeira classe (este doc afirma o contrário)
+>
+> Os **princípios** de design registrados aqui (accent único, sem serif na UI,
+> temperatura de cor consistente entre sidebar e conteúdo) continuam válidos.
 
 ---
 

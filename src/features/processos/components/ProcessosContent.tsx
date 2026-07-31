@@ -73,7 +73,7 @@ export function ProcessosContent() {
   const { data: selectedProcesso } = useLegalProcess(selectedId ?? '')
 
   const createProcess = useCreateLegalProcess()
-  const updateProcess = useUpdateLegalProcess(selectedId ?? '', selectedProcesso?.crm_item.id ?? '')
+  const updateProcess = useUpdateLegalProcess(selectedId ?? '', selectedProcesso?.crm_item?.id ?? '')
 
   async function handleCreateSubmit(data: LegalProcessInput) {
     await createProcess.mutateAsync(data)

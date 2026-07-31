@@ -1,6 +1,27 @@
 # Módulo Processos (CRM) — Documentação Técnica
 
 > Última atualização: 2026-07-08
+>
+> ## ⚠️ DESATUALIZADO — anterior à separação crm_items / legal_processes
+>
+> Este documento descreve a arquitetura de **antes** das migrations 13 e 14, que
+> dividiram a entidade `cases` em duas: `crm_items` (pipeline genérico, rota
+> `/crm`) e `legal_processes` (entidade jurídica, rota `/processos`).
+>
+> Divergências principais em relação ao código atual:
+> - `cases` → `crm_items`; `case_movements` → `legal_process_movements`;
+>   `tasks.case_id`/`events.case_id` → `crm_item_id`
+> - `case.types.ts`/`case.schema.ts`/`cases.service.ts`/`useCases` nunca
+>   existiram com esses nomes — ver `crmItem.*` + `legalProcess.*`
+> - `CasoForm.tsx` → `ProcessoForm.tsx`, e a busca de CNJ usa
+>   `/api/buscaprocessos/processos/[cnj]`, não `/api/cnj/[number]` (DataJud)
+> - A tabela de abas do modal está defasada: existem **dois** modais hoje
+>   (`CasoModal` com 8 abas e `ProcessoModal` com 10), e a aba Timeline/Etapas
+>   já é real
+> - Workflows **não** são mais config estática em `mock.ts` — são tabelas
+>   (`workflows`/`workflow_columns`) editáveis pela tela de Configurações
+>
+> **Referência atual:** [`docs/ROADMAP-MODULOS.md`](./ROADMAP-MODULOS.md)
 
 ---
 

@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { NONE_VALUE, toSelectValue, fromSelectValue } from '@/utils/select'
 import { cn } from '@/lib/utils'
 import { crmItemSchema, CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
 import type { CrmItemInput, CrmTag, CrmLegalArea } from '@/schemas/crmItem.schema'
@@ -375,14 +376,17 @@ export function CasoForm({
                         ? AREAS_JURIDICAS[field.value as keyof typeof AREAS_JURIDICAS]?.label
                         : undefined
                       return (
-                        <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || null)}>
+                        <Select
+                          value={toSelectValue(field.value)}
+                          onValueChange={(v) => field.onChange(fromSelectValue(v))}
+                        >
                           <SelectTrigger className="w-full text-sm bg-card">
                             {label
                               ? <span className="truncate text-sm">{label}</span>
                               : <SelectValue placeholder="Selecionar área..." />}
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Não definida</SelectItem>
+                            <SelectItem value={NONE_VALUE}>Não definida</SelectItem>
                             {CRM_LEGAL_AREAS.map((a) => (
                               <SelectItem key={a} value={a}>
                                 {AREAS_JURIDICAS[a].label}
@@ -404,14 +408,17 @@ export function CasoForm({
                     render={({ field }) => {
                       const profile = profiles.find((p) => p.id === field.value)
                       return (
-                        <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v || null)}>
+                        <Select
+                          value={toSelectValue(field.value)}
+                          onValueChange={(v) => field.onChange(fromSelectValue(v))}
+                        >
                           <SelectTrigger className="w-full text-sm bg-card">
                             {profile
                               ? <span className="truncate text-sm">{profile.full_name}</span>
                               : <SelectValue placeholder="Selecionar..." />}
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Nenhum</SelectItem>
+                            <SelectItem value={NONE_VALUE}>Nenhum</SelectItem>
                             {profiles.map((p) => (
                               <SelectItem key={p.id} value={p.id}>
                                 {p.full_name}

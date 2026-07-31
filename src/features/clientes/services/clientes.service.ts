@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { recordActivity } from '@/lib/activities'
 import type { ClientWithRelations, ClientAttachment, ClientPendency } from '@/types/cliente.types'
 import type { CreateClientInput, ContactInput } from '@/schemas/cliente.schema'
 
@@ -52,7 +53,7 @@ export async function createClientRecord(
     )
   }
 
-  await supabase.from('activities').insert({
+  await recordActivity({
     type: 'client_created',
     entity_type: 'client',
     entity_id: data.id,

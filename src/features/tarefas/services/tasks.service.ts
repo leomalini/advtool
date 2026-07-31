@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { recordActivity } from '@/lib/activities'
 import type { Task, TaskComment, TaskChecklistItem } from '@/types/task.types'
 import type { CreateTaskInput, UpdateTaskInput } from '@/schemas/task.schema'
 
@@ -41,7 +42,7 @@ export async function createTask(
 
   if (error) throw error
 
-  await supabase.from('activities').insert({
+  await recordActivity({
     type: 'task_created',
     entity_type: 'task',
     entity_id: data.id,

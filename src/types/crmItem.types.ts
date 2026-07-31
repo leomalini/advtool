@@ -70,7 +70,10 @@ export interface CrmItemWithRelations extends CrmItem {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function getCrmItemClientName(c: CrmItemWithRelations): string {
+// Accept null so callers holding a possibly-orphaned relation (e.g.
+// LegalProcessWithRelations.crm_item) can render a fallback without branching.
+export function getCrmItemClientName(c: CrmItemWithRelations | null): string {
+  if (!c) return '(sem cliente)'
   if (c.client) {
     if (c.client.type === 'individual') return c.client.name ?? '(sem nome)'
     return c.client.trade_name ?? c.client.company_name ?? '(sem nome)'
@@ -78,7 +81,7 @@ export function getCrmItemClientName(c: CrmItemWithRelations): string {
   return c.title ?? '(sem cliente)'
 }
 
-export function getCrmItemDisplayTitle(c: CrmItemWithRelations): string {
+export function getCrmItemDisplayTitle(c: CrmItemWithRelations | null): string {
   const clientName = getCrmItemClientName(c)
-  return c.title ? `${c.title} — ${clientName}` : clientName
+  return c?.title ? `${c.title} — ${clientName}` : clientName
 }
