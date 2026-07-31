@@ -73,21 +73,23 @@ export function Sidebar() {
     if (!sidebarOpen) {
       return (
         <Tooltip key={href}>
-          <TooltipTrigger
-            className={cn(
-              "relative flex w-full items-center justify-center rounded-lg p-2 transition-colors",
-              active
-                ? "bg-sidebar-accent text-sidebar-primary shadow-[inset_0_0_0_1px_var(--sidebar-accent)]"
-                : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-            )}
-            render={<Link href={href} />}
-          >
-            <Icon className="h-4 w-4" />
-            {badge != null && badge > 0 && (
-              <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning text-[9px] font-bold text-warning-foreground">
-                {badge > 9 ? '9+' : badge}
-              </span>
-            )}
+          <TooltipTrigger asChild>
+            <Link
+              href={href}
+              className={cn(
+                "relative flex w-full items-center justify-center rounded-lg p-2 transition-colors",
+                active
+                  ? "bg-sidebar-accent text-sidebar-primary shadow-[inset_0_0_0_1px_var(--sidebar-accent)]"
+                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {badge != null && badge > 0 && (
+                <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning text-[9px] font-bold text-warning-foreground">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </Link>
           </TooltipTrigger>
           <TooltipContent side="right">{label}</TooltipContent>
         </Tooltip>

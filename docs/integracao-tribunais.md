@@ -1,5 +1,20 @@
 # Integração com Tribunais — Plano de Implementação
 
+> ## ⚠️ DOCUMENTO OBSOLETO — não usar como referência
+>
+> Este plano descreve uma integração direta com **DataJud (CNJ)** e **Escavador**
+> que **nunca foi construída**. A decisão real foi contratar o serviço
+> **BuscaProcessos**, já implementado em `src/lib/buscaprocessos/`.
+>
+> Nenhum arquivo, rota ou tabela citado abaixo existe no repositório
+> (`datajud.service.ts`, `escavador.service.ts`, `src/lib/cnj-parser.ts`,
+> `/api/processos/consultar`, `processo_movimentos`, `processo_sync_log`).
+>
+> **Referência atual:** [`docs/ROADMAP-MODULOS.md`](./ROADMAP-MODULOS.md) —
+> apêndice "BuscaProcessos: estrutura já existente e o que falta".
+>
+> Mantido apenas como registro histórico da avaliação de fontes de dados.
+
 ## Contexto
 
 O sistema precisa consultar automaticamente andamentos processuais nos tribunais e atualizar a timeline dos casos. Os processos monitorados estão concentrados em TJSP, TRT-2, TRF-3 e JEF.

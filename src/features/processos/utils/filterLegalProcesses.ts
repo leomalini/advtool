@@ -53,13 +53,15 @@ export function filterLegalProcesses(
   const to = f.deadlineTo ? new Date(f.deadlineTo).getTime() : null
 
   return processos.filter((p) => {
+    // A processo with no linked crm_item has none of the item-side fields —
+    // any filter on them excludes it, but it still matches by CNJ/parties.
     const item = p.crm_item
-    if (f.legalArea && item.legal_area !== f.legalArea) return false
-    if (f.assignedTo && item.assigned_to !== f.assignedTo) return false
-    if (f.columnId && item.column_id !== f.columnId) return false
+    if (f.legalArea && item?.legal_area !== f.legalArea) return false
+    if (f.assignedTo && item?.assigned_to !== f.assignedTo) return false
+    if (f.columnId && item?.column_id !== f.columnId) return false
 
     if (from !== null || to !== null) {
-      if (!item.next_deadline) return false
+      if (!item?.next_deadline) return false
       const deadline = new Date(item.next_deadline).getTime()
       if (from !== null && deadline < from) return false
       if (to !== null && deadline > to) return false
@@ -67,15 +69,15 @@ export function filterLegalProcesses(
 
     if (q) {
       const haystack = [
-        item.title,
+        item?.title,
         p.cnj_number,
         p.plaintiff,
         p.defendant,
         p.opposing_counsel,
         p.court,
         p.court_division,
-        item.next_task_summary,
-        getCrmItemClientName(item),
+        item?.next_task_summary,
+        item ? getCrmItemClientName(item) : null,
       ]
         .filter(Boolean)
         .join(' ')

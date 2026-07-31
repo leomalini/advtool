@@ -7,6 +7,7 @@ import {
   updateCrmItemRecord,
   moveCrmItemColumn,
   deleteCrmItemRecord,
+  LastLinkedCrmItemError,
 } from '../services/crmItems.service'
 import { crmItemKeys } from './useCrmItems'
 import { useAuth } from '@/hooks/useAuth'
@@ -68,7 +69,10 @@ export function useDeleteCrmItem(workflowId: string) {
       queryClient.invalidateQueries({ queryKey: crmItemKeys.workflow(workflowId) })
       toast.success('Caso removido.')
     },
-    onError: () => toast.error('Erro ao remover caso.'),
+    onError: (error) =>
+      toast.error(
+        error instanceof LastLinkedCrmItemError ? error.message : 'Erro ao remover caso.'
+      ),
   })
 }
 
@@ -100,11 +104,30 @@ export function useBulkDeleteCrmItems(workflowId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (ids: string[]) => Promise.all(ids.map((id) => deleteCrmItemRecord(id))),
-    onSuccess: (_data, ids) => {
+    // Settled rather than all: an item blocked for being a processo's last
+    // link shouldn't cancel the deletion of the others already selected.
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => deleteCrmItemRecord(id)))
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      const blocked = rejected.filter((r) => r.reason instanceof LastLinkedCrmItemError)
+      const failed = rejected.filter((r) => !(r.reason instanceof LastLinkedCrmItemError))
+
+      // A genuine failure still surfaces as an error toast; the guard doesn't.
+      if (failed.length > 0) throw failed[0].reason
+
+      return { deleted: ids.length - rejected.length, blocked: blocked.length }
+    },
+    onSuccess: ({ deleted, blocked }) => {
       queryClient.invalidateQueries({ queryKey: crmItemKeys.workflow(workflowId) })
       queryClient.invalidateQueries({ queryKey: crmItemKeys.counts() })
-      toast.success(`${ids.length} caso(s) removido(s).`)
+      if (deleted > 0) toast.success(`${deleted} caso(s) removido(s).`)
+      if (blocked > 0) {
+        toast.warning(
+          `${blocked} caso(s) não removido(s): são o único vínculo de um processo. ` +
+            'Exclua pelo módulo Processos.'
+        )
+      }
     },
     onError: () => toast.error('Erro ao remover casos.'),
   })

@@ -1,9 +1,10 @@
 import type { CrmItemWithRelations } from './crmItem.types'
 
 // ── Legal Process Types ──────────────────────────────────────────────────────
-// A processo is always linked 1:1 to a CrmItem (joined-table inheritance —
-// legal_processes.id === crm_items.id), always living in the fixed
-// 'wf-processos' workflow. Not every CrmItem has a linked LegalProcess.
+// A processo can be linked to N CrmItems across workflows (see migration 14),
+// its "master" one being the item in the fixed 'wf-processos' workflow.
+// Not every CrmItem has a linked LegalProcess — and a LegalProcess may end up
+// with no CrmItem at all (see `crm_item` below).
 
 export interface LegalProcess {
   id: string
@@ -28,7 +29,11 @@ export interface LegalProcessMovement {
 }
 
 export interface LegalProcessWithRelations extends LegalProcess {
-  crm_item: CrmItemWithRelations
+  /** The master crm_item (wf-processos), or null when the processo has no
+   * linked item left — an integrity anomaly the delete guard in
+   * crmItems.service.ts prevents, but that older data may still contain.
+   * Consumers must degrade gracefully instead of assuming it exists. */
+  crm_item: CrmItemWithRelations | null
   movements: LegalProcessMovement[]
 }
 

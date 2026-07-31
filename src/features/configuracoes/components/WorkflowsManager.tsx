@@ -585,18 +585,20 @@ export function WorkflowsManager() {
                 </Button>
                 {wf.id === "wf-processos" ? (
                   <Tooltip>
-                    <TooltipTrigger
-                      render={
+                    {/* span wrapper: a disabled button doesn't emit the pointer
+                        events Radix Tooltip needs to open */}
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
                         <Button
                           size="sm"
                           variant="outline"
                           disabled
                           className="text-muted-foreground/50"
                           aria-label="Excluir workflow"
-                        />
-                      }
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent side="top">
                       Workflow reservado para o módulo Processos

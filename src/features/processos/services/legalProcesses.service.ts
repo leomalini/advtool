@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { recordActivity } from '@/lib/activities'
 import { updateCrmItemRecord } from '@/features/crm/services/crmItems.service'
 import type {
   LegalProcessWithRelations,
@@ -24,9 +25,11 @@ const LEGAL_PROCESS_SELECT = `
 
 /** A processo can be linked to items in several workflows — the "master" one
  * (used for display in the Processos module) is always the item living in
- * the fixed wf-processos workflow. */
-function pickMasterCrmItem(crmItems: CrmItemWithRelations[]): CrmItemWithRelations {
-  return crmItems.find((c) => c.workflow_id === 'wf-processos') ?? crmItems[0]
+ * the fixed wf-processos workflow. Returns null when the processo has no
+ * linked item at all, so consumers get an explicit absence instead of
+ * `undefined` leaking through a non-nullable type. */
+function pickMasterCrmItem(crmItems: CrmItemWithRelations[]): CrmItemWithRelations | null {
+  return crmItems.find((c) => c.workflow_id === 'wf-processos') ?? crmItems[0] ?? null
 }
 
 function toLegalProcessWithRelations(row: {
@@ -34,7 +37,7 @@ function toLegalProcessWithRelations(row: {
   [key: string]: unknown
 }): LegalProcessWithRelations {
   const { crm_items, ...rest } = row
-  return { ...rest, crm_item: pickMasterCrmItem(crm_items) } as LegalProcessWithRelations
+  return { ...rest, crm_item: pickMasterCrmItem(crm_items ?? []) } as LegalProcessWithRelations
 }
 
 function splitInput(input: LegalProcessInput) {
@@ -155,10 +158,10 @@ export async function createLegalProcess(
     .single()
   if (crmItemError) throw crmItemError
 
-  await supabase.from('activities').insert({
-    type: 'case_created',
-    entity_type: 'case',
-    entity_id: crmItem.id,
+  await recordActivity({
+    type: 'legal_process_created',
+    entity_type: 'legal_process',
+    entity_id: legalProcess.id,
     entity_title: crmItemFields.title ?? 'Processo',
     actor_id: userId,
   })

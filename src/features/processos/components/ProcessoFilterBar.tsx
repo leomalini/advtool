@@ -42,6 +42,20 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
     onChange({ ...filters, [key]: value })
   }
 
+  // Radix's SelectValue renders the selected item's own children by default;
+  // these triggers need a different (shorter) label than the dropdown option,
+  // so the label is computed here and passed as SelectValue's children.
+  const assignedProfile = filters.assignedTo
+    ? profiles.find((p) => p.id === filters.assignedTo)
+    : undefined
+  const assignedLabel = !filters.assignedTo ? (
+    'Todos responsáveis'
+  ) : assignedProfile ? (
+    <ProfileOptionCompact profile={assignedProfile} />
+  ) : (
+    'Responsável'
+  )
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {/* Search */}
@@ -72,9 +86,7 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
       >
         <SelectTrigger className="h-9 w-[150px] text-sm">
           <SelectValue>
-            {(v: string) =>
-              !v || v === ALL ? 'Todas as áreas' : AREAS_JURIDICAS[v as CrmLegalArea]?.label
-            }
+            {filters.legalArea ? AREAS_JURIDICAS[filters.legalArea]?.label : 'Todas as áreas'}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -93,13 +105,7 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
         onValueChange={(v) => set('assignedTo', v === ALL ? null : v)}
       >
         <SelectTrigger className="h-9 w-[190px] text-sm">
-          <SelectValue>
-            {(v: string) => {
-              if (!v || v === ALL) return 'Todos responsáveis'
-              const profile = profiles.find((p) => p.id === v)
-              return profile ? <ProfileOptionCompact profile={profile} /> : 'Responsável'
-            }}
-          </SelectValue>
+          <SelectValue>{assignedLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Todos responsáveis</SelectItem>
@@ -118,10 +124,9 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
       >
         <SelectTrigger className="h-9 w-[160px] text-sm">
           <SelectValue>
-            {(v: string) => {
-              if (!v || v === ALL) return 'Todas as etapas'
-              return workflow.colunas.find((c) => c.id === v)?.nome ?? 'Etapa'
-            }}
+            {filters.columnId
+              ? (workflow.colunas.find((c) => c.id === filters.columnId)?.nome ?? 'Etapa')
+              : 'Todas as etapas'}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>

@@ -21,6 +21,7 @@ import {
   History,
   Hash,
   StickyNote,
+  TriangleAlert,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
@@ -219,6 +220,25 @@ function SummaryPreviewCard({
   )
 }
 
+/** Shown when a processo has no linked crm_item — an integrity anomaly the
+ * delete guard prevents, but that older data may still contain. The judicial
+ * data (CNJ, tribunal, movimentações) stays readable; only the CRM-side
+ * information and the tabs that depend on it are unavailable. */
+function OrphanProcessoNotice() {
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 p-3.5">
+      <TriangleAlert className="w-4 h-4 shrink-0 text-warning mt-0.5" />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">Processo sem caso vinculado</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Os dados de cliente, etapa, responsável e prazo vêm do caso no CRM, que foi removido.
+          Os dados processuais continuam disponíveis nas abas Identificação e Movimentações.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function PlaceholderTab({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
@@ -246,15 +266,17 @@ function TabResumo({
   onNavigateTab: (tab: ModalTab) => void
 }) {
   const item = processo.crm_item
-  const area = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+  const area = item?.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
   const workflow = useWorkflow('wf-processos')
-  const coluna = workflow?.colunas.find((c) => c.id === item.column_id)
+  const coluna = workflow?.colunas.find((c) => c.id === item?.column_id)
   const clientName = getCrmItemClientName(item)
-  const assignedName = item.assigned_profile?.full_name
-  const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
+  const assignedName = item?.assigned_profile?.full_name
+  const prazoInfo = item?.next_deadline ? formatPrazo(item.next_deadline) : null
 
   return (
     <div className="space-y-7">
+      {!item && <OrphanProcessoNotice />}
+
       {/* Key-facts strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatChip
@@ -272,7 +294,7 @@ function TabResumo({
         <StatChip
           icon={<History className="w-4 h-4" />}
           label="Última atualização"
-          value={formatRelativeDate(item.updated_at)}
+          value={item ? formatRelativeDate(item.updated_at) : '—'}
         />
       </div>
 
@@ -294,10 +316,10 @@ function TabResumo({
           </div>
           <div className="space-y-3.5">
             <InfoBlockRow icon={<User className="w-3.5 h-3.5" />} label="Cliente" value={clientName} showEmpty />
-            <InfoBlockRow icon={<Phone className="w-3.5 h-3.5" />} label="Telefone" value={item.client?.phone} showEmpty />
-            <InfoBlockRow icon={<Mail className="w-3.5 h-3.5" />} label="E-mail" value={item.client?.email} showEmpty />
+            <InfoBlockRow icon={<Phone className="w-3.5 h-3.5" />} label="Telefone" value={item?.client?.phone} showEmpty />
+            <InfoBlockRow icon={<Mail className="w-3.5 h-3.5" />} label="E-mail" value={item?.client?.email} showEmpty />
           </div>
-          {item.notes && (
+          {item?.notes && (
             <div className="flex items-start gap-2.5 pt-3.5 border-t border-border/70">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                 <StickyNote className="w-3.5 h-3.5" />
@@ -513,11 +535,11 @@ interface ProcessoModalProps {
 export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTab>('resumo')
   const item = processo.crm_item
-  const updateProcess = useUpdateLegalProcess(processo.id, item.id)
+  const updateProcess = useUpdateLegalProcess(processo.id, item?.id ?? '')
 
-  const area = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+  const area = item?.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
   const clientName = getCrmItemClientName(item)
-  const assignedName = item.assigned_profile?.full_name ?? ''
+  const assignedName = item?.assigned_profile?.full_name ?? ''
 
   const advInitials = assignedName
     .split(' ')
@@ -553,7 +575,7 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
                 )}
               </div>
               <h2 className="text-xl font-bold text-foreground truncate">{clientName}</h2>
-              {item.title && item.title !== clientName && (
+              {item?.title && item.title !== clientName && (
                 <p className="text-sm text-muted-foreground truncate">{item.title}</p>
               )}
               <div className="flex items-center gap-3 mt-2">
@@ -615,14 +637,26 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
           {activeTab === 'resumo' && <TabResumo processo={processo} onNavigateTab={setActiveTab} />}
           {activeTab === 'identificacao' && <TabIdentificacao processo={processo} />}
           {activeTab === 'movimentacoes' && <TabMovimentacoes processo={processo} />}
-          {activeTab === 'etapas' && <CrmItemTimeline crmItemId={item.id} itemLabel="processo" />}
-          {activeTab === 'cliente' && (
-            <CrmItemClienteTab
-              client={item.client}
-              onLinkClient={(clientId) => updateProcess.mutate({ client_id: clientId })}
-              isLinking={updateProcess.isPending}
-            />
-          )}
+          {activeTab === 'etapas' &&
+            (item ? (
+              <CrmItemTimeline crmItemId={item.id} itemLabel="processo" />
+            ) : (
+              <div className="py-10">
+                <OrphanProcessoNotice />
+              </div>
+            ))}
+          {activeTab === 'cliente' &&
+            (item ? (
+              <CrmItemClienteTab
+                client={item.client}
+                onLinkClient={(clientId) => updateProcess.mutate({ client_id: clientId })}
+                isLinking={updateProcess.isPending}
+              />
+            ) : (
+              <div className="py-10">
+                <OrphanProcessoNotice />
+              </div>
+            ))}
           {activeTab === 'agenda' && (
             <PlaceholderTab icon={<Calendar className="w-8 h-8" />} label="Agenda" />
           )}

@@ -113,21 +113,21 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     `${MENU_COL_WIDTH}px`,
   ].join(' ')
 
+  // Processos with no linked crm_item sort last on either field (Infinity),
+  // instead of throwing while the comparator runs.
+  function sortTime(p: LegalProcessWithRelations, field: SortField): number {
+    if (!p.crm_item) return Infinity
+    if (field === 'prazo') {
+      return p.crm_item.next_deadline ? new Date(p.crm_item.next_deadline).getTime() : Infinity
+    }
+    return new Date(p.crm_item.updated_at).getTime()
+  }
+
   const sorted = useMemo(() => {
     if (!sortField || !sortDir) return processos
     return [...processos].sort((a, b) => {
-      const aTime =
-        sortField === 'prazo'
-          ? a.crm_item.next_deadline
-            ? new Date(a.crm_item.next_deadline).getTime()
-            : Infinity
-          : new Date(a.crm_item.updated_at).getTime()
-      const bTime =
-        sortField === 'prazo'
-          ? b.crm_item.next_deadline
-            ? new Date(b.crm_item.next_deadline).getTime()
-            : Infinity
-          : new Date(b.crm_item.updated_at).getTime()
+      const aTime = sortTime(a, sortField)
+      const bTime = sortTime(b, sortField)
       return sortDir === 'asc' ? aTime - bTime : bTime - aTime
     })
   }, [processos, sortField, sortDir])
@@ -141,14 +141,18 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     }
   }
 
-  const allVisibleSelected = sorted.length > 0 && sorted.every((p) => selected.has(p.crm_item.id))
+  // Bulk actions operate on crm_items, so a processo with no linked item can't
+  // take part in the selection — it stays visible but not selectable.
+  const selectableIds = sorted.map((p) => p.crm_item?.id).filter((id): id is string => !!id)
+  const allVisibleSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selected.has(id))
   const selectedIds = Array.from(selected)
 
   function toggleAll() {
     if (allVisibleSelected) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(sorted.map((p) => p.crm_item.id)))
+      setSelected(new Set(selectableIds))
     }
   }
 
@@ -196,7 +200,9 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     )
   }
 
-  const crmItemIdToProcessoId = new Map(processos.map((p) => [p.crm_item.id, p.id]))
+  const crmItemIdToProcessoId = new Map(
+    processos.filter((p) => p.crm_item).map((p) => [p.crm_item!.id, p.id])
+  )
 
   function handleDelete() {
     setPendingDelete({ mode: 'bulk' })
@@ -226,6 +232,38 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
   function renderCell(colKey: string, processo: LegalProcessWithRelations) {
     const item = processo.crm_item
 
+    // Tribunal reads only from the processo row itself, so it renders even
+    // when no crm_item is linked.
+    if (colKey === 'tribunal') {
+      return (
+        <div className="min-w-0">
+          <p className="text-xs text-foreground/80 truncate">{processo.court ?? '—'}</p>
+          {processo.court_division && (
+            <p className="text-[10.5px] text-muted-foreground truncate">{processo.court_division}</p>
+          )}
+        </div>
+      )
+    }
+
+    // Every other column comes from the crm_item — flag the anomaly in the
+    // identifying column and blank the rest, instead of throwing.
+    if (!item) {
+      if (colKey === 'cliente') {
+        return (
+          <div className="min-w-0 pr-2">
+            <div className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground truncate">
+              <TriangleAlert className="w-3 h-3 shrink-0" />
+              Sem caso vinculado
+            </div>
+            <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
+              {processo.cnj_number ?? 'Sem CNJ cadastrado'}
+            </div>
+          </div>
+        )
+      }
+      return <span className="text-[11.5px] text-muted-foreground">—</span>
+    }
+
     switch (colKey) {
       case 'cliente': {
         return (
@@ -236,16 +274,6 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
             <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
               {processo.cnj_number ?? 'Sem CNJ cadastrado'}
             </div>
-          </div>
-        )
-      }
-      case 'tribunal': {
-        return (
-          <div className="min-w-0">
-            <p className="text-xs text-foreground/80 truncate">{processo.court ?? '—'}</p>
-            {processo.court_division && (
-              <p className="text-[10.5px] text-muted-foreground truncate">{processo.court_division}</p>
-            )}
           </div>
         )
       }
@@ -388,8 +416,8 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
 
         {sorted.map((processo) => {
           const item = processo.crm_item
-          const isSelected = selected.has(item.id)
-          const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
+          const isSelected = !!item && selected.has(item.id)
+          const prazoInfo = item?.next_deadline ? formatPrazo(item.next_deadline) : null
           const isCritical = prazoInfo?.tone === 'critical'
 
           return (
@@ -405,7 +433,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
               onClick={() => onRowClick(processo)}
             >
               <div onClick={(e) => e.stopPropagation()}>
-                <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(item.id)} />
+                {item && <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(item.id)} />}
               </div>
 
               {visibleColumns.map((col) => (

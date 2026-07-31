@@ -42,9 +42,11 @@ function AbaCasos({ clientId }: { clientId: string }) {
       <span className="text-xs text-muted-foreground">
         {processos.length} processo{processos.length !== 1 ? 's' : ''}
       </span>
-      <Button size="sm" className="h-7 gap-1.5 text-xs" render={<Link href={novoProcessoHref} />}>
-        <Plus className="h-3.5 w-3.5" />
-        Novo Processo
+      <Button asChild size="sm" className="h-7 gap-1.5 text-xs">
+        <Link href={novoProcessoHref}>
+          <Plus className="h-3.5 w-3.5" />
+          Novo Processo
+        </Link>
       </Button>
     </div>
   )
@@ -77,10 +79,10 @@ function AbaCasos({ clientId }: { clientId: string }) {
       {header}
       {processos.map((processo) => {
         const item = processo.crm_item
-        const workflow = workflows.find((w) => w.id === item.workflow_id)
-        const coluna = workflow?.colunas.find((c) => c.id === item.column_id)
-        const legalArea = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
-        const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
+        const workflow = workflows.find((w) => w.id === item?.workflow_id)
+        const coluna = workflow?.colunas.find((c) => c.id === item?.column_id)
+        const legalArea = item?.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+        const prazoInfo = item?.next_deadline ? formatPrazo(item.next_deadline) : null
 
         return (
           <Link
@@ -137,7 +139,7 @@ function AbaCasos({ clientId }: { clientId: string }) {
                   {prazoInfo.label}
                 </span>
               )}
-              {item.assigned_profile && (
+              {item?.assigned_profile && (
                 <div
                   title={item.assigned_profile.full_name}
                   className="w-6 h-6 rounded-full flex items-center justify-center text-[9.5px] font-bold bg-accent text-accent-foreground"
@@ -146,7 +148,7 @@ function AbaCasos({ clientId }: { clientId: string }) {
                 </div>
               )}
               <span className="text-[10.5px] text-muted-foreground hidden sm:block">
-                {formatRelativeDate(item.updated_at)}
+                {item ? formatRelativeDate(item.updated_at) : '—'}
               </span>
               <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>

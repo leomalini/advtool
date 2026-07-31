@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { NONE_VALUE, toSelectValue, fromSelectValue } from "@/utils/select";
 import {
   Loader2,
   Paperclip,
@@ -247,14 +248,14 @@ export function EventForm({
                   control={control}
                   render={({ field }) => (
                     <Select
-                      value={field.value ?? ""}
-                      onValueChange={field.onChange}
+                      value={toSelectValue(field.value)}
+                      onValueChange={(v) => field.onChange(fromSelectValue(v))}
                     >
                       <SelectTrigger className="h-9 text-sm">
                         <SelectValue placeholder="Selecionar cliente..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">— Nenhum —</SelectItem>
+                        <SelectItem value={NONE_VALUE}>— Nenhum —</SelectItem>
                         {clientes.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {getClientDisplayName(

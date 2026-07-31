@@ -1,46 +1,46 @@
 # Setup do Banco de Dados
 
-## Onde rodar
+## Fonte da verdade
 
-Acesse: **supabase.com → seu projeto → SQL Editor → New query**
+As **migrations em `migrations/`** são a fonte da verdade do schema — rode-as em
+ordem numérica. O arquivo `schema.sql` é um snapshot desatualizado (congelado por
+volta da migration 06, ainda descreve o modelo `leads` pré-rename) e **não deve
+ser usado como referência**.
 
-Rode cada arquivo abaixo em ordem, um por vez. Copie o conteúdo, cole no SQL Editor e clique em **Run**.
+## Como aplicar
 
-## Ordem de execução
+Com a Supabase CLI (recomendado):
 
-| Arquivo | Conteúdo |
-|---|---|
-| `migrations/01_profiles.sql` | Tabela de usuários + trigger de auto-criação |
-| `migrations/02_crm.sql` | lead_stages, leads, lead_movements, lead_comments |
-| `migrations/03_clients.sql` | clients, client_attachments |
-| `migrations/04_events.sql` | events (agenda) |
-| `migrations/05_tasks.sql` | tasks, task_comments, task_checklist_items |
-| `migrations/06_activities.sql` | activities (feed global) |
+```bash
+supabase db reset
+```
 
-## Storage (bucket de anexos)
+Ou manualmente: **supabase.com → seu projeto → SQL Editor → New query**, colando
+o conteúdo de cada arquivo de `migrations/` em ordem numérica.
 
-**NÃO** rode o SQL de storage. Faça pelo dashboard:
+## Storage
 
-1. No Supabase: **Storage → New bucket**
-2. Name: `attachments`
-3. Public bucket: **desligado** (privado)
-4. Clique em **Create bucket**
+O bucket `attachments` é criado pela migration
+`20260101000018_storage_attachments_bucket.sql` — **não** é mais necessário
+criá-lo à mão pelo Studio. A migration é idempotente: em bases onde o bucket já
+foi criado manualmente, ela não falha.
 
-As políticas de acesso já estão no schema principal (`schema.sql`) se precisar aplicar manualmente.
+As três policies (`auth_upload`, `auth_read`, `auth_delete`) liberam o bucket
+inteiro para qualquer usuário autenticado, sem escopo por pasta — consistente com
+o modelo single-tenant do produto.
 
 ## Verificação
 
-Após rodar todos os arquivos, vá em **Table Editor** e confirme que as seguintes tabelas foram criadas:
+Após aplicar tudo, confirme em **Table Editor** que existem:
 
-- profiles
-- lead_stages (com 7 registros seed)
-- leads
-- lead_movements
-- lead_comments
-- clients
-- client_attachments
-- events
-- tasks
-- task_comments
-- task_checklist_items
-- activities
+`profiles`, `clients`, `client_contacts`, `client_attachments`, `crm_items`,
+`crm_item_comments`, `crm_item_column_history`, `legal_processes`,
+`legal_process_movements`, `workflows`, `workflow_columns`, `events`,
+`event_assignees`, `event_attachments`, `tasks`, `task_comments`,
+`task_checklist_items`, `activities`.
+
+E em **Storage**, o bucket `attachments` (privado).
+
+> As tabelas `lead_stages`, `leads`, `lead_movements` e `lead_comments`
+> (migration 02) ainda existem no banco, mas são **código morto** — nenhum
+> arquivo em `src/` as referencia desde a migração para `crm_items`.

@@ -2,6 +2,21 @@
 
 > Documento vivo. Atualizar conforme módulos forem implementados.
 > Última atualização: 2026-07-08
+>
+> ## ⚠️ PARCIALMENTE DESATUALIZADO
+>
+> O backlog dos módulos restantes foi reorganizado em fases em
+> [`docs/ROADMAP-MODULOS.md`](./ROADMAP-MODULOS.md) — use aquele documento como
+> referência. Pontos deste arquivo que não valem mais:
+>
+> - O checklist da "Fase 1" usa nomenclatura anterior à separação
+>   `crm_items`/`legal_processes` (`case.types.ts`, `cases.service.ts`,
+>   `useCases`, `tasks.case_id`/`events.case_id`) — os objetivos foram
+>   cumpridos, sob outros nomes
+> - "Aba 'Casos' no ClienteDetailModal" já está **implementada**
+> - "WORKFLOWS como config estática (mock)" foi revertido — hoje são tabelas
+>   reais editáveis pela UI
+> - `.env.example` já existe (criado na Fase 0)
 
 ---
 

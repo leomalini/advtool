@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
+import { recordActivity } from '@/lib/activities'
 import type { CrmItemWithRelations, CrmItemColumnHistory } from '@/types/crmItem.types'
 import type { CrmItemInput } from '@/schemas/crmItem.schema'
 
@@ -70,9 +71,9 @@ export async function createCrmItemRecord(
 
   if (error) throw error
 
-  await supabase.from('activities').insert({
+  await recordActivity({
     type: 'case_created',
-    entity_type: 'case',
+    entity_type: 'crm_item',
     entity_id: data.id,
     entity_title: data.title ?? 'Caso',
     actor_id: userId,
@@ -138,7 +139,36 @@ export async function insertColumnHistory(
   }
 }
 
+/** Thrown when deleting a crm_item would leave its legal_process with no
+ * linked item at all — the processo would still exist but become unreachable
+ * from the CRM side, losing its client/etapa/responsável/prazo. Deleting the
+ * whole processo is done from the Processos module (deleteLegalProcess). */
+export class LastLinkedCrmItemError extends Error {
+  constructor() {
+    super('Este caso é o único vínculo de um processo. Exclua o processo pelo módulo Processos.')
+    this.name = 'LastLinkedCrmItemError'
+  }
+}
+
 export async function deleteCrmItemRecord(id: string): Promise<void> {
+  // maybeSingle, not single: deleting an already-removed item stays a no-op
+  // instead of throwing (the delete below is idempotent on its own).
+  const { data: item, error: fetchError } = await supabase
+    .from('crm_items')
+    .select('legal_process_id')
+    .eq('id', id)
+    .maybeSingle()
+  if (fetchError) throw fetchError
+
+  if (item?.legal_process_id) {
+    const { count, error: countError } = await supabase
+      .from('crm_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('legal_process_id', item.legal_process_id)
+    if (countError) throw countError
+    if ((count ?? 0) <= 1) throw new LastLinkedCrmItemError()
+  }
+
   const { error } = await supabase.from('crm_items').delete().eq('id', id)
   if (error) throw error
 }
