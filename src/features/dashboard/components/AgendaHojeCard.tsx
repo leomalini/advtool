@@ -1,46 +1,31 @@
+'use client'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { AGENDA_DO_DIA } from '@/data/mock'
-import { format } from 'date-fns'
+import { EVENT_TYPE_LABELS } from '@/types/event.types'
+import type { EventType } from '@/types/event.types'
+import { useUpcomingEvents } from '../hooks/useDashboardStats'
+import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { CalendarDays, Gavel, Users, Clock, MapPin } from 'lucide-react'
 
-type EventoTipo = 'audiencia' | 'reuniao' | 'prazo' | 'compromisso'
+const TIPO_CONFIG: Record<EventType, { icon: React.ElementType; color: string; bg: string }> = {
+  hearing: { icon: Gavel, color: 'text-info', bg: 'bg-info/12' },
+  meeting: { icon: Users, color: 'text-chart-2', bg: 'bg-chart-2/12' },
+  deadline: { icon: Clock, color: 'text-warning', bg: 'bg-warning/12' },
+  appointment: { icon: CalendarDays, color: 'text-muted-foreground', bg: 'bg-muted' },
+}
 
-const TIPO_CONFIG: Record<EventoTipo, { icon: React.ElementType; color: string; bg: string; label: string }> = {
-  audiencia: {
-    icon: Gavel,
-    color: 'text-info',
-    bg: 'bg-info/12',
-    label: 'Audiência',
-  },
-  reuniao: {
-    icon: Users,
-    color: 'text-chart-2',
-    bg: 'bg-chart-2/12',
-    label: 'Reunião',
-  },
-  prazo: {
-    icon: Clock,
-    color: 'text-warning',
-    bg: 'bg-warning/12',
-    label: 'Prazo',
-  },
-  compromisso: {
-    icon: CalendarDays,
-    color: 'text-muted-foreground',
-    bg: 'bg-muted',
-    label: 'Compromisso',
-  },
+/** The event carries a client relation only when one was linked. */
+function clientName(event: { client?: { type: string; name: string | null; company_name: string | null; trade_name: string | null } | null }): string | null {
+  const c = event.client
+  if (!c) return null
+  return c.type === 'individual' ? c.name : (c.trade_name ?? c.company_name)
 }
 
 export function AgendaHojeCard() {
-  // Ordena por data e hora
-  const agendaOrdenada = [...AGENDA_DO_DIA].sort((a, b) => {
-    const da = new Date(`${a.data}T${a.hora}`)
-    const db = new Date(`${b.data}T${b.hora}`)
-    return da.getTime() - db.getTime()
-  })
+  const { data: eventos, isLoading } = useUpcomingEvents(6)
 
   return (
     <Card>
@@ -51,10 +36,22 @@ export function AgendaHojeCard() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {agendaOrdenada.map((evento, index) => {
-          const config = TIPO_CONFIG[evento.tipo]
+        {isLoading &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
+          ))}
+
+        {!isLoading && eventos?.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-6">
+            Nenhum evento agendado.
+          </p>
+        )}
+
+        {eventos?.map((evento, index) => {
+          const config = TIPO_CONFIG[evento.type] ?? TIPO_CONFIG.appointment
           const IconeEvento = config.icon
-          const dataEvento = new Date(`${evento.data}T${evento.hora}`)
+          const dataEvento = parseISO(evento.start_at)
+          const cliente = clientName(evento as Parameters<typeof clientName>[0])
 
           return (
             <div key={evento.id} className="flex gap-3">
@@ -63,7 +60,7 @@ export function AgendaHojeCard() {
                 <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', config.bg)}>
                   <IconeEvento className={cn('h-4 w-4', config.color)} />
                 </div>
-                {index < agendaOrdenada.length - 1 && (
+                {index < eventos.length - 1 && (
                   <div className="mt-1 w-px flex-1 bg-border min-h-[20px]" />
                 )}
               </div>
@@ -78,30 +75,26 @@ export function AgendaHojeCard() {
                       config.color
                     )}
                   >
-                    {config.label}
+                    {EVENT_TYPE_LABELS[evento.type]}
                   </span>
                   <time className="text-xs text-muted-foreground whitespace-nowrap">
-                    {format(dataEvento, "dd/MM · HH:mm", { locale: ptBR })}
+                    {evento.all_day
+                      ? format(dataEvento, 'dd/MM', { locale: ptBR })
+                      : format(dataEvento, "dd/MM · HH:mm", { locale: ptBR })}
                   </time>
                 </div>
-                <p className="text-sm font-medium mt-1 leading-snug">{evento.titulo}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{evento.cliente}</p>
-                {evento.local && (
+                <p className="text-sm font-medium mt-1 leading-snug">{evento.title}</p>
+                {cliente && <p className="text-xs text-muted-foreground mt-0.5 truncate">{cliente}</p>}
+                {evento.location && (
                   <div className="flex items-center gap-1 mt-1">
                     <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-                    <span className="text-xs text-muted-foreground truncate">{evento.local}</span>
+                    <span className="text-xs text-muted-foreground truncate">{evento.location}</span>
                   </div>
                 )}
               </div>
             </div>
           )
         })}
-
-        {agendaOrdenada.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-6">
-            Nenhum evento agendado.
-          </p>
-        )}
       </CardContent>
     </Card>
   )

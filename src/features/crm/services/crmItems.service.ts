@@ -23,6 +23,18 @@ export async function getCrmItemsByWorkflow(workflowId: string): Promise<CrmItem
   return data as unknown as CrmItemWithRelations[]
 }
 
+/** Every CRM item, any workflow — for pickers that link another entity
+ * (an event, a task) to a caso/processo. */
+export async function getAllCrmItems(): Promise<CrmItemWithRelations[]> {
+  const { data, error } = await supabase
+    .from('crm_items')
+    .select(CRM_ITEM_SELECT)
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return data as unknown as CrmItemWithRelations[]
+}
+
 /** All CRM items (any workflow) linked to a given client — used by the client detail modal. */
 export async function getCrmItemsByClient(clientId: string): Promise<CrmItemWithRelations[]> {
   const { data, error } = await supabase

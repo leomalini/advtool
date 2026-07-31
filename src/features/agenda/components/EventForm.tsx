@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { NONE_VALUE, toSelectValue, fromSelectValue } from "@/utils/select";
+import { DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2,
   Paperclip,
@@ -43,6 +44,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProfiles } from "@/hooks/useProfiles";
 import { useClientes } from "@/features/clientes/hooks/useClientes";
 import { getClientDisplayName } from "@/types/cliente.types";
+import { useAllCrmItems } from "@/features/crm/hooks/useCrmItems";
+import { getCrmItemDisplayTitle } from "@/types/crmItem.types";
 
 interface EventFormProps {
   defaultDate?: Date;
@@ -100,6 +103,7 @@ export function EventForm({
   const { user } = useAuth();
   const { data: profiles = [] } = useProfiles();
   const { data: clientes = [] } = useClientes();
+  const { data: crmItems = [] } = useAllCrmItems();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = defaultDate
@@ -177,7 +181,9 @@ export function EventForm({
           style={{ backgroundColor: typeColor }}
         />
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">{formTitle}</h2>
+          {/* DialogTitle, not a bare h2: Radix uses it as the dialog's
+              accessible name and warns when DialogContent has none. */}
+          <DialogTitle className="text-sm font-semibold">{formTitle}</DialogTitle>
           {onCancel && (
             <button
               type="button"
@@ -268,14 +274,41 @@ export function EventForm({
                   )}
                 />
               </FormField>
-              <FormField label="Número do processo">
-                <Input
-                  {...register("process_number")}
-                  placeholder="0000000-00.0000.0.00.0000"
-                  className="h-9 text-sm font-mono"
+              <FormField label="Caso / Processo">
+                <Controller
+                  name="crm_item_id"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      value={toSelectValue(field.value)}
+                      onValueChange={(v) => field.onChange(fromSelectValue(v))}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Vincular a um caso..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_VALUE}>— Nenhum —</SelectItem>
+                        {crmItems.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {getCrmItemDisplayTitle(item)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 />
               </FormField>
             </div>
+
+            {/* Texto livre, para processos ainda não cadastrados no sistema —
+                o vínculo real acima é o que as abas de processo consultam. */}
+            <FormField label="Número do processo (avulso)">
+              <Input
+                {...register("process_number")}
+                placeholder="0000000-00.0000.0.00.0000"
+                className="h-9 text-sm font-mono"
+              />
+            </FormField>
           </FormSection>
 
           {/* Responsáveis — multi-select dropdown */}

@@ -9,6 +9,9 @@ export const eventFormSchema = z.object({
 
   // Processo/Cliente
   client_id: z.string().uuid().optional().or(z.literal('')),
+  /** Real FK to a CRM item / processo. `process_number` below stays as a free
+   * text fallback for processos not yet registered in the system. */
+  crm_item_id: z.string().uuid().optional().nullable().or(z.literal('')),
   process_number: z.string().max(50).optional(),
 
   // Responsáveis

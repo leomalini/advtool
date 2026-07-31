@@ -12,6 +12,11 @@ export type ActivityType =
   | 'task_comment'
   | 'event_created'
   | 'attachment_uploaded'
+  // Legacy: written before leads became crm_items. Nothing produces these
+  // anymore, but ~half the existing feed rows use them, so they still need
+  // to render readably.
+  | 'lead_created'
+  | 'lead_moved'
 
 /** Mirrors the CHECK constraint on activities.entity_type (migration 15).
  * 'lead' is legacy: the leads table is dead code, but old rows may exist. */
@@ -29,6 +34,8 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   task_comment: 'comentou na tarefa',
   event_created: 'agendou evento',
   attachment_uploaded: 'enviou anexo para',
+  lead_created: 'criou o caso',
+  lead_moved: 'moveu o caso',
 }
 
 export interface Activity {
@@ -44,8 +51,14 @@ export interface Activity {
 }
 
 export interface DashboardStats {
-  active_cases: number
-  weekly_meetings: number
+  /** Judicial processes (legal_processes), not generic CRM items. */
+  legal_processes: number
+  /** CRM items still in the negotiation pipeline. */
+  negotiations: number
   pending_tasks: number
   active_clients: number
+  /** Hearings scheduled for the current week — shown in the header line. */
+  weekly_hearings: number
+  /** Deadlines falling within the next 7 days (overdue ones included). */
+  upcoming_deadlines: number
 }

@@ -1,23 +1,20 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import { PROXIMOS_PRAZOS, AREAS_JURIDICAS } from '@/data/mock'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
-import { AlertTriangle, Clock } from 'lucide-react'
+'use client'
 
-function getInitials(nome: string): string {
-  return nome
-    .split(' ')
-    .filter(Boolean)
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
-}
+import Link from 'next/link'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import { AREAS_JURIDICAS } from '@/data/mock'
+import type { AreaJuridica } from '@/data/mock'
+import { formatPrazo } from '@/features/crm/utils/prazo'
+import { getInitials } from '@/utils/profile'
+import { useUpcomingDeadlines } from '../hooks/useDashboardStats'
+import { format, parseISO } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
+import { Clock } from 'lucide-react'
 
 export function PrazosCard() {
-  const hoje = new Date()
+  const { data: prazos, isLoading } = useUpcomingDeadlines(5)
 
   return (
     <Card>
@@ -28,33 +25,50 @@ export function PrazosCard() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {PROXIMOS_PRAZOS.map((prazo) => {
-          const data = new Date(prazo.data + 'T00:00:00')
-          const diffDias = Math.ceil(
-            (data.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
-          )
-          const area = AREAS_JURIDICAS[prazo.areaJuridica]
-          const iniciais = getInitials(prazo.advogado)
+        {isLoading &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[76px] w-full rounded-lg" />
+          ))}
+
+        {!isLoading && prazos?.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-6">
+            Nenhum prazo cadastrado.
+          </p>
+        )}
+
+        {prazos?.map((prazo) => {
+          const data = parseISO(prazo.next_deadline)
+          const prazoInfo = formatPrazo(prazo.next_deadline)
+          const area = prazo.legal_area
+            ? AREAS_JURIDICAS[prazo.legal_area as AreaJuridica]
+            : null
+          const isCritical = prazoInfo.tone === 'critical'
+          // Deadlines live on the crm_item, but when it belongs to a processo
+          // the useful destination is the processo modal.
+          const href = prazo.legal_process_id
+            ? `/processos?id=${prazo.legal_process_id}`
+            : `/crm?id=${prazo.crm_item_id}`
 
           return (
-            <div
-              key={prazo.id}
+            <Link
+              key={prazo.crm_item_id}
+              href={href}
               className={cn(
                 'flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50',
-                prazo.isFatal && 'border-destructive/25 bg-destructive/[0.05]'
+                isCritical && 'border-destructive/25 bg-destructive/[0.05]'
               )}
             >
               {/* Data */}
               <div
                 className={cn(
                   'flex flex-col items-center justify-center rounded-lg px-2.5 py-1.5 min-w-[44px] text-center',
-                  prazo.isFatal ? 'bg-destructive/10' : 'bg-muted'
+                  isCritical ? 'bg-destructive/10' : 'bg-muted'
                 )}
               >
                 <span
                   className={cn(
                     'text-base font-bold leading-none tabular-nums',
-                    prazo.isFatal ? 'text-destructive' : 'text-foreground'
+                    isCritical ? 'text-destructive' : 'text-foreground'
                   )}
                 >
                   {format(data, 'dd', { locale: ptBR })}
@@ -62,7 +76,7 @@ export function PrazosCard() {
                 <span
                   className={cn(
                     'text-xs uppercase font-medium',
-                    prazo.isFatal ? 'text-destructive' : 'text-muted-foreground'
+                    isCritical ? 'text-destructive' : 'text-muted-foreground'
                   )}
                 >
                   {format(data, 'MMM', { locale: ptBR })}
@@ -71,55 +85,49 @@ export function PrazosCard() {
 
               {/* Conteúdo */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-sm font-medium leading-snug truncate">
-                    {prazo.titulo}
-                  </span>
-                  {prazo.isFatal && (
-                    <Badge className="bg-destructive/12 text-destructive border-0 animate-pulse-urgent text-xs px-1.5 py-0 h-4">
-                      <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
-                      Prazo Fatal
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{prazo.clienteNome}</p>
+                <p className="text-sm font-medium leading-snug truncate">
+                  {prazo.next_task_summary ?? prazo.title}
+                </p>
+                {prazo.client_name && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {prazo.client_name}
+                  </p>
+                )}
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium',
-                      area.bg,
-                      area.color
-                    )}
-                  >
-                    {area.label}
-                  </span>
+                  {area && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium',
+                        area.bg,
+                        area.color
+                      )}
+                    >
+                      {area.label}
+                    </span>
+                  )}
                   <span
                     className={cn(
                       'text-xs font-medium',
-                      diffDias <= 3
-                        ? 'text-destructive'
-                        : diffDias <= 7
-                          ? 'text-warning'
-                          : 'text-muted-foreground'
+                      prazoInfo.tone === 'critical' && 'text-destructive',
+                      prazoInfo.tone === 'warning' && 'text-warning',
+                      prazoInfo.tone === 'neutral' && 'text-muted-foreground'
                     )}
                   >
-                    {diffDias === 0
-                      ? 'Hoje'
-                      : diffDias === 1
-                        ? 'Amanhã'
-                        : `em ${diffDias} dias`}
+                    {prazoInfo.label}
                   </span>
                 </div>
               </div>
 
               {/* Avatar do advogado */}
-              <div
-                title={prazo.advogado}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-xs font-semibold"
-              >
-                {iniciais}
-              </div>
-            </div>
+              {prazo.assigned_name && (
+                <div
+                  title={prazo.assigned_name}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-xs font-semibold"
+                >
+                  {getInitials(prazo.assigned_name)}
+                </div>
+              )}
+            </Link>
           )
         })}
       </CardContent>

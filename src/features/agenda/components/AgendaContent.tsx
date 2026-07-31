@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   format,
   startOfMonth,
@@ -14,619 +14,48 @@ import {
   subMonths,
   isToday,
   addDays,
+  min as minDate,
+  max as maxDate,
   parseISO,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import {
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Clock,
-  MapPin,
-  AlertCircle,
-  CalendarDays,
-  X,
-} from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { CASOS, ADVOGADOS } from '@/data/mock'
-import type { Evento } from '@/data/mock'
+import {
+  EVENT_TYPE_LABELS,
+  EVENT_TYPE_COLORS,
+  type EventType,
+} from '@/types/event.types'
+import type { CalendarEvent } from '@/types/event.types'
+import type { EventFormInput } from '@/schemas/event.schema'
+import { useEvents } from '../hooks/useEvents'
+import { useCreateEvent } from '../hooks/useEventMutations'
+import { EventForm } from './EventForm'
+import { EventDetailModal } from './EventDetailModal'
 
-// ── Constantes de tipo ─────────────────────────────────────────
-
-const TIPO_CONFIG: Record<
-  Evento['tipo'],
-  { label: string; color: string; bg: string; text: string }
-> = {
-  audiencia: { label: 'Audiência', color: '#ef4444', bg: 'bg-destructive/12', text: 'text-destructive' },
-  prazo: { label: 'Prazo', color: '#f59e0b', bg: 'bg-warning/12', text: 'text-warning' },
-  reuniao: { label: 'Reunião', color: '#6366f1', bg: 'bg-accent', text: 'text-accent-foreground' },
-  compromisso: { label: 'Compromisso', color: '#10b981', bg: 'bg-success/12', text: 'text-success' },
-}
-
-// ── Tipos ──────────────────────────────────────────────────────
-
-interface EventoEnriquecido extends Evento {
-  clienteNome: string
-}
-
-// ── Helpers ────────────────────────────────────────────────────
-
-function useEventosMock(): EventoEnriquecido[] {
-  return useMemo(() => {
-    return CASOS.flatMap((caso) =>
-      caso.eventos.map((ev) => ({
-        ...ev,
-        clienteNome: caso.clienteNome,
-      })),
-    )
-  }, [])
-}
-
-function formatHora(hora: string, horaFim?: string): string {
-  if (horaFim) return `${hora} – ${horaFim}`
-  return hora
-}
-
-function toDateInput(date: Date): string {
-  return format(date, 'yyyy-MM-dd')
-}
-
-// ── Modal de Detalhe de Evento ─────────────────────────────────
-
-interface EventoDetailProps {
-  evento: EventoEnriquecido | null
-  open: boolean
-  onClose: () => void
-}
-
-function EventoDetailModal({ evento, open, onClose }: EventoDetailProps) {
-  if (!evento) return null
-  const cfg = TIPO_CONFIG[evento.tipo]
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent showCloseButton={false} className="sm:max-w-[460px] p-0 gap-0 overflow-hidden">
-        <div className="flex flex-col">
-          <div
-            className="relative px-6 pt-5 pb-4 border-b"
-            style={{ backgroundColor: cfg.color + '0D' }}
-          >
-            <div
-              className="absolute inset-x-0 top-0 h-[3px] rounded-t-xl"
-              style={{ backgroundColor: cfg.color }}
-            />
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute top-3.5 right-4 p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-black/5 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <span
-              className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-white mb-2"
-              style={{ backgroundColor: cfg.color }}
-            >
-              {cfg.label}
-            </span>
-            <p className="text-[17px] font-medium leading-snug pr-8">{evento.titulo}</p>
-            <div className="flex items-center gap-1.5 mt-2.5 text-xs text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" />
-              <span>
-                {format(parseISO(evento.data), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
-                {' · '}
-                {formatHora(evento.hora, evento.horaFim)}
-              </span>
-            </div>
-          </div>
-
-          <div className="px-6 py-5 space-y-3">
-            {evento.local && (
-              <div className="flex items-start gap-3">
-                <MapPin className="h-4 w-4 text-muted-foreground/60 mt-0.5 shrink-0" />
-                <p className="text-sm">{evento.local}</p>
-              </div>
-            )}
-            {evento.descricao && (
-              <div className="flex items-start gap-3">
-                <CalendarDays className="h-4 w-4 text-muted-foreground/60 mt-0.5 shrink-0" />
-                <p className="text-sm text-muted-foreground">{evento.descricao}</p>
-              </div>
-            )}
-            {(evento.isFatalPrazo || evento.isUrgente) && (
-              <div className="flex gap-2 pt-1">
-                {evento.isFatalPrazo && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-destructive/12 text-destructive border-destructive/25">
-                    <AlertCircle className="h-3 w-3" />
-                    Prazo Fatal
-                  </span>
-                )}
-                {evento.isUrgente && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-warning/12 text-warning border-warning/25">
-                    <AlertCircle className="h-3 w-3" />
-                    Urgente
-                  </span>
-                )}
-              </div>
-            )}
-            <div className="border rounded-lg p-3 space-y-2 bg-muted/20">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Cliente</span>
-                <span className="font-medium">{evento.clienteNome}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Responsável</span>
-                <span className="font-medium">{evento.responsavel}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── Formulário de Novo Evento ──────────────────────────────────
-
-interface NovoEventoFormData {
-  titulo: string
-  tipo: Evento['tipo']
-  data: string
-  hora: string
-  horaFim: string
-  local: string
-  descricao: string
-  casoId: string
-  responsavelIds: string[]
-  isFatalPrazo: boolean
-  isUrgente: boolean
-}
-
-const FORM_DEFAULTS: NovoEventoFormData = {
-  titulo: '',
-  tipo: 'reuniao',
-  data: '',
-  hora: '09:00',
-  horaFim: '',
-  local: '',
-  descricao: '',
-  casoId: '',
-  responsavelIds: [],
-  isFatalPrazo: false,
-  isUrgente: false,
-}
-
-interface NovoEventoModalProps {
-  open: boolean
-  defaultData?: string
-  onClose: () => void
-  onSave: (evento: EventoEnriquecido) => void
-}
-
-function NovoEventoModal({ open, defaultData, onClose, onSave }: NovoEventoModalProps) {
-  const [form, setForm] = useState<NovoEventoFormData>({
-    ...FORM_DEFAULTS,
-    data: defaultData ?? '',
-  })
-  const [errors, setErrors] = useState<Partial<Record<'titulo' | 'data' | 'hora' | 'responsavelIds', string>>>({})
-  // Busca de processo/caso
-  const [casoSearch, setCasoSearch] = useState('')
-  const [casoDropdownOpen, setCasoDropdownOpen] = useState(false)
-
-  const handleOpen = (isOpen: boolean) => {
-    if (isOpen) {
-      setForm({ ...FORM_DEFAULTS, data: defaultData ?? '' })
-      setErrors({})
-      setCasoSearch('')
-      setCasoDropdownOpen(false)
-    } else {
-      onClose()
-    }
-  }
-
-  function set<K extends keyof NovoEventoFormData>(key: K, value: NovoEventoFormData[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }))
-    if (key in errors) setErrors((prev) => ({ ...prev, [key]: undefined }))
-  }
-
-  // Filtra casos por nome do cliente OU número CNJ
-  const casosFiltrados = casoSearch.trim().length > 0
-    ? CASOS.filter((c) => {
-        const q = casoSearch.toLowerCase()
-        return (
-          c.clienteNome.toLowerCase().includes(q) ||
-          (c.numeroCNJ ?? '').toLowerCase().includes(q)
-        )
-      })
-    : []
-
-  function selectCaso(casoId: string) {
-    setForm((prev) => ({ ...prev, casoId }))
-    setCasoSearch('')
-    setCasoDropdownOpen(false)
-  }
-
-  function clearCaso() {
-    setForm((prev) => ({ ...prev, casoId: '' }))
-    setCasoSearch('')
-  }
-
-  function addResponsavel(advId: string) {
-    if (!advId || form.responsavelIds.includes(advId)) return
-    setForm((prev) => ({ ...prev, responsavelIds: [...prev.responsavelIds, advId] }))
-    setErrors((prev) => ({ ...prev, responsavelIds: undefined }))
-  }
-
-  function removeResponsavel(advId: string) {
-    setForm((prev) => ({
-      ...prev,
-      responsavelIds: prev.responsavelIds.filter((id) => id !== advId),
-    }))
-  }
-
-  function validate(): boolean {
-    const next: typeof errors = {}
-    if (!form.titulo.trim()) next.titulo = 'Título obrigatório'
-    if (!form.data) next.data = 'Data obrigatória'
-    if (!form.hora) next.hora = 'Hora obrigatória'
-    if (form.responsavelIds.length === 0) next.responsavelIds = 'Selecione ao menos um responsável'
-    setErrors(next)
-    return Object.keys(next).length === 0
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!validate()) return
-
-    const advogados = ADVOGADOS.filter((a) => form.responsavelIds.includes(a.id))
-    const primeiroAdv = advogados[0] ?? ADVOGADOS[0]
-    const caso = CASOS.find((c) => c.id === form.casoId)
-
-    const novoEvento: EventoEnriquecido = {
-      id: `ev-local-${Date.now()}`,
-      titulo: form.titulo.trim(),
-      tipo: form.tipo,
-      data: form.data,
-      hora: form.hora,
-      horaFim: form.horaFim || undefined,
-      local: form.local || undefined,
-      descricao: form.descricao || '',
-      casoId: form.casoId || undefined,
-      clienteId: caso?.clienteId,
-      responsavel: advogados.map((a) => a.nome).join(' · '),
-      responsavelIniciais: primeiroAdv.iniciais,
-      isFatalPrazo: form.isFatalPrazo,
-      isUrgente: form.isUrgente,
-      clienteNome: caso?.clienteNome ?? '—',
-    }
-
-    onSave(novoEvento)
-    onClose()
-  }
-
-  const casoSelecionado = CASOS.find((c) => c.id === form.casoId)
-  // Advogados ainda não selecionados (para o select de adição)
-  const advDisponiveis = ADVOGADOS.filter((a) => !form.responsavelIds.includes(a.id))
-
-  return (
-    <Dialog open={open} onOpenChange={handleOpen}>
-      {/* flex-col + max-h garante que header e footer fiquem fixos */}
-      <DialogContent className="sm:max-w-[500px] p-0 gap-0 overflow-hidden flex flex-col max-h-[90vh]">
-
-        {/* ── Header fixo ── */}
-        <div className="px-6 pt-5 pb-4 border-b shrink-0">
-          <DialogHeader className="p-0">
-            <DialogTitle className="text-base font-semibold">Novo Evento</DialogTitle>
-          </DialogHeader>
-        </div>
-
-        {/* ── Corpo com scroll ── */}
-        <form
-          id="novo-evento-form"
-          onSubmit={handleSubmit}
-          className="flex flex-col flex-1 min-h-0"
-        >
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-
-            {/* Título */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Título *</label>
-              <Input
-                placeholder="Ex: Audiência de instrução — Silva x Empresa"
-                value={form.titulo}
-                onChange={(e) => set('titulo', e.target.value)}
-                className={cn(errors.titulo && 'border-destructive')}
-                autoFocus
-              />
-              {errors.titulo && <p className="text-xs text-destructive">{errors.titulo}</p>}
-            </div>
-
-            {/* Tipo */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Tipo *</label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(Object.entries(TIPO_CONFIG) as [Evento['tipo'], typeof TIPO_CONFIG[Evento['tipo']]][]).map(
-                  ([tipo, config]) => (
-                    <button
-                      key={tipo}
-                      type="button"
-                      onClick={() => set('tipo', tipo)}
-                      className={cn(
-                        'rounded-lg border px-2 py-2 text-xs font-medium transition-all',
-                        form.tipo === tipo
-                          ? 'bg-foreground text-background border-foreground'
-                          : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground'
-                      )}
-                    >
-                      <span
-                        className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle"
-                        style={{ backgroundColor: config.color }}
-                      />
-                      {config.label}
-                    </button>
-                  ),
-                )}
-              </div>
-            </div>
-
-            {/* Data + Hora */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Data *</label>
-                <Input
-                  type="date"
-                  value={form.data}
-                  onChange={(e) => set('data', e.target.value)}
-                  className={cn('text-sm', errors.data && 'border-destructive')}
-                />
-                {errors.data && <p className="text-xs text-destructive">{errors.data}</p>}
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Início *</label>
-                <Input
-                  type="time"
-                  value={form.hora}
-                  onChange={(e) => set('hora', e.target.value)}
-                  className={cn('text-sm', errors.hora && 'border-destructive')}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Fim</label>
-                <Input
-                  type="time"
-                  value={form.horaFim}
-                  onChange={(e) => set('horaFim', e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Processo / Caso — busca por texto */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Processo / Caso</label>
-
-              {casoSelecionado ? (
-                /* Chip do caso selecionado */
-                <div className="flex items-center gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{casoSelecionado.clienteNome}</p>
-                    {casoSelecionado.numeroCNJ && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
-                        {casoSelecionado.numeroCNJ}
-                      </p>
-                    )}
-                    {!casoSelecionado.numeroCNJ && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5 capitalize">
-                        {casoSelecionado.areaJuridica}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={clearCaso}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ) : (
-                /* Campo de busca com dropdown */
-                <div className="relative">
-                  <Input
-                    placeholder="Buscar por nome do cliente ou nº do processo…"
-                    value={casoSearch}
-                    onChange={(e) => {
-                      setCasoSearch(e.target.value)
-                      setCasoDropdownOpen(true)
-                    }}
-                    onFocus={() => setCasoDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setCasoDropdownOpen(false), 150)}
-                  />
-                  {casoDropdownOpen && casoSearch.trim().length > 0 && (
-                    <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-md border bg-popover shadow-md overflow-hidden">
-                      {casosFiltrados.length > 0 ? (
-                        <div className="max-h-48 overflow-y-auto">
-                          {casosFiltrados.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onMouseDown={() => selectCaso(c.id)}
-                              className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{c.clienteNome}</p>
-                                <p className="text-[11px] text-muted-foreground mt-0.5">
-                                  {c.numeroCNJ
-                                    ? <span className="font-mono">{c.numeroCNJ}</span>
-                                    : <span className="capitalize">{c.areaJuridica} · sem processo</span>
-                                  }
-                                </p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="px-3 py-3 text-xs text-muted-foreground text-center">
-                          Nenhum caso encontrado
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-
-            {/* Responsáveis — select + chips */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Responsáveis *</label>
-
-              {/* Select para adicionar */}
-              {advDisponiveis.length > 0 ? (
-                <select
-                  value=""
-                  onChange={(e) => addResponsavel(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-muted-foreground"
-                >
-                  <option value="" disabled>Selecionar responsável…</option>
-                  {advDisponiveis.map((a) => (
-                    <option key={a.id} value={a.id}>{a.nome}</option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-xs text-muted-foreground">Todos os responsáveis foram adicionados.</p>
-              )}
-
-              {/* Chips dos selecionados */}
-              {form.responsavelIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {ADVOGADOS.filter((a) => form.responsavelIds.includes(a.id)).map((adv) => (
-                    <div
-                      key={adv.id}
-                      className="inline-flex items-center gap-1.5 rounded-md border bg-muted/50 pl-1.5 pr-1 py-1 text-xs font-medium"
-                    >
-                      <span
-                        className={cn(
-                          'inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white',
-                          adv.cor
-                        )}
-                      >
-                        {adv.iniciais}
-                      </span>
-                      <span className="text-foreground">{adv.nome}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeResponsavel(adv.id)}
-                        className="ml-0.5 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {errors.responsavelIds && (
-                <p className="text-xs text-destructive">{errors.responsavelIds}</p>
-              )}
-            </div>
-
-            {/* Local */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Local</label>
-              <Input
-                placeholder="Ex: TJSP — Sala 302"
-                value={form.local}
-                onChange={(e) => set('local', e.target.value)}
-              />
-            </div>
-
-            {/* Descrição */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Descrição</label>
-              <textarea
-                rows={2}
-                placeholder="Observações sobre o evento…"
-                value={form.descricao}
-                onChange={(e) => set('descricao', e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 resize-none"
-              />
-            </div>
-
-            {/* Marcadores */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Marcadores</label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => set('isFatalPrazo', !form.isFatalPrazo)}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
-                    form.isFatalPrazo
-                      ? 'bg-destructive text-white border-destructive'
-                      : 'border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive'
-                  )}
-                >
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Prazo Fatal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => set('isUrgente', !form.isUrgente)}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
-                    form.isUrgente
-                      ? 'bg-warning text-white border-warning'
-                      : 'border-border text-muted-foreground hover:border-warning/40 hover:text-warning'
-                  )}
-                >
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Urgente
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* ── Footer fixo — sempre visível ── */}
-          <div className="shrink-0 flex justify-end gap-2 px-6 py-4 border-t bg-background">
-            <Button type="button" variant="outline" size="sm" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" size="sm">
-              Criar Evento
-            </Button>
-          </div>
-        </form>
-
-      </DialogContent>
-    </Dialog>
-  )
-}
+const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[]
 
 // ── Próximos Eventos (sidebar) ─────────────────────────────────
 
 interface ProximosEventosProps {
-  eventos: EventoEnriquecido[]
-  onEventoClick: (ev: EventoEnriquecido) => void
+  eventos: CalendarEvent[]
+  isLoading: boolean
+  onEventoClick: (ev: CalendarEvent) => void
 }
 
-function ProximosEventos({ eventos, onEventoClick }: ProximosEventosProps) {
+function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosProps) {
   const hoje = new Date()
   const em7dias = addDays(hoje, 7)
 
   const proximos = eventos
     .filter((ev) => {
-      const d = parseISO(ev.data)
+      const d = parseISO(ev.start_at)
       return d >= hoje && d <= em7dias
     })
-    .sort((a, b) => {
-      const dateCompare = a.data.localeCompare(b.data)
-      if (dateCompare !== 0) return dateCompare
-      return a.hora.localeCompare(b.hora)
-    })
+    .sort((a, b) => a.start_at.localeCompare(b.start_at))
 
   return (
     <div className="rounded-xl border overflow-hidden">
@@ -635,40 +64,42 @@ function ProximosEventos({ eventos, onEventoClick }: ProximosEventosProps) {
           Próximos 7 dias
         </p>
       </div>
-      {proximos.length === 0 ? (
+
+      {isLoading ? (
+        <div className="p-4 space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
+        </div>
+      ) : proximos.length === 0 ? (
         <div className="px-4 py-6 text-center">
           <p className="text-xs text-muted-foreground">Nenhum evento nos próximos 7 dias.</p>
         </div>
       ) : (
         <div className="divide-y">
-          {proximos.map((ev) => {
-            const cfg = TIPO_CONFIG[ev.tipo]
-            return (
-              <button
-                key={ev.id}
-                type="button"
-                onClick={() => onEventoClick(ev)}
-                className="w-full flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors text-left"
-              >
-                <div
-                  className="h-2 w-2 rounded-full mt-1.5 shrink-0"
-                  style={{ backgroundColor: cfg.color }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">{ev.titulo}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {format(parseISO(ev.data), "dd 'de' MMM", { locale: ptBR })}
-                    {' · '}
-                    {ev.hora}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground truncate">{ev.clienteNome}</p>
-                </div>
-                {ev.isFatalPrazo && (
-                  <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
-                )}
-              </button>
-            )
-          })}
+          {proximos.map((ev) => (
+            <button
+              key={ev.id}
+              type="button"
+              onClick={() => onEventoClick(ev)}
+              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors text-left"
+            >
+              <div
+                className="h-2 w-2 rounded-full mt-1.5 shrink-0"
+                style={{ backgroundColor: EVENT_TYPE_COLORS[ev.type] }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{ev.title}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {format(parseISO(ev.start_at), "dd 'de' MMM", { locale: ptBR })}
+                  {!ev.all_day && ` · ${format(parseISO(ev.start_at), 'HH:mm')}`}
+                </p>
+              </div>
+              {ev.fatal_deadline && (
+                <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+              )}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -678,14 +109,10 @@ function ProximosEventos({ eventos, onEventoClick }: ProximosEventosProps) {
 // ── Main Component ─────────────────────────────────────────────
 
 export function AgendaContent() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 6, 7))
-  const [selectedEvento, setSelectedEvento] = useState<EventoEnriquecido | null>(null)
+  const [currentDate, setCurrentDate] = useState(() => new Date())
+  const [selectedEvento, setSelectedEvento] = useState<CalendarEvent | null>(null)
   const [novoEventoOpen, setNovoEventoOpen] = useState(false)
-  const [novoEventoData, setNovoEventoData] = useState<string | undefined>(undefined)
-  const [localEventos, setLocalEventos] = useState<EventoEnriquecido[]>([])
-
-  const baseEventos = useEventosMock()
-  const eventos = useMemo(() => [...baseEventos, ...localEventos], [baseEventos, localEventos])
+  const [novoEventoData, setNovoEventoData] = useState<Date | undefined>(undefined)
 
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
@@ -693,14 +120,34 @@ export function AgendaContent() {
   const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
   const days = eachDayOfInterval({ start: calStart, end: calEnd })
 
+  // One query covers both surfaces: the visible grid and the "next 7 days"
+  // sidebar, which can reach past the grid when the month is nearly over.
+  const hoje = new Date()
+  const rangeFrom = format(minDate([calStart, hoje]), "yyyy-MM-dd'T'00:00:00")
+  const rangeTo = format(maxDate([calEnd, addDays(hoje, 7)]), "yyyy-MM-dd'T'23:59:59")
+
+  const { data: eventos = [], isLoading } = useEvents(rangeFrom, rangeTo)
+  const createEvent = useCreateEvent()
+
   const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
-  function getEventosForDay(day: Date): EventoEnriquecido[] {
-    return eventos.filter((ev) => isSameDay(parseISO(ev.data), day))
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>()
+    for (const ev of eventos) {
+      const key = ev.start_at.slice(0, 10)
+      const list = map.get(key)
+      if (list) list.push(ev)
+      else map.set(key, [ev])
+    }
+    return map
+  }, [eventos])
+
+  function getEventosForDay(day: Date): CalendarEvent[] {
+    return eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? []
   }
 
   function handleDayClick(day: Date) {
-    setNovoEventoData(toDateInput(day))
+    setNovoEventoData(day)
     setNovoEventoOpen(true)
   }
 
@@ -709,8 +156,9 @@ export function AgendaContent() {
     setNovoEventoOpen(true)
   }
 
-  function handleSaveEvento(evento: EventoEnriquecido) {
-    setLocalEventos((prev) => [...prev, evento])
+  async function handleCreate(data: EventFormInput) {
+    await createEvent.mutateAsync(data)
+    setNovoEventoOpen(false)
   }
 
   return (
@@ -722,6 +170,7 @@ export function AgendaContent() {
             variant="outline"
             size="icon"
             onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+            aria-label="Mês anterior"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -732,14 +181,11 @@ export function AgendaContent() {
             variant="outline"
             size="icon"
             onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+            aria-label="Próximo mês"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentDate(new Date())}
-          >
+          <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
             Hoje
           </Button>
         </div>
@@ -751,14 +197,15 @@ export function AgendaContent() {
 
       {/* Legenda */}
       <div className="flex items-center gap-4 flex-wrap">
-        {(Object.entries(TIPO_CONFIG) as [Evento['tipo'], typeof TIPO_CONFIG[Evento['tipo']]][]).map(
-          ([tipo, cfg]) => (
-            <div key={tipo} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <div className="h-2 w-2 rounded-full" style={{ backgroundColor: cfg.color }} />
-              {cfg.label}
-            </div>
-          ),
-        )}
+        {EVENT_TYPES.map((tipo) => (
+          <div key={tipo} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: EVENT_TYPE_COLORS[tipo] }}
+            />
+            {EVENT_TYPE_LABELS[tipo]}
+          </div>
+        ))}
         <span className="text-xs text-muted-foreground/50 ml-auto hidden sm:block">
           Clique em um dia para criar um evento
         </span>
@@ -794,7 +241,9 @@ export function AgendaContent() {
                   tabIndex={0}
                   aria-label={`Criar evento em ${format(day, "dd 'de' MMMM", { locale: ptBR })}`}
                   onClick={() => handleDayClick(day)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDayClick(day) }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') handleDayClick(day)
+                  }}
                   className={cn(
                     'min-h-[96px] p-1.5 border-b border-r transition-colors cursor-pointer select-none',
                     !isCurrentMonth && 'bg-muted/15',
@@ -827,9 +276,9 @@ export function AgendaContent() {
                           setSelectedEvento(ev)
                         }}
                         className="w-full rounded px-1 py-0.5 text-[11px] text-white text-left truncate hover:opacity-80 transition-opacity"
-                        style={{ backgroundColor: TIPO_CONFIG[ev.tipo].color }}
+                        style={{ backgroundColor: EVENT_TYPE_COLORS[ev.type] }}
                       >
-                        {ev.titulo}
+                        {ev.title}
                       </button>
                     ))}
                     {dayEventos.length > 3 && (
@@ -847,24 +296,32 @@ export function AgendaContent() {
         {/* Sidebar — próximos 7 dias */}
         <ProximosEventos
           eventos={eventos}
+          isLoading={isLoading}
           onEventoClick={setSelectedEvento}
         />
       </div>
 
-      {/* Modal de detalhe */}
-      <EventoDetailModal
-        evento={selectedEvento}
+      {/* Modal de detalhe (inclui edição e exclusão) */}
+      <EventDetailModal
+        event={selectedEvento}
         open={!!selectedEvento}
         onClose={() => setSelectedEvento(null)}
       />
 
       {/* Modal de criação */}
-      <NovoEventoModal
-        open={novoEventoOpen}
-        defaultData={novoEventoData}
-        onClose={() => setNovoEventoOpen(false)}
-        onSave={handleSaveEvento}
-      />
+      <Dialog open={novoEventoOpen} onOpenChange={setNovoEventoOpen}>
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-[500px] p-0 gap-0 overflow-hidden"
+        >
+          <EventForm
+            defaultDate={novoEventoData}
+            onSubmit={handleCreate}
+            onCancel={() => setNovoEventoOpen(false)}
+            isLoading={createEvent.isPending}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

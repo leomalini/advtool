@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -117,10 +118,10 @@ export function EventDetailModal({
                 {label}
               </span>
 
-              {/* Title */}
-              <p className="text-[17px] font-medium text-foreground leading-snug pr-8">
+              {/* Title — DialogTitle so Radix has an accessible name for the dialog */}
+              <DialogTitle className="text-[17px] font-medium text-foreground leading-snug pr-8">
                 {event.title}
-              </p>
+              </DialogTitle>
 
               {/* Date summary */}
               <div className="flex items-center gap-1.5 mt-2.5 text-[12px] text-muted-foreground">
