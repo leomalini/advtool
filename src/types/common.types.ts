@@ -9,5 +9,7 @@ export interface Profile {
   full_name: string
   avatar_url: string | null
   role: 'admin' | 'attorney'
+  /** OAB registration number — null for non-attorney profiles. */
+  oab_number: string | null
   created_at: string
 }

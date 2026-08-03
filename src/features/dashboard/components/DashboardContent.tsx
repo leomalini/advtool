@@ -8,7 +8,9 @@ import { AreasChart } from "./AreasChart";
 import { AdvogadosCard } from "./AdvogadosCard";
 import { FinanceiroResumo } from "./FinanceiroResumo";
 import { ActivityFeed } from "./ActivityFeed";
-import { DASHBOARD_STATS } from "@/data/mock";
+import { useDashboardStats } from "../hooks/useDashboardStats";
+import { useCurrentProfile } from "@/hooks/useProfiles";
+import { getDisplayName } from "@/utils/profile";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -19,7 +21,20 @@ function getGreeting(): string {
   return "Boa noite";
 }
 
+/** First name only — "Bom dia, Ana" reads better than the full legal name.
+ * Goes through getDisplayName because seeded profiles may hold an e-mail. */
+function firstName(fullName: string): string {
+  return getDisplayName(fullName).trim().split(/\s+/)[0];
+}
+
+function pluralize(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
 export function DashboardContent() {
+  const { data: stats } = useDashboardStats();
+  const profile = useCurrentProfile();
+
   const hoje = new Date();
   const dataFormatada = format(hoje, "EEEE, dd 'de' MMMM 'de' yyyy", {
     locale: ptBR,
@@ -30,52 +45,61 @@ export function DashboardContent() {
       {/* ── Seção 1: Header do dia ── */}
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">
-          {getGreeting()}, Dr. 👋
+          {getGreeting()}
+          {profile ? `, ${firstName(profile.full_name)}` : ""} 👋
         </h1>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <span className="capitalize">{dataFormatada}</span>
-          <span className="text-border">·</span>
-          <span>
-            {DASHBOARD_STATS.audienciasProximas} audiências esta semana
-          </span>
-          <span className="text-border">·</span>
-          <span>{DASHBOARD_STATS.prazosProximos} prazos próximos</span>
+          {stats && (
+            <>
+              <span className="text-border">·</span>
+              <span>
+                {pluralize(
+                  stats.weekly_hearings,
+                  "audiência esta semana",
+                  "audiências esta semana",
+                )}
+              </span>
+              <span className="text-border">·</span>
+              <span>
+                {pluralize(
+                  stats.upcoming_deadlines,
+                  "prazo próximo",
+                  "prazos próximos",
+                )}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
       {/* ── Seção 2: Cards de métricas ── */}
+      {/* Sem indicador de tendência: não guardamos histórico para comparar
+          períodos, e um número inventado aqui seria pior que nenhum. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard
-          label="Processos Ativos"
-          value={DASHBOARD_STATS.casosAtivos}
+          label="Processos"
+          value={stats?.legal_processes ?? 0}
           icon={Scale}
           variant="accent"
-          trend="+2 esta semana"
-          trendUp
         />
         <MetricCard
           label="Em Negociação"
-          value={DASHBOARD_STATS.casosNegociacao}
+          value={stats?.negotiations ?? 0}
           icon={Briefcase}
           variant="chart2"
-          trend="+1 esta semana"
-          trendUp
         />
         <MetricCard
           label="Tarefas Pendentes"
-          value={DASHBOARD_STATS.tarefasPendentes}
+          value={stats?.pending_tasks ?? 0}
           icon={CheckSquare}
           variant="warning"
-          trend="-1 hoje"
-          trendUp={false}
         />
         <MetricCard
-          label="Clientes Ativos"
-          value={DASHBOARD_STATS.clientesAtivos}
+          label="Clientes"
+          value={stats?.active_clients ?? 0}
           icon={Users}
           variant="success"
-          trend="+1 este mês"
-          trendUp
         />
       </div>
 

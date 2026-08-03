@@ -30,7 +30,11 @@ function toDbPayload(input: EventFormInput, userId: string) {
     title: input.title,
     type: input.type,
     client_id: input.client_id || null,
-    process_number: input.process_number || null,
+    legal_process_id: input.legal_process_id || null,
+    crm_item_id: input.crm_item_id || null,
+    // process_number deliberately absent: the free-text field was dropped in
+    // favour of the real legal_process_id link. Leaving it out of the payload
+    // preserves whatever legacy rows already carry instead of nulling it.
     assigned_to: input.assignee_ids[0],
     start_at: startAt,
     end_at: endAt,
@@ -62,7 +66,8 @@ export function eventToFormValues(event: CalendarEvent): Partial<EventFormInput>
     title: event.title,
     type: event.type,
     client_id: event.client_id ?? '',
-    process_number: event.process_number ?? '',
+    legal_process_id: event.legal_process_id ?? '',
+    crm_item_id: event.crm_item_id ?? '',
     assignee_ids: event.assignees?.map(a => a.id) ?? [event.assigned_to],
     start_date: startDate,
     start_time: startTime,

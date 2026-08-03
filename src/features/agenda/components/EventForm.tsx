@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { NONE_VALUE, toSelectValue, fromSelectValue } from "@/utils/select";
+import { DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2,
   Paperclip,
@@ -41,8 +41,9 @@ import {
 import type { Profile } from "@/types/common.types";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfiles } from "@/hooks/useProfiles";
-import { useClientes } from "@/features/clientes/hooks/useClientes";
-import { getClientDisplayName } from "@/types/cliente.types";
+import { ClienteCombobox } from "@/features/clientes/components/ClienteCombobox";
+import { ProcessoCombobox } from "@/features/processos/components/ProcessoCombobox";
+import { useLegalProcesses } from "@/features/processos/hooks/useLegalProcesses";
 
 interface EventFormProps {
   defaultDate?: Date;
@@ -99,7 +100,7 @@ export function EventForm({
 }: EventFormProps) {
   const { user } = useAuth();
   const { data: profiles = [] } = useProfiles();
-  const { data: clientes = [] } = useClientes();
+  const { data: processos = [] } = useLegalProcesses();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = defaultDate
@@ -139,6 +140,12 @@ export function EventForm({
   const isRetroactive = watch("is_retroactive");
   const assigneeIds = watch("assignee_ids");
   const typeColor = EVENT_TYPE_COLORS[watchType];
+
+  // The client field follows the processo whenever that processo has one of
+  // its own; it only stays editable for processos with no client set.
+  const linkedProcessoId = watch("legal_process_id");
+  const clientLockedByProcesso = !!linkedProcessoId
+    && !!processos.find((p) => p.id === linkedProcessoId)?.crm_item?.client_id;
   const formTitle = defaultValues?.title ? "Editar Evento" : "Novo Evento";
 
   useEffect(() => {
@@ -177,7 +184,9 @@ export function EventForm({
           style={{ backgroundColor: typeColor }}
         />
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">{formTitle}</h2>
+          {/* DialogTitle, not a bare h2: Radix uses it as the dialog's
+              accessible name and warns when DialogContent has none. */}
+          <DialogTitle className="text-sm font-semibold">{formTitle}</DialogTitle>
           {onCancel && (
             <button
               type="button"
@@ -192,19 +201,23 @@ export function EventForm({
 
       {/* ── Form body ── */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="px-8 py-6 space-y-6">
+        <div className="px-8 py-6 space-y-7">
 
-          {/* Título + Tipo — 2 cols */}
-          <div className="grid grid-cols-[1fr_176px] gap-4">
+          {/* Título ocupa a linha inteira: dividindo espaço com o Tipo sobrava
+              pouco mais de 200px para o campo mais longo do formulário. */}
+          <div className="space-y-4">
             <FormField label="Título *" error={errors.title?.message}>
               <Input
                 {...register("title")}
-                placeholder="Nome do evento..."
+                placeholder="Ex: Audiência de instrução — Silva x Empresa"
                 autoFocus={!defaultValues?.title}
                 className="h-9 text-sm"
               />
             </FormField>
 
+            {/* Largura contida: um select de 4 opções curtas não precisa da
+                linha inteira, e alinhado à esquerda não parece órfão. */}
+            <div className="max-w-[220px]">
             <FormField label="Tipo">
               {/* Colored dot overlaid on the select trigger */}
               <div className="relative">
@@ -237,45 +250,55 @@ export function EventForm({
                 />
               </div>
             </FormField>
+            </div>
           </div>
 
-          {/* Processo ou caso — 2 cols */}
-          <FormSection label="Processo ou caso">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField label="Cliente">
-                <Controller
-                  name="client_id"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      value={toSelectValue(field.value)}
-                      onValueChange={(v) => field.onChange(fromSelectValue(v))}
-                    >
-                      <SelectTrigger className="h-9 text-sm">
-                        <SelectValue placeholder="Selecionar cliente..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE_VALUE}>— Nenhum —</SelectItem>
-                        {clientes.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {getClientDisplayName(
-                              c as Parameters<typeof getClientDisplayName>[0],
-                            )}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </FormField>
-              <FormField label="Número do processo">
-                <Input
-                  {...register("process_number")}
-                  placeholder="0000000-00.0000.0.00.0000"
-                  className="h-9 text-sm font-mono"
-                />
-              </FormField>
-            </div>
+          {/* Vínculos — ambos buscáveis, mesmo padrão do CRM. Opcionais: um
+              evento pode existir sem processo e sem cliente. */}
+          <FormSection label="Vínculos (opcional)">
+            <FormField label="Processo">
+              <Controller
+                name="legal_process_id"
+                control={control}
+                render={({ field }) => (
+                  <ProcessoCombobox
+                    value={field.value}
+                    onChange={(id) => {
+                      field.onChange(id)
+                      // The processo owns the client relationship, so selecting
+                      // one adopts its client instead of letting the two fields
+                      // drift apart.
+                      const clientId = processos.find((p) => p.id === id)?.crm_item?.client_id
+                      if (clientId) setValue("client_id", clientId)
+                    }}
+                  />
+                )}
+              />
+            </FormField>
+
+            <FormField label="Cliente">
+              <Controller
+                name="client_id"
+                control={control}
+                render={({ field }) => (
+                  <ClienteCombobox
+                    value={field.value}
+                    disabled={clientLockedByProcesso}
+                    onChange={(id) => {
+                      field.onChange(id ?? "")
+                      // Only reachable when the processo has no client of its
+                      // own; picking a different one would contradict the link.
+                      if (linkedProcessoId) setValue("legal_process_id", "")
+                    }}
+                  />
+                )}
+              />
+            </FormField>
+            {clientLockedByProcesso && (
+              <p className="text-[11px] text-muted-foreground -mt-1">
+                Definido pelo processo vinculado. Remova o processo para escolher outro cliente.
+              </p>
+            )}
           </FormSection>
 
           {/* Responsáveis — multi-select dropdown */}
@@ -290,7 +313,7 @@ export function EventForm({
 
           {/* Data & hora */}
           <FormSection label="Data & hora">
-            <div className="space-y-3">
+            <div className="space-y-4">
               {/* Início */}
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -393,7 +416,7 @@ export function EventForm({
 
           {/* Detalhes */}
           <FormSection label="Detalhes">
-            <div className="space-y-3">
+            <div className="space-y-4">
               <FormField
                 label={
                   <span className="flex items-center gap-1.5">
@@ -444,7 +467,7 @@ export function EventForm({
 
           {/* Flags */}
           <FormSection label="Flags">
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 {FLAG_CONFIG.map(({ field, label, icon: Icon, activeCls }) => {
                   const value = watch(field);
@@ -672,13 +695,15 @@ function FormSection({
 }) {
   return (
     <section>
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-4">
         <span className="text-[9px] uppercase tracking-[0.14em] font-semibold text-muted-foreground/50 whitespace-nowrap">
           {label}
         </span>
         <div className="flex-1 h-px bg-border/50" />
       </div>
-      {children}
+      {/* Stacked fields need breathing room of their own — sections used to
+          rely on each child bringing its own spacing, which several didn't. */}
+      <div className="space-y-4">{children}</div>
     </section>
   );
 }
@@ -693,7 +718,7 @@ function FormField({
   error?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <p className="text-xs text-muted-foreground">{label}</p>
       {children}
       {error && <p className="text-[11px] text-destructive">{error}</p>}

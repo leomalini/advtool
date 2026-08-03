@@ -14,7 +14,7 @@
     "db:pull": "supabase db pull",
     "db:migration:new": "supabase migration new",
     "db:status": "supabase migration list",
-    "db:repair-history": "supabase migration repair --status applied --linked 20260101000001 20260101000002 20260101000003 20260101000004 20260101000005 20260101000006 20260101000007"
+    "db:verify": "supabase migration list --linked"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

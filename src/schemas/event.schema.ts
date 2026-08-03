@@ -9,7 +9,12 @@ export const eventFormSchema = z.object({
 
   // Processo/Cliente
   client_id: z.string().uuid().optional().or(z.literal('')),
-  process_number: z.string().max(50).optional(),
+  /** The processo this event belongs to — what the agenda form lets you pick. */
+  legal_process_id: z.string().uuid().optional().nullable().or(z.literal('')),
+  /** Set automatically when an event is created from inside a CRM item (the
+   * Agenda tab of CasoModal); not exposed in the agenda form, where linking to
+   * a processo is the meaningful choice. */
+  crm_item_id: z.string().uuid().optional().nullable().or(z.literal('')),
 
   // Responsáveis
   assignee_ids: z.array(z.string().uuid()).min(1, 'Selecione ao menos um responsável'),

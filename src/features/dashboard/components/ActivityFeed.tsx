@@ -1,45 +1,58 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { ULTIMAS_ATIVIDADES } from '@/data/mock'
 import { formatRelative } from '@/utils/date'
-import type { TimelineItem } from '@/data/mock'
+import { getInitials, getDisplayName, getAvatarTone } from '@/utils/profile'
+import { ACTIVITY_LABELS } from '@/types/activity.types'
+import type { ActivityType } from '@/types/activity.types'
+import { useRecentActivities } from '../hooks/useDashboardStats'
 import {
   Activity,
   FileText,
-  Gavel,
   MessageSquare,
   MoveRight,
   CheckCircle2,
-  Handshake,
-  Send,
+  CalendarPlus,
   Scale,
+  UserPlus,
+  UserCog,
   PlusCircle,
 } from 'lucide-react'
 
-type AtividadeTipo = (typeof ULTIMAS_ATIVIDADES)[number]['tipo']
-
+// Keyed by the ActivityType values the services actually write. The previous
+// version used Portuguese slugs from the mock (`caso_criado`…) that never
+// matched a real row, so every entry fell through to the generic fallback.
 const TIPO_CONFIG: Record<
-  AtividadeTipo | TimelineItem['tipo'],
+  ActivityType,
   { icon: React.ElementType; color: string; bg: string; label: string }
 > = {
-  caso_criado: { icon: PlusCircle, color: 'text-success', bg: 'bg-success/12', label: 'Caso criado' },
-  cliente_atualizado: { icon: Activity, color: 'text-info', bg: 'bg-info/12', label: 'Cliente atualizado' },
-  documento_anexado: { icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Documento' },
-  comentario: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Comentário' },
-  audiencia_criada: { icon: Gavel, color: 'text-info', bg: 'bg-info/12', label: 'Audiência' },
-  prazo_criado: { icon: Scale, color: 'text-warning', bg: 'bg-warning/12', label: 'Prazo' },
-  tarefa_criada: { icon: CheckCircle2, color: 'text-info', bg: 'bg-info/12', label: 'Tarefa' },
-  tarefa_concluida: { icon: CheckCircle2, color: 'text-success', bg: 'bg-success/12', label: 'Concluído' },
-  mudanca_coluna: { icon: MoveRight, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Movido' },
-  mudanca_workflow: { icon: MoveRight, color: 'text-accent-foreground', bg: 'bg-accent', label: 'Workflow' },
-  movimentacao_processo: { icon: Scale, color: 'text-info', bg: 'bg-info/12', label: 'Processo' },
-  peticao_enviada: { icon: Send, color: 'text-info', bg: 'bg-info/12', label: 'Petição' },
-  acordo_proposto: { icon: Handshake, color: 'text-success', bg: 'bg-success/12', label: 'Acordo' },
+  case_created: { icon: PlusCircle, color: 'text-success', bg: 'bg-success/12', label: 'Caso' },
+  case_moved: { icon: MoveRight, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Movido' },
+  case_comment: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Comentário' },
+  legal_process_created: { icon: Scale, color: 'text-info', bg: 'bg-info/12', label: 'Processo' },
+  client_created: { icon: UserPlus, color: 'text-success', bg: 'bg-success/12', label: 'Cliente' },
+  client_updated: { icon: UserCog, color: 'text-info', bg: 'bg-info/12', label: 'Cliente' },
+  task_created: { icon: CheckCircle2, color: 'text-info', bg: 'bg-info/12', label: 'Tarefa' },
+  task_done: { icon: CheckCircle2, color: 'text-success', bg: 'bg-success/12', label: 'Concluído' },
+  task_comment: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Comentário' },
+  event_created: { icon: CalendarPlus, color: 'text-info', bg: 'bg-info/12', label: 'Agenda' },
+  attachment_uploaded: { icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Documento' },
+  // Legacy pre-crm_items rows — kept so old feed entries stay readable.
+  lead_created: { icon: PlusCircle, color: 'text-success', bg: 'bg-success/12', label: 'Caso' },
+  lead_moved: { icon: MoveRight, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Movido' },
+}
+
+const FALLBACK_CONFIG = {
+  icon: Activity,
+  color: 'text-muted-foreground',
+  bg: 'bg-muted',
 }
 
 export function ActivityFeed() {
+  const { data: atividades, isLoading } = useRecentActivities()
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -49,16 +62,31 @@ export function ActivityFeed() {
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {isLoading && (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            ))}
+          </div>
+        )}
+
+        {!isLoading && atividades?.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-6">
+            Nenhuma atividade registrada ainda.
+          </p>
+        )}
+
         <div className="space-y-0">
-          {ULTIMAS_ATIVIDADES.map((atividade, index) => {
-            const config = TIPO_CONFIG[atividade.tipo] ?? {
-              icon: Activity,
-              color: 'text-muted-foreground',
-              bg: 'bg-muted',
-              label: atividade.tipo,
+          {atividades?.map((atividade, index) => {
+            const config = TIPO_CONFIG[atividade.type] ?? {
+              ...FALLBACK_CONFIG,
+              label: atividade.type,
             }
             const IconeAtividade = config.icon
-            const isLast = index === ULTIMAS_ATIVIDADES.length - 1
+            const isLast = index === atividades.length - 1
+            const autorNome = atividade.actor
+              ? getDisplayName(atividade.actor.full_name)
+              : 'Alguém'
 
             return (
               <div key={atividade.id} className="flex gap-3">
@@ -84,14 +112,12 @@ export function ActivityFeed() {
                         <div
                           className={cn(
                             'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white text-[10px] font-bold',
-                            atividade.autorCor
+                            getAvatarTone(atividade.actor_id)
                           )}
                         >
-                          {atividade.autorIniciais}
+                          {getInitials(autorNome)}
                         </div>
-                        <span className="text-xs font-medium text-foreground">
-                          {atividade.autor}
-                        </span>
+                        <span className="text-xs font-medium text-foreground">{autorNome}</span>
                         <span
                           className={cn(
                             'inline-flex items-center rounded-full px-1.5 py-0 text-xs font-medium',
@@ -102,13 +128,13 @@ export function ActivityFeed() {
                           {config.label}
                         </span>
                       </div>
-                      <p className="text-sm text-foreground leading-snug">{atividade.descricao}</p>
-                      <p className="text-xs text-muted-foreground/80 mt-0.5 font-medium">
-                        {atividade.caso}
+                      <p className="text-sm text-foreground leading-snug">
+                        {ACTIVITY_LABELS[atividade.type] ?? atividade.type}{' '}
+                        <span className="font-medium">{atividade.entity_title}</span>
                       </p>
                     </div>
                     <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0 mt-0.5">
-                      {formatRelative(atividade.data)}
+                      {formatRelative(atividade.created_at)}
                     </time>
                   </div>
                 </div>
