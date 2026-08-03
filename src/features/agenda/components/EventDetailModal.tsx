@@ -1,16 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useLegalProcess } from "@/features/processos/hooks/useLegalProcesses";
+import { getCrmItemClientName } from "@/types/crmItem.types";
 import { Badge } from "@/components/ui/badge";
 import {
   Pencil,
   Trash2,
   Clock,
+  Gavel,
   AlignLeft,
   Users,
   MapPin,
@@ -43,6 +47,7 @@ export function EventDetailModal({
   const [editing, setEditing] = useState(false);
   const deleteEvent = useDeleteEvent();
   const updateEvent = useUpdateEvent();
+  const { data: linkedProcesso } = useLegalProcess(event?.legal_process_id ?? "");
 
   if (!event) return null;
 
@@ -78,7 +83,7 @@ export function EventDetailModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-[500px] p-0 gap-0 overflow-hidden"
+        className="sm:max-w-[560px] p-0 gap-0 overflow-hidden"
       >
         {editing ? (
           /* Edit mode — EventForm handles its own layout */
@@ -160,7 +165,25 @@ export function EventDetailModal({
                 </InfoRow>
               )}
 
-              {/* Process number */}
+              {/* Linked processo */}
+              {linkedProcesso && (
+                <InfoRow icon={<Gavel className="h-4 w-4 text-muted-foreground/60" />}>
+                  <Link
+                    href={`/processos?id=${linkedProcesso.id}`}
+                    className="group block"
+                  >
+                    <p className="text-sm group-hover:underline">
+                      {getCrmItemClientName(linkedProcesso.crm_item)}
+                    </p>
+                    <p className="text-[11px] font-mono text-muted-foreground">
+                      {linkedProcesso.cnj_number ?? 'Sem CNJ'}
+                    </p>
+                  </Link>
+                </InfoRow>
+              )}
+
+              {/* Free-text process number — legacy only; the form now links a
+                  real processo instead of storing a loose string. */}
               {event.process_number && (
                 <InfoRow
                   icon={

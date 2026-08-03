@@ -2,7 +2,6 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
-  getAllCrmItems,
   getCrmItemsByWorkflow,
   getCrmItemsByClient,
   getCrmItemById,
@@ -17,14 +16,6 @@ export const crmItemKeys = {
   byClient: (clientId: string) => ['crm_items', 'client', clientId] as const,
   detail: (id: string) => ['crm_items', id] as const,
   columnHistory: (id: string) => ['crm_items', id, 'column-history'] as const,
-}
-
-/** Every CRM item across workflows — for pickers (event/task linking). */
-export function useAllCrmItems() {
-  return useQuery({
-    queryKey: crmItemKeys.all,
-    queryFn: getAllCrmItems,
-  })
 }
 
 export function useCrmItems(workflowId: string) {

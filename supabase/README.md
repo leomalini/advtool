@@ -7,6 +7,18 @@ ordem numérica. O arquivo `schema.sql` é um snapshot desatualizado (congelado 
 volta da migration 06, ainda descreve o modelo `leads` pré-rename) e **não deve
 ser usado como referência**.
 
+> ### ⚠️ Nunca marque migrations como aplicadas sem rodá-las
+>
+> `supabase migration repair --status applied` só reescreve o histórico — não
+> executa SQL nenhum. Isso já aconteceu aqui: a migration 07 ficou marcada como
+> aplicada sem nunca ter rodado, e o banco passou meses sem `event_assignees`,
+> `event_attachments` e 12 colunas de `events`. O sintoma só apareceu ao criar
+> um evento (`PGRST200`), e o conserto foi a migration 20.
+>
+> Se precisar adotar um banco criado à mão, escreva uma migration idempotente
+> (`if not exists`) e aplique de verdade. Para conferir o histórico:
+> `pnpm db:verify`.
+
 ## Como aplicar
 
 Com a Supabase CLI (recomendado):

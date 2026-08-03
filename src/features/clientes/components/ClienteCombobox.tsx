@@ -14,10 +14,13 @@ interface ClienteComboboxProps {
   onChange: (clientId: string | null) => void
   placeholder?: string
   className?: string
+  /** Locks the field — used when the client is determined by another
+   * selection (e.g. the processo linked to an event). */
+  disabled?: boolean
 }
 
 /** Typeable, debounced client search — replaces a plain closed Select for picking a client. */
-export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente...', className }: ClienteComboboxProps) {
+export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente...', className, disabled }: ClienteComboboxProps) {
   const { data: clients = [] } = useClientes()
   const createCliente = useCreateCliente()
   const [open, setOpen] = useState(false)
@@ -47,7 +50,7 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
 
   return (
     <>
-      {open ? (
+      {open && !disabled ? (
         <div className="relative">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -111,16 +114,19 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
         <button
           type="button"
           onClick={() => setOpen(true)}
+          disabled={disabled}
           className={cn(
             'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border bg-card text-sm text-left',
-            'hover:border-ring/50 transition-colors',
+            disabled
+              ? 'opacity-70 cursor-not-allowed bg-muted/40'
+              : 'hover:border-ring/50 transition-colors',
             className
           )}
         >
           <span className={cn('truncate', !selected && 'text-muted-foreground')}>
             {selected ? getClientDisplayName(selected) : placeholder}
           </span>
-          <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          {!disabled && <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         </button>
       )}
 

@@ -312,7 +312,7 @@ export function AgendaContent() {
       <Dialog open={novoEventoOpen} onOpenChange={setNovoEventoOpen}>
         <DialogContent
           showCloseButton={false}
-          className="sm:max-w-[500px] p-0 gap-0 overflow-hidden"
+          className="sm:max-w-[560px] p-0 gap-0 overflow-hidden"
         >
           <EventForm
             defaultDate={novoEventoData}
