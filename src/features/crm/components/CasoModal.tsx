@@ -4,7 +4,6 @@ import { useState } from 'react'
 import {
   X,
   FileText,
-  Scale,
   Clock,
   Construction,
 } from 'lucide-react'
@@ -19,6 +18,7 @@ import { CrmItemTimeline } from './CrmItemTimeline'
 import { CrmItemComments } from './CrmItemComments'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
+import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
 import { CrmItemClienteTab } from './CrmItemClienteTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -333,7 +333,14 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
             <PlaceholderTab icon={<FileText className="w-8 h-8" />} label="Documentos" />
           )}
           {activeTab === 'financeiro' && (
-            <PlaceholderTab icon={<Scale className="w-8 h-8" />} label="Financeiro" />
+            <FinancialEntriesTab
+              legalProcessId={readLegalProcessId}
+              crmItemIds={[caso.id]}
+              lockedCrmItemId={caso.id}
+              lockedLegalProcessId={caso.legal_process_id}
+              lockedClientId={caso.client_id}
+              itemLabel="caso"
+            />
           )}
           {activeTab === 'comentarios' && (
             <CrmItemComments

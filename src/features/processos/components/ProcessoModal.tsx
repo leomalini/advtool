@@ -35,6 +35,7 @@ import { CrmItemClienteTab } from '@/features/crm/components/CrmItemClienteTab'
 import { CrmItemComments } from '@/features/crm/components/CrmItemComments'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
+import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
 import { useEventsForEntity } from '@/features/agenda/hooks/useEvents'
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
 import { format, parseISO, isBefore } from 'date-fns'
@@ -715,7 +716,13 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
             <PlaceholderTab icon={<FileText className="w-8 h-8" />} label="Documentos" />
           )}
           {activeTab === 'financeiro' && (
-            <PlaceholderTab icon={<Scale className="w-8 h-8" />} label="Financeiro" />
+            <FinancialEntriesTab
+              legalProcessId={processo.id}
+              crmItemIds={processo.crm_items.map((c) => c.id)}
+              lockedLegalProcessId={processo.id}
+              lockedClientId={item?.client_id}
+              itemLabel="processo"
+            />
           )}
           {activeTab === 'comentarios' &&
             (item ? (

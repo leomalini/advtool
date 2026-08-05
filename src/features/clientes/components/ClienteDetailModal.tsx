@@ -16,8 +16,9 @@ import { useWorkflows } from '@/features/crm/hooks/useWorkflows'
 import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalProcesses'
 import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { getCrmItemDisplayTitle } from '@/types/crmItem.types'
+import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
 import type { AreaJuridica } from '@/data/mock'
-import { FileText, Scale, Pencil, ArrowRight, Briefcase, Plus } from 'lucide-react'
+import { Scale, Pencil, ArrowRight, Briefcase, Plus } from 'lucide-react'
 import type { ClientWithRelations } from '@/types/cliente.types'
 import { getClientDisplayName } from '@/types/cliente.types'
 import { ClienteResumo } from './ClienteResumo'
@@ -161,15 +162,13 @@ function AbaCasos({ clientId }: { clientId: string }) {
 
 // ── Aba: Financeiro (placeholder) ────────────────────────────
 
-function AbaFinanceiro() {
+function AbaFinanceiro({ clienteId }: { clienteId: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <FileText className="h-8 w-8 text-muted-foreground mb-3" />
-      <p className="text-sm font-medium">Financeiro em desenvolvimento</p>
-      <p className="text-xs text-muted-foreground mt-1">
-        As movimentações financeiras deste cliente aparecerão aqui.
-      </p>
-    </div>
+    <FinancialEntriesTab
+      clientId={clienteId}
+      lockedClientId={clienteId}
+      itemLabel="cliente"
+    />
   )
 }
 
@@ -250,7 +249,7 @@ export function ClienteDetailModal({
               <AbaCasos clientId={cliente.id} />
             </TabsContent>
             <TabsContent value="financeiro">
-              <AbaFinanceiro />
+              <AbaFinanceiro clienteId={cliente.id} />
             </TabsContent>
           </Tabs>
         </div>
