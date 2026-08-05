@@ -6,6 +6,7 @@ import {
   getLegalProcessById,
   getLegalProcessesByClient,
   getRecentMovements,
+  getLegalProcessDeletionImpact,
 } from '../services/legalProcesses.service'
 
 export const legalProcessKeys = {
@@ -14,6 +15,16 @@ export const legalProcessKeys = {
   detail: (id: string) => ['legal_processes', id] as const,
   byClient: (clientId: string) => ['legal_processes', 'client', clientId] as const,
   recentMovements: (limit: number) => ['legal_processes', 'recent-movements', limit] as const,
+}
+
+/** What a processo deletion will destroy vs. merely unlink. Only runs while the
+ * confirmation is open — it's four count queries. */
+export function useLegalProcessDeletionImpact(legalProcessId: string | null) {
+  return useQuery({
+    queryKey: ['legal_processes', legalProcessId, 'deletion-impact'],
+    queryFn: () => getLegalProcessDeletionImpact(legalProcessId!),
+    enabled: !!legalProcessId,
+  })
 }
 
 export function useLegalProcesses() {

@@ -8,7 +8,6 @@ import {
   FileText,
   CheckSquare,
   Scale,
-  MessageCircle,
   Clock,
   Construction,
   Plus,
@@ -33,6 +32,12 @@ import { useAddLegalProcessMovement, useUpdateLegalProcess } from '../hooks/useL
 import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { CrmItemTimeline } from '@/features/crm/components/CrmItemTimeline'
 import { CrmItemClienteTab } from '@/features/crm/components/CrmItemClienteTab'
+import { CrmItemComments } from '@/features/crm/components/CrmItemComments'
+import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
+import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
+import { useEventsForEntity } from '@/features/agenda/hooks/useEvents'
+import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
+import { format, parseISO, isBefore } from 'date-fns'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -268,6 +273,24 @@ function TabResumo({
   const item = processo.crm_item
   const area = item?.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
   const workflow = useWorkflow('wf-processos')
+
+  // Same queries the Agenda/Tarefas tabs use — React Query dedupes them, so
+  // the summary can't disagree with the tab it links to.
+  const crmItemIds = processo.crm_items.map((c) => c.id)
+  const { data: eventos = [] } = useEventsForEntity({
+    legalProcessId: processo.id,
+    crmItemIds,
+  })
+  const { data: tarefas = [] } = useTasksForEntity({
+    legalProcessId: processo.id,
+    crmItemIds,
+  })
+
+  const proximosEventos = eventos
+    .filter((e) => !isBefore(parseISO(e.start_at), new Date()))
+    .slice(0, 2)
+    .map((e) => `${e.title} — ${format(parseISO(e.start_at), 'dd/MM')}`)
+  const tarefasPendentes = tarefas.filter((t) => t.status !== 'done').slice(0, 2)
   const coluna = workflow?.colunas.find((c) => c.id === item?.column_id)
   const clientName = getCrmItemClientName(item)
   const assignedName = item?.assigned_profile?.full_name
@@ -354,46 +377,54 @@ function TabResumo({
         </div>
       </div>
 
+      {/* Agenda e Tarefas agora vêm das mesmas queries que alimentam as abas —
+          antes eram exemplos fixos, que passariam a contradizer a aba ao lado.
+          Documentos e Financeiro seguem como prévia até as Fases 3 e 4. */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
             Outras áreas do processo
           </h4>
-          <span className="text-[10.5px] text-muted-foreground">
-            Prévia — integração ainda em desenvolvimento
-          </span>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <SummaryPreviewCard
             icon={<Calendar className="w-4 h-4" />}
             title="Agenda"
             tone="info"
-            lines={['Audiência de conciliação — 12/08', 'Reunião com cliente — 20/08']}
-            footer="2 compromissos"
+            lines={
+              proximosEventos.length > 0
+                ? proximosEventos
+                : ['Nenhum evento vinculado']
+            }
+            footer={`${eventos.length} evento${eventos.length === 1 ? '' : 's'}`}
             onClick={() => onNavigateTab('agenda')}
           />
           <SummaryPreviewCard
             icon={<CheckSquare className="w-4 h-4" />}
             title="Tarefas"
             tone="accent"
-            lines={['Protocolar petição de réplica', 'Revisar contrato social']}
-            footer="2 pendentes"
+            lines={
+              tarefasPendentes.length > 0
+                ? tarefasPendentes.map((t) => t.title)
+                : ['Nenhuma tarefa pendente']
+            }
+            footer={`${tarefasPendentes.length} pendente${tarefasPendentes.length === 1 ? '' : 's'}`}
             onClick={() => onNavigateTab('tarefas')}
           />
           <SummaryPreviewCard
             icon={<FileText className="w-4 h-4" />}
             title="Documentos"
             tone="warning"
-            lines={['Petição inicial.pdf', 'Procuração.pdf', 'Contrato de honorários.pdf']}
-            footer="5 arquivos"
+            lines={['Em desenvolvimento']}
+            footer="Fase 4"
             onClick={() => onNavigateTab('documentos')}
           />
           <SummaryPreviewCard
             icon={<Scale className="w-4 h-4" />}
             title="Financeiro"
             tone="success"
-            lines={['Valor da causa: R$ 45.000,00', 'Honorários: R$ 4.500,00 (10%)']}
-            footer="Em aberto"
+            lines={['Em desenvolvimento']}
+            footer="Fase 3"
             onClick={() => onNavigateTab('financeiro')}
           />
         </div>
@@ -553,7 +584,9 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      // z-40, not z-50 — see the note in CasoModal: nested Radix dialogs are
+      // z-50 and their overlay className can't be overridden from here.
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
@@ -657,11 +690,26 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
                 <OrphanProcessoNotice />
               </div>
             ))}
+          {/* Reads span the processo itself plus every linked card; writes go
+              straight to the processo. Works even for an orphaned processo —
+              legal_process_id doesn't depend on a crm_item existing. */}
           {activeTab === 'agenda' && (
-            <PlaceholderTab icon={<Calendar className="w-8 h-8" />} label="Agenda" />
+            <EntityEventsTab
+              legalProcessId={processo.id}
+              crmItemIds={processo.crm_items.map((c) => c.id)}
+              lockedLegalProcessId={processo.id}
+              lockedClientId={item?.client_id}
+              itemLabel="processo"
+            />
           )}
           {activeTab === 'tarefas' && (
-            <PlaceholderTab icon={<CheckSquare className="w-8 h-8" />} label="Tarefas" />
+            <EntityTasksTab
+              legalProcessId={processo.id}
+              crmItemIds={processo.crm_items.map((c) => c.id)}
+              lockedLegalProcessId={processo.id}
+              lockedClientId={item?.client_id}
+              itemLabel="processo"
+            />
           )}
           {activeTab === 'documentos' && (
             <PlaceholderTab icon={<FileText className="w-8 h-8" />} label="Documentos" />
@@ -669,9 +717,22 @@ export function ProcessoModal({ processo, open, onClose, onEdit }: ProcessoModal
           {activeTab === 'financeiro' && (
             <PlaceholderTab icon={<Scale className="w-8 h-8" />} label="Financeiro" />
           )}
-          {activeTab === 'comentarios' && (
-            <PlaceholderTab icon={<MessageCircle className="w-8 h-8" />} label="Comentários" />
-          )}
+          {activeTab === 'comentarios' &&
+            (item ? (
+              // Writes go to the master item, reads span every linked card —
+              // otherwise a comment left on a Negociação card would be
+              // invisible here, splitting one conversation in two.
+              <CrmItemComments
+                crmItemId={item.id}
+                readCrmItemIds={processo.crm_items.map((c) => c.id)}
+                entityTitle={clientName}
+                itemLabel="processo"
+              />
+            ) : (
+              <div className="py-10">
+                <OrphanProcessoNotice />
+              </div>
+            ))}
         </div>
       </div>
     </div>

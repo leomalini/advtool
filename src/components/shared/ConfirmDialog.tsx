@@ -20,6 +20,8 @@ interface ConfirmDialogProps {
   cancelLabel?: string
   isLoading?: boolean
   onConfirm: () => void
+  /** Extra detail under the description — e.g. what else the deletion affects. */
+  children?: React.ReactNode
 }
 
 /** Styled stand-in for the browser's native `confirm()` — used for destructive actions. */
@@ -32,6 +34,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancelar',
   isLoading = false,
   onConfirm,
+  children,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(v) => !isLoading && onOpenChange(v)}>
@@ -44,6 +47,7 @@ export function ConfirmDialog({
             <div className="flex-1 pt-1">
               <DialogTitle>{title}</DialogTitle>
               <DialogDescription className="mt-1.5 leading-relaxed">{description}</DialogDescription>
+              {children}
             </div>
           </div>
         </DialogHeader>

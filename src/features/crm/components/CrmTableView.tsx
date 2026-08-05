@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CrmBulkActionBar } from './CrmBulkActionBar'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DeletionImpactNotice } from '@/components/shared/DeletionImpactNotice'
+import { useCrmItemDeletionImpact } from '../hooks/useCrmItems'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { getInitials } from '@/utils/profile'
@@ -95,6 +97,9 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
 
   const bulkUpdate = useBulkUpdateCrmItems(workflow.id)
   const bulkDelete = useBulkDeleteCrmItems(workflow.id)
+  const { data: deletionImpact, isLoading: loadingImpact } = useCrmItemDeletionImpact(
+    pendingDelete?.mode === 'one' ? pendingDelete.id : null
+  )
   const queryClient = useQueryClient()
 
   const { visible, widths, toggleVisible, setWidth, resetPrefs } = useColumnPrefs(
@@ -449,7 +454,11 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
         }
         isLoading={bulkDelete.isPending}
         onConfirm={confirmPendingDelete}
-      />
+      >
+        {pendingDelete?.mode === 'one' && (
+          <DeletionImpactNotice impact={deletionImpact} isLoading={loadingImpact} />
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

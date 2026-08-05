@@ -3,11 +3,8 @@
 import { useState } from 'react'
 import {
   X,
-  Calendar,
   FileText,
-  CheckSquare,
   Scale,
-  MessageCircle,
   Clock,
   Construction,
 } from 'lucide-react'
@@ -19,6 +16,9 @@ import type { CrmItemWithRelations } from '@/types/crmItem.types'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { useUpdateCrmItem } from '../hooks/useCrmItemMutations'
 import { CrmItemTimeline } from './CrmItemTimeline'
+import { CrmItemComments } from './CrmItemComments'
+import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
+import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { CrmItemClienteTab } from './CrmItemClienteTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -194,6 +194,14 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
   const clientName = getCrmItemClientName(caso)
   const assignedName = caso.assigned_profile?.full_name ?? ''
 
+  // Only the card that *is* the processo (the one living in wf-processos) also
+  // reads events/tasks linked straight to that processo — otherwise this card
+  // wouldn't see anything created from the Processo modal. A Negociação card
+  // linked to the same processo stays narrow: pulling every judicial record
+  // into a sales pipeline card would be too broad.
+  const readLegalProcessId =
+    caso.workflow_id === 'wf-processos' ? caso.legal_process_id : null
+
   const advInitials = assignedName
     .split(' ')
     .filter(Boolean)
@@ -206,7 +214,11 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      // z-40, not z-50: this is a hand-rolled overlay, and the Radix dialogs
+      // opened from inside its tabs are z-50. Tying would leave stacking up to
+      // DOM order, and DialogContent renders its overlay without forwarding
+      // className — so it couldn't be raised from the call site.
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
@@ -298,10 +310,24 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
           )}
           {activeTab === 'timeline' && <CrmItemTimeline crmItemId={caso.id} itemLabel="caso" />}
           {activeTab === 'agenda' && (
-            <PlaceholderTab icon={<Calendar className="w-8 h-8" />} label="Agenda" />
+            <EntityEventsTab
+              legalProcessId={readLegalProcessId}
+              crmItemIds={[caso.id]}
+              lockedCrmItemId={caso.id}
+              lockedLegalProcessId={caso.legal_process_id}
+              lockedClientId={caso.client_id}
+              itemLabel="caso"
+            />
           )}
           {activeTab === 'tarefas' && (
-            <PlaceholderTab icon={<CheckSquare className="w-8 h-8" />} label="Tarefas" />
+            <EntityTasksTab
+              legalProcessId={readLegalProcessId}
+              crmItemIds={[caso.id]}
+              lockedCrmItemId={caso.id}
+              lockedLegalProcessId={caso.legal_process_id}
+              lockedClientId={caso.client_id}
+              itemLabel="caso"
+            />
           )}
           {activeTab === 'documentos' && (
             <PlaceholderTab icon={<FileText className="w-8 h-8" />} label="Documentos" />
@@ -310,7 +336,11 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
             <PlaceholderTab icon={<Scale className="w-8 h-8" />} label="Financeiro" />
           )}
           {activeTab === 'comentarios' && (
-            <PlaceholderTab icon={<MessageCircle className="w-8 h-8" />} label="Comentários" />
+            <CrmItemComments
+              crmItemId={caso.id}
+              entityTitle={getCrmItemClientName(caso)}
+              itemLabel="caso"
+            />
           )}
         </div>
       </div>

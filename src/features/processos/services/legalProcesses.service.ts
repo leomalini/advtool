@@ -17,6 +17,9 @@ const CRM_ITEM_FIELDS = `
   assigned_profile:profiles!crm_items_assigned_to_fkey(id, full_name, avatar_url, role, created_at)
 `
 
+// Note: PostgREST returns embedded rows in heap order, which shifts after
+// updates. Nothing here may depend on the order of `crm_items` — that's why
+// pickMasterCrmItem sorts before falling back.
 const LEGAL_PROCESS_SELECT = `
   *,
   crm_items:crm_items!crm_items_legal_process_id_fkey(${CRM_ITEM_FIELDS}),
@@ -27,9 +30,19 @@ const LEGAL_PROCESS_SELECT = `
  * (used for display in the Processos module) is always the item living in
  * the fixed wf-processos workflow. Returns null when the processo has no
  * linked item at all, so consumers get an explicit absence instead of
- * `undefined` leaking through a non-nullable type. */
+ * `undefined` leaking through a non-nullable type.
+ *
+ * The fallback is sorted rather than positional: the embedded array has no
+ * guaranteed order, so `crmItems[0]` could pick a different item on each fetch
+ * and silently switch which comment thread / header the modal shows. */
 function pickMasterCrmItem(crmItems: CrmItemWithRelations[]): CrmItemWithRelations | null {
-  return crmItems.find((c) => c.workflow_id === 'wf-processos') ?? crmItems[0] ?? null
+  const master = crmItems.find((c) => c.workflow_id === 'wf-processos')
+  if (master) return master
+
+  const [oldest] = [...crmItems].sort(
+    (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
+  )
+  return oldest ?? null
 }
 
 function toLegalProcessWithRelations(row: {
@@ -37,7 +50,14 @@ function toLegalProcessWithRelations(row: {
   [key: string]: unknown
 }): LegalProcessWithRelations {
   const { crm_items, ...rest } = row
-  return { ...rest, crm_item: pickMasterCrmItem(crm_items ?? []) } as LegalProcessWithRelations
+  const items = crm_items ?? []
+  // crm_items is kept (not discarded as before): the Agenda/Tarefas tabs need
+  // every linked item's id to find records created from a sibling card.
+  return {
+    ...rest,
+    crm_item: pickMasterCrmItem(items),
+    crm_items: items,
+  } as LegalProcessWithRelations
 }
 
 function splitInput(input: LegalProcessInput) {
@@ -201,6 +221,69 @@ export async function updateLegalProcess(
     const { error } = await supabase.from('legal_processes').update(legalProcessFields).eq('id', legalProcessId)
     if (error) throw error
   }
+}
+
+/**
+ * What a deletion actually costs, split by fate.
+ *
+ * The two groups behave differently and the confirmation has to say so:
+ * comments and movements are cascade-deleted for good, while events and tasks
+ * only lose their link (`on delete set null`) and stay alive in the agenda and
+ * the task board with no trace of where they came from.
+ */
+export interface DeletionImpact {
+  /** Cascade-deleted with the record. */
+  comments: number
+  movements: number
+  /** Kept, but unlinked. */
+  events: number
+  tasks: number
+}
+
+async function countLinked(
+  table: 'events' | 'tasks',
+  legalProcessId: string,
+  crmItemIds: string[]
+): Promise<number> {
+  const terms = [`legal_process_id.eq.${legalProcessId}`]
+  if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
+
+  const query = supabase.from(table).select('id', { count: 'exact', head: true })
+  const { count } =
+    terms.length === 1
+      ? await query.eq('legal_process_id', legalProcessId)
+      : await query.or(terms.join(','))
+
+  return count ?? 0
+}
+
+export async function getLegalProcessDeletionImpact(
+  legalProcessId: string
+): Promise<DeletionImpact> {
+  const { data: items } = await supabase
+    .from('crm_items')
+    .select('id')
+    .eq('legal_process_id', legalProcessId)
+  const crmItemIds = (items ?? []).map((i) => i.id as string)
+
+  const [events, tasks, comments, movements] = await Promise.all([
+    countLinked('events', legalProcessId, crmItemIds),
+    countLinked('tasks', legalProcessId, crmItemIds),
+    crmItemIds.length > 0
+      ? supabase
+          .from('crm_item_comments')
+          .select('id', { count: 'exact', head: true })
+          .in('crm_item_id', crmItemIds)
+          .then((r) => r.count ?? 0)
+      : Promise.resolve(0),
+    supabase
+      .from('legal_process_movements')
+      .select('id', { count: 'exact', head: true })
+      .eq('legal_process_id', legalProcessId)
+      .then((r) => r.count ?? 0),
+  ])
+
+  return { events, tasks, comments, movements }
 }
 
 export async function deleteLegalProcess(legalProcessId: string): Promise<void> {

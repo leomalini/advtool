@@ -11,6 +11,17 @@ const TASK_SELECT = `
   checklist_items:task_checklist_items(*)
 `
 
+/** Form controls yield '' for an untouched field, and Postgres rejects that for
+ * uuid/date columns — creating a task with no due date failed outright. Turn
+ * every empty string into null before it reaches the database. */
+function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    out[key] = value === '' ? null : value
+  }
+  return out as T
+}
+
 export async function getTasks(): Promise<Task[]> {
   const { data, error } = await supabase
     .from('tasks')
@@ -19,6 +30,35 @@ export async function getTasks(): Promise<Task[]> {
 
   if (error) throw error
   return data as Task[]
+}
+
+/**
+ * Every task belonging to an entity — same two-way link as events: straight to
+ * the processo (`legal_process_id`) or through one of its CRM cards
+ * (`crm_item_id`). See getEventsForEntity for the reasoning.
+ */
+export async function getTasksForEntity(params: {
+  legalProcessId?: string | null
+  crmItemIds?: string[]
+}): Promise<Task[]> {
+  const { legalProcessId, crmItemIds = [] } = params
+
+  const terms: string[] = []
+  if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
+  if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
+  if (terms.length === 0) return []
+
+  const query = supabase.from('tasks').select(TASK_SELECT).order('position')
+
+  const { data, error } =
+    terms.length === 1
+      ? await (legalProcessId && crmItemIds.length === 0
+          ? query.eq('legal_process_id', legalProcessId)
+          : query.in('crm_item_id', crmItemIds))
+      : await query.or(terms.join(','))
+
+  if (error) throw error
+  return (data ?? []) as Task[]
 }
 
 export async function createTask(
@@ -36,7 +76,7 @@ export async function createTask(
 
   const { data, error } = await supabase
     .from('tasks')
-    .insert({ ...input, created_by: userId, position })
+    .insert({ ...nullifyEmpty(input), created_by: userId, position })
     .select(TASK_SELECT)
     .single()
 
@@ -53,10 +93,36 @@ export async function createTask(
   return data as Task
 }
 
-export async function updateTask(input: UpdateTaskInput): Promise<void> {
+export async function updateTask(input: UpdateTaskInput, userId?: string): Promise<void> {
   const { id, ...rest } = input
-  const { error } = await supabase.from('tasks').update(rest).eq('id', id)
+
+  // Read the current status first so the feed only records the ≠done → done
+  // transition. Emitting on every save would post a new "concluiu a tarefa"
+  // every time an already-finished task is edited.
+  let justCompleted: { title: string } | null = null
+  if (userId && rest.status === 'done') {
+    const { data: current } = await supabase
+      .from('tasks')
+      .select('status, title')
+      .eq('id', id)
+      .maybeSingle()
+    if (current && current.status !== 'done') {
+      justCompleted = { title: current.title as string }
+    }
+  }
+
+  const { error } = await supabase.from('tasks').update(nullifyEmpty(rest)).eq('id', id)
   if (error) throw error
+
+  if (justCompleted && userId) {
+    await recordActivity({
+      type: 'task_done',
+      entity_type: 'task',
+      entity_id: id,
+      entity_title: justCompleted.title,
+      actor_id: userId,
+    })
+  }
 }
 
 export async function deleteTask(id: string): Promise<void> {

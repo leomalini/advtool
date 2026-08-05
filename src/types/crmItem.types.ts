@@ -55,6 +55,22 @@ export interface CrmItemColumnHistory {
   } | null
 }
 
+/** Same shape as TaskComment, one table down. */
+export interface CrmItemComment {
+  id: string
+  crm_item_id: string
+  author_id: string
+  content: string
+  created_at: string
+  author?: {
+    id: string
+    full_name: string
+    avatar_url: string | null
+    role: string
+    created_at: string
+  }
+}
+
 /** Light summary of the linked processo, if this item has one (workflow wf-processos). */
 export interface CrmItemLegalProcessSummary {
   id: string

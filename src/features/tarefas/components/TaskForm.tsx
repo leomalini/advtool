@@ -10,6 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2 } from 'lucide-react'
 import { createTaskSchema, type CreateTaskInput } from '@/schemas/task.schema'
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskStatus, type TaskPriority } from '@/types/task.types'
+import { NONE_VALUE, toSelectValue, fromSelectValue } from '@/utils/select'
+import { useProfiles } from '@/hooks/useProfiles'
+import { getDisplayName } from '@/utils/profile'
 
 interface TaskFormProps {
   defaultStatus?: TaskStatus
@@ -19,6 +22,7 @@ interface TaskFormProps {
 }
 
 export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLoading }: TaskFormProps) {
+  const { data: profiles = [] } = useProfiles()
   const {
     register,
     handleSubmit,
@@ -36,6 +40,7 @@ export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLo
 
   const priority = watch('priority')
   const status = watch('status')
+  const assignedTo = watch('assigned_to')
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -80,9 +85,31 @@ export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLo
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label>Data Limite</Label>
-        <Input type="date" {...register('due_date')} />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Responsável</Label>
+          <Select
+            value={toSelectValue(assignedTo)}
+            onValueChange={(v) => setValue('assigned_to', fromSelectValue(v))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecionar..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>Nenhum</SelectItem>
+              {profiles.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {getDisplayName(p.full_name)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Data Limite</Label>
+          <Input type="date" {...register('due_date')} />
+        </div>
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>
