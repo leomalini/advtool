@@ -231,8 +231,11 @@ export function FinanceiroContent() {
                   data={chartData}
                   margin={{ left: 8, right: 8, top: 8 }}
                   onClick={(state) => {
-                    const month = state?.activePayload?.[0]?.payload?.month
-                    if (typeof month === 'string') handleMonthClick(month)
+                    // Recharts 3 entrega o índice da coluna ativa, não o payload
+                    // (activePayload existia na v2). Resolvemos pelo chartData.
+                    const index = Number(state?.activeIndex)
+                    const month = Number.isInteger(index) ? chartData[index]?.month : undefined
+                    if (month) handleMonthClick(month)
                   }}
                   className="cursor-pointer"
                 >
