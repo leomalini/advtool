@@ -15,50 +15,82 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useTasks } from '../hooks/useTasks'
-import { useCreateTask, useUpdateTask } from '../hooks/useTaskMutations'
+import { useCreateTask, useOptimisticMoveTask } from '../hooks/useTaskMutations'
 import { TaskForm } from './TaskForm'
 import { TaskColumn } from './TaskColumn'
-import { TASK_STATUS_LABELS, type TaskStatus } from '@/types/task.types'
+import { TaskDetailModal } from './TaskDetailModal'
+import { TarefaFilterBar } from './TarefaFilterBar'
+import { filterTasks, emptyTaskFilters, type TaskFilters } from '../utils/filterTasks'
+import { TASK_STATUS_LABELS, type Task, type TaskStatus } from '@/types/task.types'
 import type { CreateTaskInput } from '@/schemas/task.schema'
 
 const STATUSES: TaskStatus[] = ['todo', 'in_progress', 'waiting', 'done']
 
+function isTaskStatus(value: string): value is TaskStatus {
+  return (STATUSES as string[]).includes(value)
+}
+
 export function TarefasContent() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('todo')
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [filters, setFilters] = useState<TaskFilters>(emptyTaskFilters)
+
   const { data: tasks, isLoading } = useTasks()
   const createTask = useCreateTask()
-  const updateTask = useUpdateTask()
+  const moveTask = useOptimisticMoveTask()
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
+
+  const filtered = useMemo(() => filterTasks(tasks ?? [], filters), [tasks, filters])
 
   const columns = useMemo(
     () =>
       STATUSES.map((status) => ({
         status,
         label: TASK_STATUS_LABELS[status],
-        tasks: tasks?.filter((t) => t.status === status).sort((a, b) => a.position - b.position) ?? [],
+        tasks: filtered
+          .filter((t) => t.status === status)
+          .sort((a, b) => a.position - b.position),
       })),
-    [tasks]
+    [filtered]
   )
+
+  // The modal reads from the live list so edits show up without reopening —
+  // holding the object from the click would freeze it.
+  const openTask = selectedTask
+    ? (tasks?.find((t) => t.id === selectedTask.id) ?? null)
+    : null
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
     const taskId = active.id as string
-    const targetStatus = over.id as TaskStatus
+    const overId = String(over.id)
 
-    if (STATUSES.includes(targetStatus)) {
-      const stageCount = tasks?.filter((t) => t.status === targetStatus).length ?? 0
-      updateTask.mutate({ id: taskId, status: targetStatus, position: stageCount })
-    }
+    // `over` is the column when dropped on empty space, but the *task* when
+    // dropped onto another card — which used to fail the status check and
+    // silently discard the move.
+    const targetStatus = isTaskStatus(overId)
+      ? overId
+      : tasks?.find((t) => t.id === overId)?.status
+
+    if (!targetStatus) return
+
+    const current = tasks?.find((t) => t.id === taskId)
+    if (!current || current.status === targetStatus) return
+
+    const stageCount = tasks?.filter((t) => t.status === targetStatus).length ?? 0
+    moveTask.mutate({ id: taskId, status: targetStatus, position: stageCount })
   }
 
   async function handleSubmit(data: CreateTaskInput) {
-    await createTask.mutateAsync({ ...data, status: defaultStatus })
+    // The form's own status wins; defaultStatus only seeds it. Overriding it
+    // here meant picking a status in the form had no effect.
+    await createTask.mutateAsync(data)
     setDialogOpen(false)
   }
 
@@ -91,6 +123,14 @@ export function TarefasContent() {
         </Button>
       </div>
 
+      {tasks && tasks.length > 0 && (
+        <TarefaFilterBar
+          filters={filters}
+          onChange={setFilters}
+          resultCount={filtered.length}
+        />
+      )}
+
       {tasks?.length === 0 ? (
         <EmptyState
           icon={CheckSquare}
@@ -117,6 +157,7 @@ export function TarefasContent() {
                 label={col.label}
                 tasks={col.tasks}
                 onAddTask={() => handleAddTask(col.status)}
+                onTaskClick={setSelectedTask}
               />
             ))}
           </div>
@@ -135,6 +176,12 @@ export function TarefasContent() {
           />
         </DialogContent>
       </Dialog>
+
+      <TaskDetailModal
+        task={openTask}
+        open={!!openTask}
+        onClose={() => setSelectedTask(null)}
+      />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import {
   getCrmItemById,
   getCrmItemColumnHistory,
   getCrmItemCountsByWorkflow,
+  getCrmItemDeletionImpact,
 } from '../services/crmItems.service'
 
 export const crmItemKeys = {
@@ -16,6 +17,20 @@ export const crmItemKeys = {
   byClient: (clientId: string) => ['crm_items', 'client', clientId] as const,
   detail: (id: string) => ['crm_items', id] as const,
   columnHistory: (id: string) => ['crm_items', id, 'column-history'] as const,
+  /** Comments of one or more crm_items — the ProcessoModal reads the union of
+   * every item linked to the processo, so the thread isn't split per card. */
+  comments: (ids: string[]) => ['crm_items', 'comments', ids.join(',')] as const,
+  deletionImpact: (id: string) => ['crm_items', id, 'deletion-impact'] as const,
+}
+
+/** What a caso deletion will destroy vs. merely unlink. Only runs while the
+ * confirmation is open. */
+export function useCrmItemDeletionImpact(crmItemId: string | null) {
+  return useQuery({
+    queryKey: crmItemKeys.deletionImpact(crmItemId ?? ''),
+    queryFn: () => getCrmItemDeletionImpact(crmItemId!),
+    enabled: !!crmItemId,
+  })
 }
 
 export function useCrmItems(workflowId: string) {

@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CrmBulkActionBar } from '@/features/crm/components/CrmBulkActionBar'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DeletionImpactNotice } from '@/components/shared/DeletionImpactNotice'
+import { useLegalProcessDeletionImpact } from '../hooks/useLegalProcesses'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import type { AreaJuridica } from '@/data/mock'
 import { getInitials } from '@/utils/profile'
@@ -99,6 +101,9 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
 
   const bulkUpdate = useBulkUpdateCrmItems(workflow.id)
   const deleteProcess = useDeleteLegalProcess()
+  const { data: deletionImpact, isLoading: loadingImpact } = useLegalProcessDeletionImpact(
+    pendingDelete?.mode === 'one' ? pendingDelete.processoId : null
+  )
   const invalidateLegalProcesses = useInvalidateLegalProcesses()
   const queryClient = useQueryClient()
 
@@ -485,7 +490,13 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         }
         isLoading={deleteProcess.isPending}
         onConfirm={confirmPendingDelete}
-      />
+      >
+        {/* Only for a single processo: counting the impact of a bulk delete
+            would be one query set per row. */}
+        {pendingDelete?.mode === 'one' && (
+          <DeletionImpactNotice impact={deletionImpact} isLoading={loadingImpact} />
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

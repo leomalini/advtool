@@ -1,6 +1,10 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
-import type { CrmItemWithRelations, CrmItemColumnHistory } from '@/types/crmItem.types'
+import type {
+  CrmItemWithRelations,
+  CrmItemColumnHistory,
+  CrmItemComment,
+} from '@/types/crmItem.types'
 import type { CrmItemInput } from '@/schemas/crmItem.schema'
 
 const supabase = createClient()
@@ -111,6 +115,31 @@ export async function updateCrmItemRecord(
 
   const { error } = await supabase.from('crm_items').update(input).eq('id', id)
   if (error) throw error
+
+  if (input.legal_process_id) {
+    await backfillLegalProcessLink(id, input.legal_process_id)
+  }
+}
+
+/**
+ * Stamps this item's events and tasks with the processo it was just linked to.
+ *
+ * Without it, records created before the link are only reachable through the
+ * crm_item — and that link is `on delete set null`, so deleting the card later
+ * would quietly detach them from the processo for good. Best-effort: failing to
+ * backfill must not fail the edit that triggered it.
+ */
+async function backfillLegalProcessLink(crmItemId: string, legalProcessId: string): Promise<void> {
+  for (const table of ['events', 'tasks'] as const) {
+    const { error } = await supabase
+      .from(table)
+      .update({ legal_process_id: legalProcessId })
+      .eq('crm_item_id', crmItemId)
+      .is('legal_process_id', null)
+    if (error) {
+      console.error(`[backfill] ${table} legal_process_id failed:`, error.message)
+    }
+  }
 }
 
 export async function moveCrmItemColumn(
@@ -171,6 +200,78 @@ export async function deleteCrmItemRecord(id: string): Promise<void> {
 
   const { error } = await supabase.from('crm_items').delete().eq('id', id)
   if (error) throw error
+}
+
+// ── Comments ────────────────────────────────────────────────────────────────
+
+const COMMENT_SELECT = `
+  *,
+  author:profiles!crm_item_comments_author_id_fkey(id, full_name, avatar_url, role, created_at)
+`
+
+/** Comments across one or more crm_items.
+ *
+ * Takes a list rather than a single id because a processo can own several CRM
+ * cards: a comment written from a Negociação card would otherwise be invisible
+ * from the processo, splitting one conversation into threads nobody can see
+ * from the other side. Writes always go to a single (master) item. */
+export async function getCrmItemComments(crmItemIds: string[]): Promise<CrmItemComment[]> {
+  if (crmItemIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('crm_item_comments')
+    .select(COMMENT_SELECT)
+    .in('crm_item_id', crmItemIds)
+    .order('created_at')
+
+  if (error) throw error
+  return data as unknown as CrmItemComment[]
+}
+
+export async function addCrmItemComment(
+  crmItemId: string,
+  content: string,
+  userId: string,
+  entityTitle: string
+): Promise<CrmItemComment> {
+  const { data, error } = await supabase
+    .from('crm_item_comments')
+    .insert({ crm_item_id: crmItemId, author_id: userId, content })
+    .select(COMMENT_SELECT)
+    .single()
+
+  if (error) throw error
+
+  await recordActivity({
+    type: 'case_comment',
+    entity_type: 'crm_item',
+    entity_id: crmItemId,
+    entity_title: entityTitle,
+    actor_id: userId,
+  })
+
+  return data as unknown as CrmItemComment
+}
+
+/** Same split as the processo version: comments die with the card, events and
+ * tasks survive but lose the link. See DeletionImpact in legalProcesses.service. */
+export async function getCrmItemDeletionImpact(
+  crmItemId: string
+): Promise<{ comments: number; events: number; tasks: number }> {
+  const countBy = (table: 'events' | 'tasks' | 'crm_item_comments') =>
+    supabase
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .eq('crm_item_id', crmItemId)
+      .then((r) => r.count ?? 0)
+
+  const [comments, events, tasks] = await Promise.all([
+    countBy('crm_item_comments'),
+    countBy('events'),
+    countBy('tasks'),
+  ])
+
+  return { comments, events, tasks }
 }
 
 export async function getCrmItemColumnHistory(crmItemId: string): Promise<CrmItemColumnHistory[]> {

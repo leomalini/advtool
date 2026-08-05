@@ -34,6 +34,18 @@ export interface LegalProcessWithRelations extends LegalProcess {
    * crmItems.service.ts prevents, but that older data may still contain.
    * Consumers must degrade gracefully instead of assuming it exists. */
   crm_item: CrmItemWithRelations | null
+  /**
+   * Every crm_item linked to this processo, across workflows — needed to find
+   * events/tasks that were created from a sibling item (e.g. a Negociação card)
+   * and therefore carry `crm_item_id` instead of `legal_process_id`.
+   *
+   * ⚠️ Complete only in `getLegalProcesses` / `getLegalProcessById`. The queries
+   * that embed with `!inner` + a filter (`getLegalProcessesByClient`,
+   * `searchLegalProcessesByCnjPrefix`) get a *filtered* array — PostgREST applies
+   * the filter to the embedded rows too. Don't build an "all items" query from
+   * those.
+   */
+  crm_items: CrmItemWithRelations[]
   movements: LegalProcessMovement[]
 }
 

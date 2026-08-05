@@ -51,6 +51,11 @@ interface EventFormProps {
   onSubmit: (data: EventFormInput) => void;
   onCancel?: () => void;
   isLoading?: boolean;
+  /** Opened from inside a caso/processo: the link is already decided, so the
+   * Vínculos section is hidden rather than offering a choice that would
+   * contradict where the user is. */
+  lockedLegalProcessId?: string | null;
+  lockedCrmItemId?: string | null;
 }
 
 const FLAG_CONFIG = [
@@ -97,7 +102,10 @@ export function EventForm({
   onSubmit,
   onCancel,
   isLoading,
+  lockedLegalProcessId,
+  lockedCrmItemId,
 }: EventFormProps) {
+  const isLinkLocked = !!lockedLegalProcessId || !!lockedCrmItemId;
   const { user } = useAuth();
   const { data: profiles = [] } = useProfiles();
   const { data: processos = [] } = useLegalProcesses();
@@ -254,7 +262,11 @@ export function EventForm({
           </div>
 
           {/* Vínculos — ambos buscáveis, mesmo padrão do CRM. Opcionais: um
-              evento pode existir sem processo e sem cliente. */}
+              evento pode existir sem processo e sem cliente.
+              Escondidos quando o form é aberto de dentro de um caso/processo:
+              o vínculo já está decidido e é aplicado no submit. RHF preserva o
+              valor de campos não renderizados, então nada se perde. */}
+          {!isLinkLocked && (
           <FormSection label="Vínculos (opcional)">
             <FormField label="Processo">
               <Controller
@@ -300,6 +312,7 @@ export function EventForm({
               </p>
             )}
           </FormSection>
+          )}
 
           {/* Responsáveis — multi-select dropdown */}
           <FormSection label="Responsáveis *">
