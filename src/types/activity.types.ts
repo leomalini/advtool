@@ -12,6 +12,7 @@ export type ActivityType =
   | 'task_comment'
   | 'event_created'
   | 'attachment_uploaded'
+  | 'financial_entry_created'
   // Legacy: written before leads became crm_items. Nothing produces these
   // anymore, but ~half the existing feed rows use them, so they still need
   // to render readably.
@@ -20,7 +21,14 @@ export type ActivityType =
 
 /** Mirrors the CHECK constraint on activities.entity_type (migration 15).
  * 'lead' is legacy: the leads table is dead code, but old rows may exist. */
-export type EntityType = 'lead' | 'client' | 'task' | 'event' | 'crm_item' | 'legal_process'
+export type EntityType =
+  | 'lead'
+  | 'client'
+  | 'task'
+  | 'event'
+  | 'crm_item'
+  | 'legal_process'
+  | 'financial_entry'
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   case_created: 'criou o caso',
@@ -34,6 +42,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   task_comment: 'comentou na tarefa',
   event_created: 'agendou evento',
   attachment_uploaded: 'enviou anexo para',
+  financial_entry_created: 'lançou',
   lead_created: 'criou o caso',
   lead_moved: 'moveu o caso',
 }

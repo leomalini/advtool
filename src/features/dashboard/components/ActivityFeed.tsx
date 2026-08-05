@@ -39,6 +39,7 @@ const TIPO_CONFIG: Record<
   task_comment: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Comentário' },
   event_created: { icon: CalendarPlus, color: 'text-info', bg: 'bg-info/12', label: 'Agenda' },
   attachment_uploaded: { icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Documento' },
+  financial_entry_created: { icon: Scale, color: 'text-success', bg: 'bg-success/12', label: 'Financeiro' },
   // Legacy pre-crm_items rows — kept so old feed entries stay readable.
   lead_created: { icon: PlusCircle, color: 'text-success', bg: 'bg-success/12', label: 'Caso' },
   lead_moved: { icon: MoveRight, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Movido' },
