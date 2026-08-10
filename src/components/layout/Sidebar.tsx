@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useClientesPendencies } from "@/features/clientes/hooks/useClientes";
+import { useLegalProcessesPendencies } from "@/features/processos/hooks/useLegalProcesses";
 
 const navGroups = [
   {
@@ -57,9 +58,12 @@ export function Sidebar() {
   const pathname = usePathname();
   const { sidebarOpen, toggleSidebar } = useUIStore();
   const { user, signOut } = useAuth();
-  const { data: pendencies = [] } = useClientesPendencies();
+  // O badge soma as duas fontes: contar só clientes esconderia um prazo sem
+  // tarefa, que é a pendência mais cara da lista.
+  const { data: clientPendencies = [] } = useClientesPendencies();
+  const { data: processoPendencies = [] } = useLegalProcessesPendencies();
 
-  const pendencyCount = pendencies.length;
+  const pendencyCount = clientPendencies.length + processoPendencies.length;
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? "AD";
 
   function renderNavItem(

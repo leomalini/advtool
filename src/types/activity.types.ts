@@ -29,6 +29,7 @@ export type EntityType =
   | 'crm_item'
   | 'legal_process'
   | 'financial_entry'
+  | 'document'
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   case_created: 'criou o caso',

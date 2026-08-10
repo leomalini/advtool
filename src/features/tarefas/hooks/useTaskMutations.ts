@@ -13,6 +13,7 @@ import {
 } from '../services/tasks.service'
 import { taskKeys } from './useTasks'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
+import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { useAuth } from '@/hooks/useAuth'
 import type { CreateTaskInput, UpdateTaskInput } from '@/schemas/task.schema'
 import type { Task, TaskStatus } from '@/types/task.types'
@@ -27,6 +28,9 @@ export function useInvalidateTaskSurfaces() {
     queryClient.invalidateQueries({ queryKey: taskKeys.all })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.stats })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
+    // Uma tarefa vinculada "cobre" um prazo próximo; concluí-la volta a
+    // descobrir o prazo. Nos dois sentidos a pendência precisa recalcular.
+    queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })
   }
 }
 

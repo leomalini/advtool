@@ -33,7 +33,7 @@ export interface Task extends BaseEntity {
   client_id: string | null
   /** Set when the task was created from a CRM item (Agenda/Tarefas tab of CasoModal). */
   crm_item_id: string | null
-  /** Set when the task belongs to a processo — either created from ProcessoModal
+  /** Set when the task belongs to a processo — either created from the processo detail page
    * or carried over from a crm_item that is linked to one. */
   legal_process_id: string | null
   due_date: string | null
