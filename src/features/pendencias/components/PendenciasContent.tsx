@@ -1,20 +1,29 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertCircle, User, Building2, ArrowRight, CheckCircle2 } from 'lucide-react'
+import Link from 'next/link'
+import {
+  AlertCircle,
+  User,
+  Building2,
+  ArrowRight,
+  CheckCircle2,
+  Gavel,
+  TriangleAlert,
+} from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { useClientesPendencies } from '@/features/clientes/hooks/useClientes'
-import { ClienteDetailModal } from '@/features/clientes/components/ClienteDetailModal'
-import { ClienteForm } from '@/features/clientes/components/ClienteForm'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { useCliente } from '@/features/clientes/hooks/useClientes'
+import { cn } from '@/lib/utils'
+import { useClientesPendencies, useCliente } from '@/features/clientes/hooks/useClientes'
 import { useUpdateCliente } from '@/features/clientes/hooks/useClienteMutations'
+import { ClienteForm } from '@/features/clientes/components/ClienteForm'
+import { useLegalProcessesPendencies } from '@/features/processos/hooks/useLegalProcesses'
 import type { ClientPendency } from '@/types/cliente.types'
+import type { ProcessoPendency } from '@/types/legalProcess.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 
-// ── Card de pendência individual ─────────────────────────────
+// ── Card de pendência de cliente ─────────────────────────────
 
 interface PendencyCardProps {
   pendency: ClientPendency
@@ -75,14 +84,73 @@ function PendencyCard({ pendency, onResolve }: PendencyCardProps) {
   )
 }
 
-// ── Form de resolução ────────────────────────────────────────
+// ── Card de pendência de processo ────────────────────────────
 
-interface ResolveDialogProps {
-  clientId: string | null
-  onClose: () => void
+function ProcessoPendencyCard({ pendency }: { pendency: ProcessoPendency }) {
+  const hasHigh = pendency.issues.some((i) => i.severity === 'high')
+
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-4 rounded-xl border p-4 transition-colors hover:bg-muted/20',
+        hasHigh && 'border-destructive/30'
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+          hasHigh ? 'bg-destructive/12 text-destructive' : 'bg-warning/12 text-warning'
+        )}
+      >
+        <Gavel className="h-4 w-4" />
+      </div>
+
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium truncate">{pendency.displayName}</p>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {pendency.cnjNumber ?? 'Sem CNJ'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {pendency.issues.map((issue) => (
+            <span
+              key={issue.kind}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
+                issue.severity === 'high'
+                  ? 'bg-destructive/12 border-destructive/25 text-destructive'
+                  : 'bg-warning/12 border-warning/25 text-warning'
+              )}
+            >
+              {issue.severity === 'high' ? (
+                <TriangleAlert className="h-3 w-3" />
+              ) : (
+                <AlertCircle className="h-3 w-3" />
+              )}
+              {issue.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Deep-link em vez de modal: resolver uma pendência de processo pode
+          exigir qualquer aba (cadastrar CNJ, criar tarefa, vincular cliente),
+          então o destino certo é o próprio processo. */}
+      <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 shrink-0">
+        <Link href={`/processos?id=${pendency.legalProcessId}`}>
+          Abrir
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </Button>
+    </div>
+  )
 }
 
-function ResolveDialog({ clientId, onClose }: ResolveDialogProps) {
+// ── Form de resolução de cliente ─────────────────────────────
+
+function ResolveDialog({ clientId, onClose }: { clientId: string | null; onClose: () => void }) {
   const { data: cliente } = useCliente(clientId ?? '')
   const updateMutation = useUpdateCliente(clientId ?? '')
 
@@ -121,8 +189,25 @@ function ResolveDialog({ clientId, onClose }: ResolveDialogProps) {
 // ── Componente principal ─────────────────────────────────────
 
 export function PendenciasContent() {
-  const { data: pendencies = [], isLoading, isError } = useClientesPendencies()
+  const {
+    data: clientPendencies = [],
+    isLoading: loadingClients,
+    isError: errorClients,
+  } = useClientesPendencies()
+  const {
+    data: processoPendencies = [],
+    isLoading: loadingProcessos,
+    isError: errorProcessos,
+  } = useLegalProcessesPendencies()
+
   const [resolveId, setResolveId] = useState<string | null>(null)
+
+  const isLoading = loadingClients || loadingProcessos
+  const isError = errorClients || errorProcessos
+  const total = clientPendencies.length + processoPendencies.length
+  const urgentes = processoPendencies.filter((p) =>
+    p.issues.some((i) => i.severity === 'high')
+  ).length
 
   if (isLoading) {
     return (
@@ -153,39 +238,65 @@ export function PendenciasContent() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Pendências</h2>
         <p className="text-sm text-muted-foreground">
-          {pendencies.length === 0
-            ? 'Todos os cadastros estão completos.'
-            : `${pendencies.length} cliente${pendencies.length !== 1 ? 's' : ''} com dados incompletos`}
+          {total === 0
+            ? 'Tudo em ordem — nenhum cadastro ou processo pendente.'
+            : `${total} pendência${total !== 1 ? 's' : ''}` +
+              (urgentes > 0 ? ` · ${urgentes} exigindo atenção imediata` : '')}
         </p>
       </div>
 
-      {/* Estado vazio */}
-      {pendencies.length === 0 ? (
+      {total === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 rounded-xl border bg-muted/10 text-center">
           <CheckCircle2 className="h-10 w-10 text-success mb-3" />
           <p className="text-sm font-medium">Tudo em ordem!</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Nenhum cadastro com campos obrigatórios faltando.
+            Nenhum cadastro incompleto e nenhum processo parado.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {pendencies.map((p) => (
-            <PendencyCard
-              key={p.clientId}
-              pendency={p}
-              onResolve={setResolveId}
-            />
-          ))}
-        </div>
+        <>
+          {/* Processos primeiro: um prazo sem tarefa custa mais caro que um
+              cadastro sem telefone. */}
+          {processoPendencies.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Gavel className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Processos</h3>
+                <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
+                  {processoPendencies.length}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {processoPendencies.map((p) => (
+                  <ProcessoPendencyCard key={p.legalProcessId} pendency={p} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {clientPendencies.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Clientes</h3>
+                <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
+                  {clientPendencies.length}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {clientPendencies.map((p) => (
+                  <PendencyCard key={p.clientId} pendency={p} onResolve={setResolveId} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
-      {/* Dialog para completar cadastro */}
       <ResolveDialog clientId={resolveId} onClose={() => setResolveId(null)} />
     </div>
   )

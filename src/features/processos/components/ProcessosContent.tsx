@@ -2,15 +2,13 @@
 
 import { useState } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
-import { useLegalProcesses, useLegalProcess, legalProcessKeys } from '../hooks/useLegalProcesses'
-import { useCreateLegalProcess, useUpdateLegalProcess } from '../hooks/useLegalProcessMutations'
+import { useLegalProcesses } from '../hooks/useLegalProcesses'
+import { useCreateLegalProcess } from '../hooks/useLegalProcessMutations'
 import { ProcessoTableView } from './ProcessoTableView'
 import { ProcessoForm } from './ProcessoForm'
-import { ProcessoModal } from './ProcessoModal'
 import { MovimentacoesFeed } from './MovimentacoesFeed'
 import { ProcessoFilterBar } from './ProcessoFilterBar'
 import {
@@ -29,37 +27,16 @@ export function ProcessosContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
-  const queryClient = useQueryClient()
 
-  // A id na URL só existe para permitir um deep-link vindo de outra tela (ex: link para
-  // /processos?id=X a partir do Clientes ou do feed de movimentações). Ao clicar numa linha
-  // da própria tabela evitamos a navegação — já temos os dados do processo em mãos, então
-  // primamos o cache da query com eles e só guardamos o id localmente (mais rápido, sem
-  // round-trip, e continua reativo a invalidations futuras).
-  const deepLinkId = searchParams.get('id')
   const createOpen = searchParams.get('create') === '1'
   const deepLinkClientId = searchParams.get('clientId')
-  const [editOpen, setEditOpen] = useState(false)
-  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null)
-
-  const selectedId = localSelectedId ?? deepLinkId
 
   function openDetail(processo: LegalProcessWithRelations) {
-    setEditOpen(false)
-    queryClient.setQueryData(legalProcessKeys.detail(processo.id), processo)
-    setLocalSelectedId(processo.id)
+    router.push(`/processos/${processo.id}`)
   }
 
   function openDetailById(id: string) {
-    setEditOpen(false)
-    setLocalSelectedId(null)
-    router.push(`${pathname}?id=${id}`)
-  }
-
-  function closeDetail() {
-    setEditOpen(false)
-    setLocalSelectedId(null)
-    if (deepLinkId) router.replace(pathname)
+    router.push(`/processos/${id}`)
   }
 
   function openCreate() {
@@ -70,19 +47,11 @@ export function ProcessosContent() {
     router.replace(pathname)
   }
 
-  const { data: selectedProcesso } = useLegalProcess(selectedId ?? '')
-
   const createProcess = useCreateLegalProcess()
-  const updateProcess = useUpdateLegalProcess(selectedId ?? '', selectedProcesso?.crm_item?.id ?? '')
 
   async function handleCreateSubmit(data: LegalProcessInput) {
     await createProcess.mutateAsync(data)
     closeCreate()
-  }
-
-  async function handleEditSubmit(data: LegalProcessInput) {
-    await updateProcess.mutateAsync(data)
-    setEditOpen(false)
   }
 
   if (!workflow) return null
@@ -135,27 +104,6 @@ export function ProcessosContent() {
           <MovimentacoesFeed onSelectProcess={openDetailById} />
         </div>
       </div>
-
-      {/* Detail modal */}
-      {selectedProcesso && (
-        <ProcessoModal
-          processo={selectedProcesso}
-          open={!!selectedProcesso && !editOpen}
-          onClose={closeDetail}
-          onEdit={() => setEditOpen(true)}
-        />
-      )}
-
-      {/* Edit form */}
-      {selectedProcesso && (
-        <ProcessoForm
-          open={editOpen}
-          onClose={() => setEditOpen(false)}
-          editingProcess={selectedProcesso}
-          onSubmit={handleEditSubmit}
-          isLoading={updateProcess.isPending}
-        />
-      )}
 
       {/* Create form */}
       <ProcessoForm

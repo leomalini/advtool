@@ -5,8 +5,13 @@ import type {
   LegalProcessWithRelations,
   LegalProcessMovement,
   LegalProcessMovementWithContext,
+  ProcessoPendency,
+  ProcessoIssue,
+  LegalProcessPartyInput,
 } from '@/types/legalProcess.types'
+import { STALE_MOVEMENT_DAYS, DEADLINE_WARNING_DAYS } from '@/types/legalProcess.types'
 import type { CrmItemWithRelations } from '@/types/crmItem.types'
+import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
 
 const supabase = createClient()
@@ -23,7 +28,8 @@ const CRM_ITEM_FIELDS = `
 const LEGAL_PROCESS_SELECT = `
   *,
   crm_items:crm_items!crm_items_legal_process_id_fkey(${CRM_ITEM_FIELDS}),
-  movements:legal_process_movements(*)
+  movements:legal_process_movements(*),
+  parties:legal_process_parties(*)
 `
 
 /** A processo can be linked to items in several workflows — the "master" one
@@ -57,15 +63,109 @@ function toLegalProcessWithRelations(row: {
     ...rest,
     crm_item: pickMasterCrmItem(items),
     crm_items: items,
+    // Defensivo como crm_items: consumidores iteram sem checar.
+    parties: (rest.parties as LegalProcessWithRelations['parties']) ?? [],
   } as LegalProcessWithRelations
 }
 
-function splitInput(input: LegalProcessInput) {
-  const { cnj_number, court, court_division, plaintiff, defendant, opposing_counsel, ...crmItemFields } = input
-  return {
-    crmItemFields,
-    legalProcessFields: { cnj_number, court, court_division, plaintiff, defendant, opposing_counsel },
+/** Um formulário só alimenta duas tabelas: os campos jurídicos vão para
+ * `legal_processes`, o resto para o `crm_item` que representa o processo. */
+function splitInput(input: Partial<LegalProcessInput>) {
+  const {
+    cnj_number,
+    court,
+    court_division,
+    plaintiff,
+    defendant,
+    opposing_counsel,
+    process_type,
+    status,
+    procedural_class,
+    subject,
+    comarca,
+    case_value,
+    filing_date,
+    ...crmItemFields
+  } = input
+
+  // '' vem de input/select intocado e o Postgres recusa em coluna date/numeric.
+  const legalProcessFields = {
+    cnj_number,
+    court,
+    court_division,
+    plaintiff,
+    defendant,
+    opposing_counsel,
+    process_type,
+    status,
+    procedural_class,
+    subject,
+    comarca,
+    case_value: case_value === undefined || Number.isNaN(case_value) ? undefined : case_value,
+    // undefined = campo ausente do patch, não tocar. '' = limpeza explícita.
+    // Emitir `null` para ausente apagaria a data em qualquer update parcial —
+    // o mesmo bug que o toDbPatch de eventos precisou corrigir.
+    filing_date: filing_date === undefined ? undefined : filing_date || null,
   }
+
+  return { crmItemFields, legalProcessFields }
+}
+
+/** Substitui as partes do processo pelas informadas.
+ *
+ * Delete-then-insert em vez de diff: a origem (API ou formulário) sempre manda
+ * a lista completa, e casar item a item exigiria uma chave estável que a API
+ * não fornece. */
+export async function replaceLegalProcessParties(
+  legalProcessId: string,
+  parties: LegalProcessPartyInput[]
+): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from('legal_process_parties')
+    .delete()
+    .eq('legal_process_id', legalProcessId)
+  if (deleteError) throw deleteError
+
+  if (parties.length === 0) return
+
+  const { error } = await supabase.from('legal_process_parties').insert(
+    parties.map((p, index) => ({
+      legal_process_id: legalProcessId,
+      name: p.name,
+      document: p.document,
+      polo: p.polo,
+      party_type: p.party_type,
+      position: p.position ?? index,
+    }))
+  )
+  if (error) throw error
+}
+
+/** Marca uma publicação como lida e/ou tratada.
+ *
+ * Ler e providenciar são estados distintos — abrir uma intimação não é o mesmo
+ * que ter cumprido o que ela pede —, por isso as duas colunas.
+ */
+export async function markMovement(
+  movementId: string,
+  patch: { read?: boolean; handled?: boolean }
+): Promise<void> {
+  const now = new Date().toISOString()
+  const update: Record<string, string | null> = {}
+
+  if (patch.read !== undefined) update.read_at = patch.read ? now : null
+  if (patch.handled !== undefined) {
+    update.handled_at = patch.handled ? now : null
+    // Tratar implica ter lido; o inverso não vale.
+    if (patch.handled) update.read_at = now
+  }
+  if (Object.keys(update).length === 0) return
+
+  const { error } = await supabase
+    .from('legal_process_movements')
+    .update(update)
+    .eq('id', movementId)
+  if (error) throw error
 }
 
 export async function getLegalProcesses(): Promise<LegalProcessWithRelations[]> {
@@ -207,8 +307,10 @@ export async function updateLegalProcess(
   input: Partial<LegalProcessInput>,
   movedBy?: string | null
 ): Promise<void> {
-  const { cnj_number, court, court_division, plaintiff, defendant, opposing_counsel, ...crmItemFields } = input
-  const legalProcessFields = { cnj_number, court, court_division, plaintiff, defendant, opposing_counsel }
+  // Reaproveita o mesmo split do create — antes esta função duplicava a lista
+  // de campos jurídicos, e qualquer coluna nova teria que ser lembrada em dois
+  // lugares (foi assim que os campos novos ficariam de fora do update).
+  const { crmItemFields, legalProcessFields } = splitInput(input)
 
   if (Object.keys(crmItemFields).length > 0) {
     // title on LegalProcessInput is nullable (falls back to the client's name),
@@ -300,6 +402,115 @@ export async function deleteLegalProcess(legalProcessId: string): Promise<void> 
 
   const { error } = await supabase.from('legal_processes').delete().eq('id', legalProcessId)
   if (error) throw error
+}
+
+/**
+ * Processos com algo faltando ou parado.
+ *
+ * A checagem "prazo sem trabalho" é a razão de esta função existir: ela só é
+ * possível desde que events/tasks ganharam `legal_process_id` (migration 16).
+ * Antes, um prazo próximo sem nenhuma tarefa preparando-o era invisível.
+ */
+export async function getLegalProcessesPendencies(): Promise<ProcessoPendency[]> {
+  const today = new Date()
+  const todayStr = today.toISOString().slice(0, 10)
+  const deadlineLimit = new Date(today)
+  deadlineLimit.setDate(deadlineLimit.getDate() + DEADLINE_WARNING_DAYS)
+  const deadlineLimitStr = deadlineLimit.toISOString().slice(0, 10)
+  const staleBefore = new Date(today)
+  staleBefore.setDate(staleBefore.getDate() - STALE_MOVEMENT_DAYS)
+
+  const processos = await getLegalProcesses()
+
+  // Uma consulta para cada tabela em vez de uma por processo: o que interessa
+  // é só saber se existe trabalho vinculado, então bastam os ids.
+  const [{ data: events }, { data: tasks }] = await Promise.all([
+    supabase.from('events').select('legal_process_id, crm_item_id'),
+    supabase.from('tasks').select('legal_process_id, crm_item_id, status'),
+  ])
+
+  const linkedProcessIds = new Set<string>()
+  const linkedCrmItemIds = new Set<string>()
+  for (const row of (events ?? []) as { legal_process_id: string | null; crm_item_id: string | null }[]) {
+    if (row.legal_process_id) linkedProcessIds.add(row.legal_process_id)
+    if (row.crm_item_id) linkedCrmItemIds.add(row.crm_item_id)
+  }
+  for (const row of (tasks ?? []) as {
+    legal_process_id: string | null
+    crm_item_id: string | null
+    status: string
+  }[]) {
+    // Tarefa concluída não "cobre" um prazo futuro — o trabalho já passou.
+    if (row.status === 'done') continue
+    if (row.legal_process_id) linkedProcessIds.add(row.legal_process_id)
+    if (row.crm_item_id) linkedCrmItemIds.add(row.crm_item_id)
+  }
+
+  const pendencies: ProcessoPendency[] = []
+
+  for (const processo of processos) {
+    const item = processo.crm_item
+    const issues: ProcessoIssue[] = []
+
+    if (!processo.cnj_number) {
+      issues.push({ kind: 'missing_cnj', label: 'Sem número CNJ', severity: 'medium' })
+    }
+
+    // Prazo próximo (ou vencido) sem nenhum evento/tarefa preparando-o.
+    const deadline = item?.next_deadline
+    if (deadline && deadline <= deadlineLimitStr) {
+      const hasWork =
+        linkedProcessIds.has(processo.id) ||
+        processo.crm_items.some((c) => linkedCrmItemIds.has(c.id))
+      if (!hasWork) {
+        issues.push({
+          kind: 'deadline_without_work',
+          label: deadline < todayStr ? 'Prazo vencido sem tarefa' : 'Prazo próximo sem tarefa',
+          severity: 'high',
+        })
+      }
+    }
+
+    // Só cobra movimentação de quem tem CNJ: sem número não há o que monitorar.
+    if (processo.cnj_number) {
+      const lastMovement = processo.movements
+        .map((m) => m.movement_date)
+        .sort()
+        .at(-1)
+      if (!lastMovement || new Date(lastMovement) < staleBefore) {
+        issues.push({
+          kind: 'stale_movements',
+          label: lastMovement
+            ? `Sem movimentação há mais de ${STALE_MOVEMENT_DAYS} dias`
+            : 'Nenhuma movimentação registrada',
+          severity: 'medium',
+        })
+      }
+    }
+
+    if (item && !item.client_id) {
+      issues.push({ kind: 'missing_client', label: 'Sem cliente vinculado', severity: 'medium' })
+    }
+    if (item && !item.assigned_to) {
+      issues.push({ kind: 'missing_assignee', label: 'Sem responsável', severity: 'medium' })
+    }
+
+    if (issues.length > 0) {
+      pendencies.push({
+        legalProcessId: processo.id,
+        displayName: getCrmItemClientName(item),
+        cnjNumber: processo.cnj_number,
+        issues,
+      })
+    }
+  }
+
+  // Os que podem custar um prazo primeiro; depois por quantidade de problemas.
+  return pendencies.sort((a, b) => {
+    const aHigh = a.issues.some((i) => i.severity === 'high') ? 1 : 0
+    const bHigh = b.issues.some((i) => i.severity === 'high') ? 1 : 0
+    return bHigh - aHigh || b.issues.length - a.issues.length
+  })
 }
 
 export async function getRecentMovements(limit = 30): Promise<LegalProcessMovementWithContext[]> {

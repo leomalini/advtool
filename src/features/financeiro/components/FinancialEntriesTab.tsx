@@ -34,7 +34,7 @@ interface FinancialEntriesTabProps {
   itemLabel?: string
 }
 
-/** Aba Financeiro — compartilhada entre CasoModal, ProcessoModal e
+/** Aba Financeiro — compartilhada entre CasoModal, a página do processo e
  * ClienteDetailModal, para os três ficarem idênticos. */
 export function FinancialEntriesTab({
   legalProcessId,

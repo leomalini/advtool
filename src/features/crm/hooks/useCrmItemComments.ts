@@ -7,7 +7,7 @@ import { crmItemKeys } from './useCrmItems'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { useAuth } from '@/hooks/useAuth'
 
-/** Comments across every crm_item passed in — the ProcessoModal reads the union
+/** Comments across every crm_item passed in — a página de detalhe do processo lê a união
  * of its linked cards so one conversation isn't split per card. */
 export function useCrmItemComments(crmItemIds: string[]) {
   // Sorted for a stable query key (see useEventsForEntity).

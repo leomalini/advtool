@@ -7,11 +7,14 @@ import {
   updateLegalProcess,
   deleteLegalProcess,
   addLegalProcessMovement,
+  markMovement,
+  replaceLegalProcessParties,
 } from '../services/legalProcesses.service'
 import { legalProcessKeys } from './useLegalProcesses'
 import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
 import { useAuth } from '@/hooks/useAuth'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
+import type { LegalProcessPartyInput } from '@/types/legalProcess.types'
 
 export function useInvalidateLegalProcesses() {
   const queryClient = useQueryClient()
@@ -20,6 +23,41 @@ export function useInvalidateLegalProcesses() {
     queryClient.invalidateQueries({ queryKey: crmItemKeys.workflow('wf-processos') })
     queryClient.invalidateQueries({ queryKey: crmItemKeys.counts() })
   }
+}
+
+/** Marca uma publicação como lida/tratada. Invalida a lista inteira porque a
+ * contagem de não lidas aparece no cabeçalho e nas abas. */
+export function useMarkMovement() {
+  const invalidate = useInvalidateLegalProcesses()
+
+  return useMutation({
+    mutationFn: ({
+      movementId,
+      ...patch
+    }: {
+      movementId: string
+      read?: boolean
+      handled?: boolean
+    }) => markMovement(movementId, patch),
+    onSuccess: () => invalidate(),
+    onError: () => toast.error('Não foi possível atualizar a publicação.'),
+  })
+}
+
+export function useReplaceLegalProcessParties() {
+  const invalidate = useInvalidateLegalProcesses()
+
+  return useMutation({
+    mutationFn: ({
+      legalProcessId,
+      parties,
+    }: {
+      legalProcessId: string
+      parties: LegalProcessPartyInput[]
+    }) => replaceLegalProcessParties(legalProcessId, parties),
+    onSuccess: () => invalidate(),
+    onError: () => toast.error('Erro ao salvar as partes.'),
+  })
 }
 
 export function useCreateLegalProcess() {

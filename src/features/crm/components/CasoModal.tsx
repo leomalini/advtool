@@ -2,10 +2,8 @@
 
 import { useState } from 'react'
 import {
-  X,
-  FileText,
+  X,
   Clock,
-  Construction,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
@@ -19,6 +17,7 @@ import { CrmItemComments } from './CrmItemComments'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
+import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { CrmItemClienteTab } from './CrmItemClienteTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -74,22 +73,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   )
 }
 
-function PlaceholderTab({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-      <div className="relative">
-        {icon}
-        <Construction className="w-4 h-4 absolute -bottom-1 -right-1 text-warning" />
-      </div>
-      <div className="text-center">
-        <p className="text-sm font-medium text-muted-foreground">Em desenvolvimento</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          A aba <strong>{label}</strong> estará disponível em breve
-        </p>
-      </div>
-    </div>
-  )
-}
+// PlaceholderTab foi removido: todas as abas deste modal têm conteúdo real.
 
 // ── Tab: Resumo ───────────────────────────────────────────────────────────────
 
@@ -330,7 +314,12 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
             />
           )}
           {activeTab === 'documentos' && (
-            <PlaceholderTab icon={<FileText className="w-8 h-8" />} label="Documentos" />
+            <DocumentsTab
+              legalProcessId={readLegalProcessId}
+              crmItemIds={[caso.id]}
+              lockedCrmItemId={caso.id}
+              itemLabel="caso"
+            />
           )}
           {activeTab === 'financeiro' && (
             <FinancialEntriesTab

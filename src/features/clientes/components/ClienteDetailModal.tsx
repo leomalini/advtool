@@ -17,6 +17,7 @@ import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalPr
 import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { getCrmItemDisplayTitle } from '@/types/crmItem.types'
 import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
+import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import type { AreaJuridica } from '@/data/mock'
 import { Scale, Pencil, ArrowRight, Briefcase, Plus } from 'lucide-react'
 import type { ClientWithRelations } from '@/types/cliente.types'
@@ -240,6 +241,7 @@ export function ClienteDetailModal({
                 Casos
               </TabsTrigger>
               <TabsTrigger value="financeiro" className="flex-1">Financeiro</TabsTrigger>
+              <TabsTrigger value="documentos" className="flex-1">Documentos</TabsTrigger>
             </TabsList>
 
             <TabsContent value="resumo">
@@ -250,6 +252,13 @@ export function ClienteDetailModal({
             </TabsContent>
             <TabsContent value="financeiro">
               <AbaFinanceiro clienteId={cliente.id} />
+            </TabsContent>
+            <TabsContent value="documentos">
+              <DocumentsTab
+                clientId={cliente.id}
+                lockedClientId={cliente.id}
+                itemLabel="cliente"
+              />
             </TabsContent>
           </Tabs>
         </div>

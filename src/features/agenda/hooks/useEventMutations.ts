@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { createEvent, updateEvent, deleteEvent } from '../services/events.service'
 import { eventKeys } from './useEvents'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
+import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { useAuth } from '@/hooks/useAuth'
 import type { EventFormInput, UpdateEventInput } from '@/schemas/event.schema'
 
@@ -25,6 +26,9 @@ export function useInvalidateEventSurfaces() {
     queryClient.invalidateQueries({ queryKey: dashboardKeys.stats })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.upcomingEvents })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
+    // Um evento vinculado "cobre" um prazo próximo: sem isto a pendência
+    // continuaria listada mesmo depois de agendado o trabalho.
+    queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })
   }
 }
 

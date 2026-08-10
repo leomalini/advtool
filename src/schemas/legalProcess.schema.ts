@@ -20,6 +20,19 @@ export const legalProcessSchema = z.object({
   plaintiff: z.string().max(200).optional().nullable(),
   defendant: z.string().max(200).optional().nullable(),
   opposing_counsel: z.string().max(200).optional().nullable(),
+
+  // Identificação exibida na faixa de infos do detalhe
+  // Opcionais no schema porque a coluna já tem DEFAULT no banco — usar
+  // .default() aqui tornaria o campo obrigatório no tipo inferido, obrigando
+  // todo call site a informá-lo.
+  process_type: z.enum(['judicial', 'administrativo']).optional(),
+  status: z.enum(['ativo', 'arquivado', 'suspenso']).optional(),
+  procedural_class: z.string().max(200).optional().nullable(),
+  subject: z.string().max(300).optional().nullable(),
+  comarca: z.string().max(200).optional().nullable(),
+  // coerce: o input de valor entrega string; '' vira null no service.
+  case_value: z.coerce.number().nonnegative().optional().nullable(),
+  filing_date: z.string().optional().nullable(),
 })
 
 export type LegalProcessInput = z.infer<typeof legalProcessSchema>

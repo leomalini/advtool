@@ -17,7 +17,7 @@ export const crmItemKeys = {
   byClient: (clientId: string) => ['crm_items', 'client', clientId] as const,
   detail: (id: string) => ['crm_items', id] as const,
   columnHistory: (id: string) => ['crm_items', id, 'column-history'] as const,
-  /** Comments of one or more crm_items — the ProcessoModal reads the union of
+  /** Comments of one or more crm_items — a página de detalhe do processo lê a união de
    * every item linked to the processo, so the thread isn't split per card. */
   comments: (ids: string[]) => ['crm_items', 'comments', ids.join(',')] as const,
   deletionImpact: (id: string) => ['crm_items', id, 'deletion-impact'] as const,

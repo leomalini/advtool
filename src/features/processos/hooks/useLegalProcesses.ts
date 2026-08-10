@@ -7,6 +7,7 @@ import {
   getLegalProcessesByClient,
   getRecentMovements,
   getLegalProcessDeletionImpact,
+  getLegalProcessesPendencies,
 } from '../services/legalProcesses.service'
 
 export const legalProcessKeys = {
@@ -15,6 +16,7 @@ export const legalProcessKeys = {
   detail: (id: string) => ['legal_processes', id] as const,
   byClient: (clientId: string) => ['legal_processes', 'client', clientId] as const,
   recentMovements: (limit: number) => ['legal_processes', 'recent-movements', limit] as const,
+  pendencies: ['legal_processes', 'pendencies'] as const,
 }
 
 /** What a processo deletion will destroy vs. merely unlink. Only runs while the
@@ -24,6 +26,15 @@ export function useLegalProcessDeletionImpact(legalProcessId: string | null) {
     queryKey: ['legal_processes', legalProcessId, 'deletion-impact'],
     queryFn: () => getLegalProcessDeletionImpact(legalProcessId!),
     enabled: !!legalProcessId,
+  })
+}
+
+/** Processos com dado faltando ou parados — alimenta a página /pendencias e o
+ * badge da sidebar. */
+export function useLegalProcessesPendencies() {
+  return useQuery({
+    queryKey: legalProcessKeys.pendencies,
+    queryFn: getLegalProcessesPendencies,
   })
 }
 

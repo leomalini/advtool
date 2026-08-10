@@ -1,377 +1,301 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import {
-  FileText,
-  FileArchive,
-  File,
-  Upload,
-  Download,
-  Eye,
-  Search,
-  FolderOpen,
-  X,
-} from 'lucide-react'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { format, parseISO } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
+import { Download, FileText, Search, Trash2, Upload, X } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { EmptyState } from '@/components/shared/EmptyState'
-import { CASOS, AREAS_JURIDICAS } from '@/data/mock'
-import type { Documento } from '@/data/mock'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
+import { getDisplayName } from '@/utils/profile'
+import { getClientDisplayName } from '@/types/cliente.types'
+import {
+  DOCUMENT_CATEGORY_LABELS,
+  formatFileSize,
+  getFileExtension,
+  type DocumentCategory,
+  type DocumentWithRelations,
+} from '@/types/document.types'
+import { useDocuments } from '../hooks/useDocuments'
+import { useDeleteDocument, useOpenDocument } from '../hooks/useDocumentMutations'
 
-// ── Types ──────────────────────────────────────────────────────
-
-type CategoriaFilter = 'todos' | Documento['categoria']
-
-interface DocumentoEnriquecido extends Documento {
-  clienteNome: string
-  casoNome: string
-  areaJuridica: string
-}
-
-// ── Helpers ────────────────────────────────────────────────────
-
-const CATEGORIAS: { value: CategoriaFilter; label: string }[] = [
-  { value: 'todos', label: 'Todos' },
-  { value: 'peticao', label: 'Petição' },
-  { value: 'contrato', label: 'Contrato' },
-  { value: 'procuracao', label: 'Procuração' },
-  { value: 'decisao', label: 'Decisão' },
-  { value: 'outros', label: 'Outros' },
-]
-
-const CATEGORIA_LABELS: Record<Documento['categoria'], string> = {
-  peticao: 'Petição',
-  contrato: 'Contrato',
-  procuracao: 'Procuração',
-  decisao: 'Decisão',
-  outros: 'Outros',
-}
-
-const CATEGORIA_COLORS: Record<Documento['categoria'], string> = {
-  peticao: 'bg-info/12 text-info border-info/25',
-  contrato: 'bg-success/12 text-success border-success/25',
-  procuracao: 'bg-chart-2/12 text-chart-2 border-chart-2/25',
-  decisao: 'bg-warning/12 text-warning border-warning/25',
-  outros: 'bg-muted text-muted-foreground border-border',
-}
-
-function FileIcon({ tipo, className }: { tipo: string; className?: string }) {
-  const ext = tipo.toLowerCase()
-  if (ext === 'pdf') {
-    return (
-      <div className={cn('flex items-center justify-center rounded-lg bg-destructive/12', className)}>
-        <FileText className="h-5 w-5 text-destructive" />
-      </div>
-    )
-  }
-  if (ext === 'zip' || ext === 'rar') {
-    return (
-      <div className={cn('flex items-center justify-center rounded-lg bg-warning/12', className)}>
-        <FileArchive className="h-5 w-5 text-warning" />
-      </div>
-    )
-  }
-  if (ext === 'doc' || ext === 'docx') {
-    return (
-      <div className={cn('flex items-center justify-center rounded-lg bg-info/12', className)}>
-        <FileText className="h-5 w-5 text-info" />
-      </div>
-    )
-  }
-  return (
-    <div className={cn('flex items-center justify-center rounded-lg bg-muted', className)}>
-      <File className="h-5 w-5 text-muted-foreground" />
-    </div>
-  )
-}
-
-function formatDate(dateStr: string): string {
-  const [year, month, day] = dateStr.split('-')
-  return `${day}/${month}/${year}`
-}
-
-// ── Upload Modal ───────────────────────────────────────────────
-
-function UploadModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [isDragging, setIsDragging] = useState(false)
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent showCloseButton={false} className="sm:max-w-[520px] p-0 gap-0 overflow-hidden">
-        <div className="flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b">
-            <DialogTitle className="text-base font-semibold">Upload de Documento</DialogTitle>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="px-6 py-6 space-y-5">
-            {/* Drag & Drop Area */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => { e.preventDefault(); setIsDragging(false) }}
-              className={cn(
-                'rounded-xl border-2 border-dashed px-8 py-12 flex flex-col items-center justify-center text-center transition-colors cursor-pointer',
-                isDragging
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/40 hover:bg-muted/30',
-              )}
-            >
-              <div className="rounded-full bg-muted p-4 mb-4">
-                <Upload className="h-7 w-7 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium mb-1">
-                Arraste arquivos aqui ou clique para selecionar
-              </p>
-              <p className="text-xs text-muted-foreground">
-                PDF, DOC, DOCX, ZIP — até 50 MB
-              </p>
-            </div>
-
-            {/* Categoria */}
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">Categoria</label>
-              <select className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">Selecionar categoria...</option>
-                {CATEGORIAS.filter(c => c.value !== 'todos').map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Caso */}
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">Caso relacionado</label>
-              <select className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">— Nenhum —</option>
-                {CASOS.map(c => (
-                  <option key={c.id} value={c.id}>{c.clienteNome}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="border-t px-6 py-4 flex items-center justify-end gap-2 bg-muted/10">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button size="sm">
-              <Upload className="h-3.5 w-3.5 mr-1.5" />
-              Fazer Upload
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── Main Component ─────────────────────────────────────────────
+const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
+const ALL = '__all__'
+const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_110px_100px_76px]'
 
 export function DocumentosContent() {
+  const { data: documents = [], isLoading } = useDocuments()
+  const deleteDocument = useDeleteDocument()
+  const openDocument = useOpenDocument()
+
+  const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
   const [search, setSearch] = useState('')
-  const [categoriaFilter, setCategoriaFilter] = useState<CategoriaFilter>('todos')
-  const [clienteFilter, setClienteFilter] = useState('')
-  const [uploadOpen, setUploadOpen] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState<DocumentCategory | null>(null)
 
-  // Agregar todos documentos dos casos
-  const todosDocumentos = useMemo<DocumentoEnriquecido[]>(() => {
-    return CASOS.flatMap((caso) =>
-      caso.documentos.map((doc) => ({
-        ...doc,
-        clienteNome: caso.clienteNome,
-        casoNome: `${caso.clienteNome} — ${AREAS_JURIDICAS[caso.areaJuridica].label}`,
-        areaJuridica: caso.areaJuridica,
-      })),
-    )
-  }, [])
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const qDigits = q.replace(/\D/g, '')
 
-  const clientes = useMemo(() => {
-    const map = new Map<string, string>()
-    CASOS.forEach((c) => map.set(c.clienteId, c.clienteNome))
-    return Array.from(map.entries()).map(([id, nome]) => ({ id, nome }))
-  }, [])
+    return documents.filter((doc) => {
+      if (categoryFilter && doc.category !== categoryFilter) return false
+      if (!q) return true
 
-  const documentosFiltrados = useMemo(() => {
-    return todosDocumentos.filter((doc) => {
-      const matchSearch =
-        search === '' ||
-        doc.nome.toLowerCase().includes(search.toLowerCase()) ||
-        doc.clienteNome.toLowerCase().includes(search.toLowerCase())
+      const haystack = [
+        doc.file_name,
+        doc.client
+          ? getClientDisplayName(doc.client as Parameters<typeof getClientDisplayName>[0])
+          : null,
+        doc.legal_process?.cnj_number,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
 
-      const matchCategoria = categoriaFilter === 'todos' || doc.categoria === categoriaFilter
-      const matchCliente = clienteFilter === '' || doc.clienteId === clienteFilter
+      const matchesText = haystack.includes(q)
+      const matchesDigits =
+        qDigits.length > 0 &&
+        (doc.legal_process?.cnj_number?.replace(/\D/g, '') ?? '').includes(qDigits)
 
-      return matchSearch && matchCategoria && matchCliente
+      return matchesText || matchesDigits
     })
-  }, [todosDocumentos, search, categoriaFilter, clienteFilter])
+  }, [documents, search, categoryFilter])
+
+  const hasFilters = search.trim() !== '' || categoryFilter !== null
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">Documentos</h1>
-          <span className="text-sm text-muted-foreground">
-            {documentosFiltrados.length} documento{documentosFiltrados.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Buscar documentos..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 h-9 w-64 text-sm"
-            />
-          </div>
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
-            <Upload className="h-3.5 w-3.5 mr-1.5" />
-            Upload
-          </Button>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold">Documentos</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Todos os arquivos do escritório</p>
       </div>
+
+      {/* Não há upload avulso aqui: todo documento precisa de um dono (CHECK no
+          banco), senão ninguém o encontra depois. O envio acontece na aba
+          Documentos da entidade, e o arquivo aparece aqui automaticamente. */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Upload className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Para enviar um documento</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Abra o cliente, caso ou processo e use a aba <strong>Documentos</strong> — assim o
+                arquivo já nasce vinculado e aparece aqui.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Filtros */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {/* Categorias */}
-        <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50">
-          {CATEGORIAS.map((cat) => (
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, cliente ou CNJ..."
+            className="pl-8 h-9 text-sm"
+          />
+          {search && (
             <button
-              key={cat.value}
-              onClick={() => setCategoriaFilter(cat.value)}
-              className={cn(
-                'px-3 py-1 rounded-md text-xs font-medium transition-all',
-                categoriaFilter === cat.value
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Limpar busca"
             >
-              {cat.label}
+              <X className="w-3.5 h-3.5" />
             </button>
-          ))}
+          )}
         </div>
 
-        {/* Filtro de cliente */}
-        <select
-          value={clienteFilter}
-          onChange={(e) => setClienteFilter(e.target.value)}
-          className="h-8 rounded-lg border border-input bg-background px-3 text-xs text-muted-foreground"
+        <Select
+          value={categoryFilter ?? ALL}
+          onValueChange={(v) => setCategoryFilter(v === ALL ? null : (v as DocumentCategory))}
         >
-          <option value="">Todos os clientes</option>
-          {clientes.map((c) => (
-            <option key={c.id} value={c.id}>{c.nome}</option>
-          ))}
-        </select>
+          <SelectTrigger className="h-9 w-[180px] text-sm">
+            <SelectValue>
+              {categoryFilter ? DOCUMENT_CATEGORY_LABELS[categoryFilter] : 'Todas as categorias'}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Todas as categorias</SelectItem>
+            {CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>
+                {DOCUMENT_CATEGORY_LABELS[c]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSearch('')
+              setCategoryFilter(null)
+            }}
+            className="h-9 text-muted-foreground"
+          >
+            <X className="w-3.5 h-3.5 mr-1" />
+            Limpar
+          </Button>
+        )}
+
+        {documents.length > 0 && (
+          <span className="text-xs text-muted-foreground ml-auto">
+            {filtered.length} de {documents.length} arquivo{documents.length === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
-      {/* Lista */}
-      {documentosFiltrados.length === 0 ? (
-        <EmptyState
-          icon={FolderOpen}
-          title="Nenhum documento encontrado"
-          description="Faça o upload de documentos ou ajuste os filtros aplicados."
-          action={
-            <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}>
-              <Upload className="h-3.5 w-3.5 mr-1.5" />
-              Fazer Upload
-            </Button>
-          }
-        />
-      ) : (
-        <div className="rounded-xl border overflow-hidden">
-          {/* Cabeçalho da tabela */}
-          <div className="grid grid-cols-[auto_1fr_130px_160px_160px_90px_130px_90px] items-center gap-4 px-4 py-2.5 bg-muted/30 border-b">
-            <div className="w-9" />
-            <span className="text-xs font-medium text-muted-foreground">Nome</span>
-            <span className="text-xs font-medium text-muted-foreground">Categoria</span>
-            <span className="text-xs font-medium text-muted-foreground">Cliente</span>
-            <span className="text-xs font-medium text-muted-foreground">Caso</span>
-            <span className="text-xs font-medium text-muted-foreground">Tamanho</span>
-            <span className="text-xs font-medium text-muted-foreground">Upload em</span>
-            <span className="text-xs font-medium text-muted-foreground text-right">Ações</span>
-          </div>
-
-          {/* Linhas */}
-          <div className="divide-y">
-            {documentosFiltrados.map((doc) => (
+      {/* Tabela */}
+      <Card>
+        <CardContent className="p-0 pb-1">
+          {isLoading ? (
+            <div className="p-4 space-y-2">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
+              <FileText className="w-7 h-7" />
+              <p className="text-sm">Nenhum documento enviado</p>
+              <p className="text-xs">Use a aba Documentos de um cliente, caso ou processo</p>
+            </div>
+          ) : (
+            <div>
               <div
-                key={doc.id}
-                className="grid grid-cols-[auto_1fr_130px_160px_160px_90px_130px_90px] items-center gap-4 px-4 py-3 hover:bg-muted/20 transition-colors group"
+                className={cn(
+                  TABLE_GRID,
+                  'gap-3 px-4 py-2 bg-muted/30 border-y text-xs font-medium text-muted-foreground'
+                )}
               >
-                {/* Ícone */}
-                <FileIcon tipo={doc.tipo} className="w-9 h-9" />
+                <span>Arquivo</span>
+                <span>Cliente</span>
+                <span>Processo</span>
+                <span>Categoria</span>
+                <span>Enviado</span>
+                <span className="sr-only">Ações</span>
+              </div>
 
-                {/* Nome */}
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{doc.nome}</p>
-                  <p className="text-xs text-muted-foreground">{doc.uploadPor}</p>
-                </div>
+              <div className="divide-y">
+                {filtered.length === 0 && (
+                  <div className="py-10 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum documento com esses filtros.
+                    </p>
+                  </div>
+                )}
 
-                {/* Categoria */}
-                <div>
-                  <span
+                {filtered.map((doc) => (
+                  <div
+                    key={doc.id}
                     className={cn(
-                      'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border',
-                      CATEGORIA_COLORS[doc.categoria],
+                      TABLE_GRID,
+                      'gap-3 px-4 py-3 items-center hover:bg-muted/20 transition-colors group'
                     )}
                   >
-                    {CATEGORIA_LABELS[doc.categoria]}
-                  </span>
-                </div>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-[9px] font-bold text-muted-foreground">
+                        {getFileExtension(doc.file_name)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm truncate">{doc.file_name}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {formatFileSize(doc.file_size)}
+                          {doc.uploader && ` · ${getDisplayName(doc.uploader.full_name)}`}
+                        </p>
+                      </div>
+                    </div>
 
-                {/* Cliente */}
-                <p className="text-xs text-muted-foreground truncate">{doc.clienteNome}</p>
+                    {doc.client ? (
+                      <Link
+                        href={`/clientes?id=${doc.client.id}`}
+                        className="text-xs text-muted-foreground truncate hover:text-foreground hover:underline"
+                      >
+                        {getClientDisplayName(
+                          doc.client as Parameters<typeof getClientDisplayName>[0]
+                        )}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
 
-                {/* Caso */}
-                <p className="text-xs text-muted-foreground truncate">{doc.casoNome}</p>
+                    {doc.legal_process ? (
+                      <Link
+                        href={`/processos?id=${doc.legal_process.id}`}
+                        className="text-xs font-mono text-muted-foreground truncate hover:text-foreground hover:underline"
+                      >
+                        {doc.legal_process.cnj_number ?? 'Sem CNJ'}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
 
-                {/* Tamanho */}
-                <p className="text-xs text-muted-foreground">{doc.tamanho}</p>
+                    <span className="text-xs text-muted-foreground">
+                      {DOCUMENT_CATEGORY_LABELS[doc.category]}
+                    </span>
 
-                {/* Data */}
-                <p className="text-xs text-muted-foreground">{formatDate(doc.data)}</p>
+                    <span className="text-xs text-muted-foreground">
+                      {format(parseISO(doc.created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                    </span>
 
-                {/* Ações */}
-                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    type="button"
-                    title="Visualizar"
-                    className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Download"
-                    className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        title="Abrir"
+                        onClick={() => openDocument.mutate(doc.file_path)}
+                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Excluir"
+                        onClick={() => setPendingDelete(doc)}
+                        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Excluir documento"
+        description={`"${pendingDelete?.file_name}" será removido permanentemente, junto com o arquivo.`}
+        isLoading={deleteDocument.isPending}
+        onConfirm={() => {
+          if (!pendingDelete) return
+          deleteDocument.mutate(
+            { id: pendingDelete.id, filePath: pendingDelete.file_path },
+            { onSuccess: () => setPendingDelete(null) }
+          )
+        }}
+      />
     </div>
   )
 }
