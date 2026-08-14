@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
-import type { ClientWithRelations, ClientAttachment, ClientPendency } from '@/types/cliente.types'
+import type { ClientWithRelations, ClientPendency, ClientComment } from '@/types/cliente.types'
 import type { CreateClientInput, ContactInput } from '@/schemas/cliente.schema'
 
 const supabase = createClient()
@@ -33,6 +33,17 @@ export async function getClientById(id: string): Promise<ClientWithRelations> {
   return data as ClientWithRelations
 }
 
+/** Controles de formulário devolvem '' quando intocados, e o Postgres recusa
+ * isso em coluna date — `birth_date: ''` quebraria o cadastro inteiro. Mesmo
+ * tratamento de tasks/documents/financialEntries. */
+function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    out[key] = value === '' ? null : value
+  }
+  return out as T
+}
+
 export async function createClientRecord(
   input: CreateClientInput,
   userId: string
@@ -41,7 +52,7 @@ export async function createClientRecord(
 
   const { data, error } = await supabase
     .from('clients')
-    .insert({ ...clientData, created_by: userId })
+    .insert({ ...nullifyEmpty(clientData), created_by: userId })
     .select(CLIENT_SELECT)
     .single()
 
@@ -72,7 +83,7 @@ export async function updateClientRecord(
     contacts?: ContactInput[]
   }
 
-  const { error } = await supabase.from('clients').update(clientData).eq('id', id)
+  const { error } = await supabase.from('clients').update(nullifyEmpty(clientData)).eq('id', id)
   if (error) throw error
 
   if (contacts !== undefined) {
@@ -125,55 +136,52 @@ export async function getClientsPendencies(): Promise<ClientPendency[]> {
   return pendencies
 }
 
-export async function getClientAttachments(clientId: string): Promise<ClientAttachment[]> {
+// ── Notas do cliente ─────────────────────────────────────────────────────────
+
+const CLIENT_COMMENT_SELECT = `
+  *,
+  author:profiles!client_comments_author_id_fkey(id, full_name, avatar_url, role, created_at)
+`
+
+export async function getClientComments(clientId: string): Promise<ClientComment[]> {
   const { data, error } = await supabase
-    .from('client_attachments')
-    .select(`
-      *,
-      uploader:profiles!client_attachments_uploaded_by_fkey(id, full_name, avatar_url, role, created_at)
-    `)
+    .from('client_comments')
+    .select(CLIENT_COMMENT_SELECT)
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data as ClientAttachment[]
+  return data as unknown as ClientComment[]
 }
 
-export async function uploadClientAttachment(
+export async function addClientComment(
   clientId: string,
-  file: File,
-  userId: string
-): Promise<ClientAttachment> {
-  const filePath = `${clientId}/${Date.now()}-${file.name}`
-
-  const { error: uploadError } = await supabase.storage
-    .from('attachments')
-    .upload(filePath, file)
-
-  if (uploadError) throw uploadError
-
+  content: string,
+  userId: string,
+  entityTitle: string
+): Promise<ClientComment> {
   const { data, error } = await supabase
-    .from('client_attachments')
-    .insert({
-      client_id: clientId,
-      file_name: file.name,
-      file_path: filePath,
-      file_size: file.size,
-      file_type: file.type,
-      uploaded_by: userId,
-    })
-    .select()
+    .from('client_comments')
+    .insert({ client_id: clientId, content, author_id: userId })
+    .select(CLIENT_COMMENT_SELECT)
     .single()
 
   if (error) throw error
-  return data as ClientAttachment
+
+  await recordActivity({
+    type: 'client_comment',
+    entity_type: 'client',
+    entity_id: clientId,
+    entity_title: entityTitle,
+    actor_id: userId,
+  })
+
+  return data as unknown as ClientComment
 }
 
-export async function deleteClientAttachment(id: string, filePath: string): Promise<void> {
-  await supabase.storage.from('attachments').remove([filePath])
-  const { error } = await supabase.from('client_attachments').delete().eq('id', id)
-  if (error) throw error
-}
+// Os anexos do cliente saíram daqui na migration 23: `client_attachments` foi
+// absorvida por `documents`, e a aba do modal já usa o DocumentsTab. As funções
+// que restavam apontavam para uma tabela que não existe mais.
 
 export async function getAttachmentUrl(filePath: string): Promise<string> {
   const { data } = await supabase.storage

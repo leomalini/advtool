@@ -3,19 +3,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { EVENT_TYPE_LABELS } from '@/types/event.types'
-import type { EventType } from '@/types/event.types'
+import { resolveEventType } from '@/types/event.types'
+import { useEventTypeMap } from '@/features/agenda/hooks/useEventTypes'
 import { useUpcomingEvents } from '../hooks/useDashboardStats'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { CalendarDays, Gavel, Users, Clock, MapPin } from 'lucide-react'
-
-const TIPO_CONFIG: Record<EventType, { icon: React.ElementType; color: string; bg: string }> = {
-  hearing: { icon: Gavel, color: 'text-info', bg: 'bg-info/12' },
-  meeting: { icon: Users, color: 'text-chart-2', bg: 'bg-chart-2/12' },
-  deadline: { icon: Clock, color: 'text-warning', bg: 'bg-warning/12' },
-  appointment: { icon: CalendarDays, color: 'text-muted-foreground', bg: 'bg-muted' },
-}
+import { CalendarDays, MapPin } from 'lucide-react'
 
 /** The event carries a client relation only when one was linked. */
 function clientName(event: { client?: { type: string; name: string | null; company_name: string | null; trade_name: string | null } | null }): string | null {
@@ -26,6 +19,7 @@ function clientName(event: { client?: { type: string; name: string | null; compa
 
 export function AgendaHojeCard() {
   const { data: eventos, isLoading } = useUpcomingEvents(6)
+  const eventTypes = useEventTypeMap()
 
   return (
     <Card>
@@ -48,8 +42,7 @@ export function AgendaHojeCard() {
         )}
 
         {eventos?.map((evento, index) => {
-          const config = TIPO_CONFIG[evento.type] ?? TIPO_CONFIG.appointment
-          const IconeEvento = config.icon
+          const tipo = resolveEventType(eventTypes, evento.type)
           const dataEvento = parseISO(evento.start_at)
           const cliente = clientName(evento as Parameters<typeof clientName>[0])
 
@@ -57,8 +50,13 @@ export function AgendaHojeCard() {
             <div key={evento.id} className="flex gap-3">
               {/* Linha de tempo */}
               <div className="flex flex-col items-center">
-                <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', config.bg)}>
-                  <IconeEvento className={cn('h-4 w-4', config.color)} />
+                {/* A cor vem do tipo cadastrado — não há mais ícone por tipo,
+                    já que o escritório cria os seus. */}
+                <div
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: `${tipo.color}1f` }}
+                >
+                  <CalendarDays className="h-4 w-4" style={{ color: tipo.color }} />
                 </div>
                 {index < eventos.length - 1 && (
                   <div className="mt-1 w-px flex-1 bg-border min-h-[20px]" />
@@ -69,13 +67,10 @@ export function AgendaHojeCard() {
               <div className="flex-1 pb-3 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span
-                    className={cn(
-                      'inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium',
-                      config.bg,
-                      config.color
-                    )}
+                    className="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium"
+                    style={{ backgroundColor: `${tipo.color}1f`, color: tipo.color }}
                   >
-                    {EVENT_TYPE_LABELS[evento.type]}
+                    {tipo.label}
                   </span>
                   <time className="text-xs text-muted-foreground whitespace-nowrap">
                     {evento.all_day

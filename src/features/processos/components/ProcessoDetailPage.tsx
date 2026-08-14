@@ -7,6 +7,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
   ArrowLeft,
+  ArrowUpRight,
   Calendar,
   Check,
   ChevronDown,
@@ -18,12 +19,14 @@ import {
   FileText,
   Gavel,
   Landmark,
+  Link2,
   Loader2,
   MapPin,
   Pencil,
   Plus,
   Scale,
   Search,
+  Send,
   Tag,
   Wallet,
   X,
@@ -33,8 +36,15 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
+import { formatDocument } from '@/utils/format'
 import { useLegalProcess } from '../hooks/useLegalProcesses'
-import { useUpdateLegalProcess, useMarkMovement } from '../hooks/useLegalProcessMutations'
+import {
+  useUpdateLegalProcess,
+  useMarkMovement,
+  useLinkPartyToClient,
+} from '../hooks/useLegalProcessMutations'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { ETIQUETAS } from '@/data/mock'
 import type { CrmTag } from '@/schemas/crmItem.schema'
@@ -42,6 +52,8 @@ import {
   PROCESS_TYPE_LABELS,
   PROCESS_STATUS_LABELS,
   groupPartiesByPolo,
+  type DisplayParty,
+  type PartyClient,
   type LegalProcessMovement,
   type LegalProcessWithRelations,
 } from '@/types/legalProcess.types'
@@ -58,15 +70,29 @@ import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialE
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
 import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
 import { TaskForm } from '@/features/tarefas/components/TaskForm'
-import { useCrmItemComments } from '@/features/crm/hooks/useCrmItemComments'
+import { useCrmItemComments, useAddCrmItemComment } from '@/features/crm/hooks/useCrmItemComments'
+import { ClienteForm } from '@/features/clientes/components/ClienteForm'
+import { useCreateCliente } from '@/features/clientes/hooks/useClienteMutations'
+import type { ClientWithRelations } from '@/types/cliente.types'
+import type { CreateClientInput } from '@/schemas/cliente.schema'
 import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useOpenDocument } from '@/features/documentos/hooks/useDocumentMutations'
 import { formatFileSize, getFileExtension } from '@/types/document.types'
 
 const PAGE_SIZE = 20
 
+/** As três primeiras filtram a timeline; as demais trocam o painel inteiro.
+ * Vivem no mesmo grupo porque, para quem usa, são todas "o que tem neste
+ * processo" — separá-las em duas barras obrigava a procurar em dois lugares. */
 type TimelineFilter = 'tudo' | 'publicacoes' | 'movimentacoes'
 type EntityTab = 'agenda' | 'tarefas' | 'documentos' | 'financeiro' | 'comentarios' | 'cliente' | 'etapas'
+type Tab = TimelineFilter | EntityTab
+
+const TIMELINE_TABS: readonly TimelineFilter[] = ['tudo', 'publicacoes', 'movimentacoes']
+
+function isTimelineTab(tab: Tab): tab is TimelineFilter {
+  return (TIMELINE_TABS as readonly string[]).includes(tab)
+}
 
 const ENTITY_TABS: { id: EntityTab; label: string }[] = [
   { id: 'agenda', label: 'Agenda' },
@@ -90,6 +116,38 @@ function formatDateOnly(value: string | null): string {
   return format(parseISO(value), 'dd/MM/yyyy', { locale: ptBR })
 }
 
+/** Nome de exibição do cliente vinculado a uma parte. Mesma regra do
+ * getClientDisplayName, mas sobre o recorte mínimo que a parte embeda. */
+function partyClientName(client: PartyClient): string {
+  if (client.type === 'individual') return client.name ?? ''
+  return client.trade_name ?? client.company_name ?? ''
+}
+
+/** Semente para o cadastro de cliente feito a partir de uma parte.
+ *
+ * 14 dígitos é CNPJ, e aí o nome que veio do tribunal é razão social. Sem
+ * documento, assume pessoa física — o caso mais comum e o mais fácil de
+ * corrigir no próprio formulário. */
+function partyAsClientDefaults(party: DisplayParty): Partial<ClientWithRelations> {
+  const digits = party.document?.replace(/\D/g, '') ?? ''
+  // Já mascarado: o campo do cadastro exibe o que recebe, e um documento sem
+  // pontuação passaria a impressão de que veio errado.
+  const document = digits ? formatDocument(digits) : undefined
+
+  if (digits.length === 14) {
+    return {
+      type: 'company',
+      company_name: party.name,
+      cnpj: document,
+    } as Partial<ClientWithRelations>
+  }
+  return {
+    type: 'individual',
+    name: party.name,
+    cpf: document,
+  } as Partial<ClientWithRelations>
+}
+
 /** Título do movimento: `title` quando a origem separou, senão a primeira
  * linha da descrição. */
 function movementTitle(movement: LegalProcessMovement): string {
@@ -100,26 +158,64 @@ function movementTitle(movement: LegalProcessMovement): string {
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
 
-function InfoStripItem({
-  icon,
-  label,
-  value,
-  valueClassName,
+/** Cartão que aparece ao passar o mouse sobre uma parte.
+ *
+ * O ponto dele é a distinção que o nome sozinho não conta: a parte veio do
+ * tribunal como texto e pode não corresponder a nenhum cliente cadastrado. */
+function PartyCard({
+  party,
+  onLink,
+  onEditParties,
 }: {
-  icon: React.ReactNode
-  label: string
-  value: string | null | undefined
-  valueClassName?: string
+  party: DisplayParty
+  onLink: () => void
+  onEditParties: () => void
 }) {
   return (
-    <div className="flex-1 min-w-0 px-4 py-3 border-r border-border last:border-r-0">
-      <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">
-        {icon}
-        <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
-      </div>
-      <p className={cn('text-sm font-semibold text-foreground truncate', valueClassName)}>
-        {value || '—'}
+    <div className="w-[280px] space-y-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Cliente / Contato
       </p>
+
+      {party.document && (
+        <p className="text-sm font-mono text-foreground">{formatDocument(party.document)}</p>
+      )}
+      {party.party_type && <p className="text-xs text-muted-foreground">{party.party_type}</p>}
+
+      {party.client ? (
+        <>
+          <p className="text-sm text-foreground">{partyClientName(party.client)}</p>
+          <Link
+            href={`/clientes/${party.client.id}`}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+          >
+            Ver cadastro
+            <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Esta parte ainda não está vinculada a um cliente ou contato cadastrado.
+          </p>
+          {party.id ? (
+            <Button size="sm" className="w-full" onClick={onLink}>
+              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+              Vincular ou cadastrar
+            </Button>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Esta parte vem do cadastro antigo do processo e ainda não tem registro próprio.
+              </p>
+              <Button size="sm" variant="outline" className="w-full" onClick={onEditParties}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                Cadastrar partes
+              </Button>
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -128,13 +224,15 @@ function PoloBlock({
   label,
   tone,
   parties,
+  onLinkParty,
+  onEditParties,
 }: {
   label: string
   tone: 'ativo' | 'passivo'
-  parties: { name: string; document: string | null; party_type: string | null }[]
+  parties: DisplayParty[]
+  onLinkParty: (party: DisplayParty) => void
+  onEditParties: () => void
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null)
-
   return (
     <div className="flex-1 min-w-0 p-4">
       <span
@@ -152,82 +250,34 @@ function PoloBlock({
         <p className="text-sm text-muted-foreground">Nenhuma parte cadastrada</p>
       ) : (
         <div className="space-y-1">
-          {parties.map((party) => {
-            const key = `${party.name}-${party.document ?? ''}`
-            const isOpen = expanded === key
-            const hasDetail = !!party.document || !!party.party_type
-
-            return (
-              <div key={key}>
+          {parties.map((party) => (
+            <HoverCard key={party.id ?? `legacy-${party.name}`} openDelay={150} closeDelay={100}>
+              <HoverCardTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => hasDetail && setExpanded(isOpen ? null : key)}
-                  className={cn(
-                    'flex w-full items-center gap-1.5 text-left text-sm text-foreground',
-                    hasDetail && 'hover:text-accent-foreground'
-                  )}
+                  className="flex w-full items-center gap-1.5 text-left text-sm text-foreground hover:text-accent-foreground transition-colors"
                 >
                   <span className="truncate">{party.name}</span>
-                  {hasDetail && (
-                    <ChevronDown
-                      className={cn(
-                        'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
-                        isOpen && 'rotate-180'
-                      )}
+                  {!party.client && (
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                      title="Parte sem cliente vinculado"
                     />
                   )}
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </button>
-                {isOpen && (
-                  <div className="ml-1 mt-1 mb-2 border-l-2 border-border pl-3 space-y-0.5">
-                    {party.party_type && (
-                      <p className="text-xs text-muted-foreground">{party.party_type}</p>
-                    )}
-                    {party.document && (
-                      <p className="text-xs font-mono text-muted-foreground">{party.document}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+              </HoverCardTrigger>
+              <HoverCardContent align="start" className="w-auto">
+                <PartyCard
+                  party={party}
+                  onLink={() => onLinkParty(party)}
+                  onEditParties={onEditParties}
+                />
+              </HoverCardContent>
+            </HoverCard>
+          ))}
         </div>
       )}
-    </div>
-  )
-}
-
-function ActionCard({
-  icon,
-  label,
-  count,
-  actionLabel,
-  onAction,
-  onOpen,
-}: {
-  icon: React.ReactNode
-  label: string
-  count: number
-  actionLabel: string
-  onAction: () => void
-  onOpen: () => void
-}) {
-  return (
-    <div className="flex flex-1 items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex items-center gap-2 text-sm font-medium hover:text-accent-foreground transition-colors"
-      >
-        {icon}
-        {label}
-        <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-medium">
-          {count}
-        </span>
-      </button>
-      <Button size="sm" onClick={onAction}>
-        <Plus className="h-3.5 w-3.5 mr-1" />
-        {actionLabel}
-      </Button>
     </div>
   )
 }
@@ -269,11 +319,14 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const router = useRouter()
   const { data: processo, isLoading, error } = useLegalProcess(processoId)
 
-  const [filter, setFilter] = useState<TimelineFilter>('tudo')
+  const [tab, setTab] = useState<Tab>('tudo')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
-  const [entityTab, setEntityTab] = useState<EntityTab>('agenda')
   const [editOpen, setEditOpen] = useState(false)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  /** Parte cujo vínculo com cliente está sendo editado. */
+  const [linkingParty, setLinkingParty] = useState<DisplayParty | null>(null)
   const [taskOpen, setTaskOpen] = useState(false)
   /** Publicação que originou a tarefa, quando houver — ela é dada por tratada
    * ao salvar. Null quando a tarefa nasce do botão "Nova atividade". */
@@ -285,12 +338,18 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   }
 
   const item = processo?.crm_item ?? null
+  const clientName = getCrmItemClientName(item)
   const crmItemIds = useMemo(() => processo?.crm_items.map((c) => c.id) ?? [], [processo])
 
   const updateProcess = useUpdateLegalProcess(processoId, item?.id ?? '')
   const markMovement = useMarkMovement()
   const createTask = useCreateTask()
   const openDocument = useOpenDocument()
+  const linkParty = useLinkPartyToClient()
+  const createCliente = useCreateCliente()
+  // `item` pode ser null num processo órfão; o botão de nota fica desabilitado
+  // nesse caso, então a mutação nunca dispara com id vazio.
+  const addComment = useAddCrmItemComment(item?.id ?? '', clientName)
 
   // Mesmas queries que alimentam as abas — os contadores não podem divergir do
   // que a aba mostra ao ser aberta.
@@ -327,9 +386,16 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const publicacoes = sortedMovements.filter((m) => m.kind === 'publicacao')
   const movimentacoes = sortedMovements.filter((m) => m.kind === 'movimentacao')
 
+  // Abas de entidade não mostram a timeline; 'tudo' só evita um ramo morto no memo.
+  const timelineFilter: TimelineFilter = isTimelineTab(tab) ? tab : 'tudo'
+
   const filtered = useMemo(() => {
     const base =
-      filter === 'publicacoes' ? publicacoes : filter === 'movimentacoes' ? movimentacoes : sortedMovements
+      timelineFilter === 'publicacoes'
+        ? publicacoes
+        : timelineFilter === 'movimentacoes'
+          ? movimentacoes
+          : sortedMovements
 
     const q = search.trim().toLowerCase()
     if (!q) return base
@@ -341,7 +407,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
         .toLowerCase()
         .includes(q)
     )
-  }, [filter, search, sortedMovements, publicacoes, movimentacoes])
+  }, [timelineFilter, search, sortedMovements, publicacoes, movimentacoes])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
@@ -370,6 +436,27 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     setTaskSource(null)
   }
 
+  function handleCreateNote() {
+    const content = noteDraft.trim()
+    if (!content || addComment.isPending) return
+    addComment.mutate(content, {
+      onSuccess: () => {
+        setNoteDraft('')
+        setNoteOpen(false)
+        toast.success('Nota registrada.')
+      },
+    })
+  }
+
+  async function handleCreateClientForParty(data: CreateClientInput) {
+    if (!linkingParty?.id) return
+    const created = await createCliente.mutateAsync(data)
+    // O vínculo é o motivo do cadastro; se falhar aqui, o cliente existe mas a
+    // parte segue solta — o popover continuará oferecendo o botão.
+    await linkParty.mutateAsync({ partyId: linkingParty.id, clientId: created.id })
+    setLinkingParty(null)
+  }
+
   function copyCnj() {
     if (!processo?.cnj_number) return
     navigator.clipboard.writeText(processo.cnj_number)
@@ -396,13 +483,12 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     )
   }
 
-  const clientName = getCrmItemClientName(item)
   const partiesByPolo = groupPartiesByPolo(processo)
   const tags = (item?.tags ?? []) as CrmTag[]
   const tarefasPendentes = tarefas.filter((t) => t.status !== 'done').length
   const naoLidas = publicacoes.filter((p) => !p.read_at).length
 
-  const filterTabs: { id: TimelineFilter; label: string; count: number }[] = [
+  const timelineTabs: { id: TimelineFilter; label: string; count: number }[] = [
     // "Tudo" é o total real, não a soma das outras duas — publicações e
     // movimentações já são partições do mesmo conjunto.
     { id: 'tudo', label: 'Tudo', count: sortedMovements.length },
@@ -554,8 +640,20 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
 
             {/* ── Polos ── */}
             <div className="flex border-t border-border divide-x divide-border">
-              <PoloBlock label="Pólo Ativo" tone="ativo" parties={partiesByPolo.ativo} />
-              <PoloBlock label="Pólo Passivo" tone="passivo" parties={partiesByPolo.passivo} />
+              <PoloBlock
+                label="Pólo Ativo"
+                tone="ativo"
+                parties={partiesByPolo.ativo}
+                onLinkParty={setLinkingParty}
+                onEditParties={() => setEditOpen(true)}
+              />
+              <PoloBlock
+                label="Pólo Passivo"
+                tone="passivo"
+                parties={partiesByPolo.passivo}
+                onLinkParty={setLinkingParty}
+                onEditParties={() => setEditOpen(true)}
+              />
             </div>
           </div>
 
@@ -567,65 +665,88 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
               count={tarefasPendentes}
               actionLabel="Nova atividade"
               onAction={() => openTaskDialog(null)}
-              onOpen={() => setEntityTab('tarefas')}
+              onOpen={() => setTab('tarefas')}
             />
             <ActionCard
               icon={<FileText className="h-4 w-4 text-muted-foreground" />}
               label="Notas"
               count={comentarios.length}
               actionLabel="Nova nota"
-              onAction={() => setEntityTab('comentarios')}
-              onOpen={() => setEntityTab('comentarios')}
+              onAction={() => setNoteOpen(true)}
+              onOpen={() => setTab('comentarios')}
             />
           </div>
 
-          {/* ── Timeline ── */}
+          {/* ── Abas ── */}
           <div className="rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-2">
               <div className="flex gap-0 overflow-x-auto">
-                {filterTabs.map((tab) => (
+                {timelineTabs.map((t) => (
                   <button
-                    key={tab.id}
-                    onClick={() => resetPaging(setFilter)(tab.id)}
+                    key={t.id}
+                    onClick={() => resetPaging(setTab)(t.id)}
                     className={cn(
                       'flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-all',
-                      filter === tab.id
+                      tab === t.id
                         ? 'border-foreground text-foreground'
                         : 'border-transparent text-muted-foreground hover:text-foreground/80'
                     )}
                   >
-                    {tab.label}
+                    {t.label}
                     <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
-                      {tab.count}
+                      {t.count}
                     </span>
-                    {tab.id === 'publicacoes' && naoLidas > 0 && (
+                    {t.id === 'publicacoes' && naoLidas > 0 && (
                       <span className="h-1.5 w-1.5 rounded-full bg-warning" title={`${naoLidas} não lida(s)`} />
                     )}
                   </button>
                 ))}
+
+                {/* Separador entre o que é a timeline e o que é entidade
+                    vinculada — mesma barra, leituras diferentes. */}
+                <span className="mx-2 my-2 w-px shrink-0 bg-border" aria-hidden />
+
+                {ENTITY_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className={cn(
+                      'shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-all',
+                      tab === t.id
+                        ? 'border-foreground text-foreground'
+                        : 'border-transparent text-muted-foreground hover:text-foreground/80'
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
 
-              <div className="relative w-[260px] shrink-0">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => resetPaging(setSearch)(e.target.value)}
-                  placeholder="Buscar no processo..."
-                  className="h-8 pl-8 text-sm"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => resetPaging(setSearch)('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label="Limpar busca"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+              {isTimelineTab(tab) && (
+                <div className="relative w-[260px] shrink-0">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => resetPaging(setSearch)(e.target.value)}
+                    placeholder="Buscar no processo..."
+                    className="h-8 pl-8 text-sm"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => resetPaging(setSearch)('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label="Limpar busca"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
+            {isTimelineTab(tab) && (
+              <>
             {/* Contagem + paginação */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
               <p className="text-xs text-muted-foreground">
@@ -812,29 +933,12 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 })}
               </div>
             )}
-          </div>
+              </>
+            )}
 
-          {/* ── Abas da entidade ── */}
-          <div className="rounded-xl border border-border bg-card">
-            <div className="flex gap-0 overflow-x-auto border-b border-border px-2">
-              {ENTITY_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setEntityTab(tab.id)}
-                  className={cn(
-                    'shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-all',
-                    entityTab === tab.id
-                      ? 'border-foreground text-foreground'
-                      : 'border-transparent text-muted-foreground hover:text-foreground/80'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
+            {!isTimelineTab(tab) && (
             <div className="p-5">
-              {entityTab === 'agenda' && (
+              {tab === 'agenda' && (
                 <EntityEventsTab
                   legalProcessId={processo.id}
                   crmItemIds={crmItemIds}
@@ -843,7 +947,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   itemLabel="processo"
                 />
               )}
-              {entityTab === 'tarefas' && (
+              {tab === 'tarefas' && (
                 <EntityTasksTab
                   legalProcessId={processo.id}
                   crmItemIds={crmItemIds}
@@ -852,7 +956,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   itemLabel="processo"
                 />
               )}
-              {entityTab === 'documentos' && (
+              {tab === 'documentos' && (
                 <DocumentsTab
                   legalProcessId={processo.id}
                   crmItemIds={crmItemIds}
@@ -860,7 +964,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   itemLabel="processo"
                 />
               )}
-              {entityTab === 'financeiro' && (
+              {tab === 'financeiro' && (
                 <FinancialEntriesTab
                   legalProcessId={processo.id}
                   crmItemIds={crmItemIds}
@@ -869,7 +973,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   itemLabel="processo"
                 />
               )}
-              {entityTab === 'comentarios' &&
+              {tab === 'comentarios' &&
                 (item ? (
                   <CrmItemComments
                     crmItemId={item.id}
@@ -880,7 +984,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 ) : (
                   <OrphanNotice />
                 ))}
-              {entityTab === 'cliente' &&
+              {tab === 'cliente' &&
                 (item ? (
                   <CrmItemClienteTab
                     client={item.client}
@@ -890,13 +994,14 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 ) : (
                   <OrphanNotice />
                 ))}
-              {entityTab === 'etapas' &&
+              {tab === 'etapas' &&
                 (item ? (
                   <CrmItemTimeline crmItemId={item.id} itemLabel="processo" />
                 ) : (
                   <OrphanNotice />
                 ))}
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -909,6 +1014,72 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
           editingProcess={processo as LegalProcessWithRelations}
           onSubmit={handleEditSubmit}
           isLoading={updateProcess.isPending}
+        />
+      )}
+
+      <Dialog
+        open={noteOpen}
+        onOpenChange={(open) => {
+          if (!open) setNoteOpen(false)
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Nova Nota</DialogTitle>
+          </DialogHeader>
+          {item ? (
+            <div className="space-y-3">
+              <textarea
+                autoFocus
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  // Mesmo contrato da aba Comentários: Enter envia.
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleCreateNote()
+                  }
+                }}
+                rows={5}
+                placeholder="Registre uma tratativa, decisão ou observação sobre o processo..."
+                className={cn(
+                  'w-full px-3 py-2 rounded-lg border border-border text-sm text-foreground bg-card resize-none',
+                  'placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring transition-colors'
+                )}
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground">
+                  Enter envia · Shift+Enter quebra linha
+                </span>
+                <Button
+                  size="sm"
+                  onClick={handleCreateNote}
+                  disabled={!noteDraft.trim() || addComment.isPending}
+                >
+                  {addComment.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  Registrar nota
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <OrphanNotice />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cadastro direto: a parte já traz nome e documento, então não há o que
+          procurar — o popover só oferece o botão quando não existe vínculo. */}
+      {linkingParty && (
+        <ClienteForm
+          open
+          onClose={() => setLinkingParty(null)}
+          onSubmit={handleCreateClientForParty}
+          isLoading={createCliente.isPending || linkParty.isPending}
+          defaultValues={partyAsClientDefaults(linkingParty)}
         />
       )}
 

@@ -11,6 +11,48 @@ export type LegalArea =
   | 'previdenciario'
   | 'consumidor'
 
+export type ClientSex = 'masculino' | 'feminino' | 'outro'
+
+export type MaritalStatus =
+  | 'solteiro'
+  | 'casado'
+  | 'divorciado'
+  | 'viuvo'
+  | 'uniao_estavel'
+  | 'separado'
+
+export const SEX_LABELS: Record<ClientSex, string> = {
+  masculino: 'Masculino',
+  feminino: 'Feminino',
+  outro: 'Outro',
+}
+
+export const MARITAL_STATUS_LABELS: Record<MaritalStatus, string> = {
+  solteiro: 'Solteiro(a)',
+  casado: 'Casado(a)',
+  divorciado: 'Divorciado(a)',
+  viuvo: 'Viúvo(a)',
+  uniao_estavel: 'União estável',
+  separado: 'Separado(a)',
+}
+
+/** Nota do cliente. Mesma forma de `CrmItemComment` — as duas tabelas são
+ * separadas, mas a apresentação é a mesma (ver `CommentThread`). */
+export interface ClientComment {
+  id: string
+  client_id: string
+  author_id: string
+  content: string
+  created_at: string
+  author?: {
+    id: string
+    full_name: string
+    avatar_url: string | null
+    role: string
+    created_at: string
+  }
+}
+
 export interface ClientContact {
   id: string
   client_id: string
@@ -36,6 +78,20 @@ interface ClientBase extends BaseEntity {
   notes: string | null
   assigned_to: string | null
   created_by: string
+
+  // ── Qualificação (migration 30) ────────────────────────────────────────────
+  // Tudo nullable: a maioria dos clientes entra só com nome e documento, e o
+  // gerador da qualificação omite o que faltar.
+  birth_date: string | null
+  sex: ClientSex | null
+  /** Adjetivo literal usado na petição ("brasileiro"/"brasileira"), não o país. */
+  nationality: string | null
+  marital_status: MaritalStatus | null
+  profession: string | null
+  rg: string | null
+  /** Órgão emissor com UF, ex. "SSP/ES". */
+  rg_issuer: string | null
+  tags: string[]
 }
 
 export interface IndividualClient extends ClientBase {
@@ -80,18 +136,6 @@ export function getClientDisplayName(client: Client | ClientWithRelations): stri
 export function getClientDocument(client: Client | ClientWithRelations): string {
   if (client.type === 'individual') return client.cpf ?? ''
   return (client as CompanyClient).cnpj ?? ''
-}
-
-export interface ClientAttachment {
-  id: string
-  client_id: string
-  file_name: string
-  file_path: string
-  file_size: number
-  file_type: string
-  uploaded_by: string
-  created_at: string
-  uploader?: Profile
 }
 
 export interface ClientPendency {

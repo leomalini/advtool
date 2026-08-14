@@ -403,7 +403,7 @@ export function FinanceiroContent() {
                           e o stopPropagation impede que a linha abra junto. */}
                       {entry.client ? (
                         <Link
-                          href={`/clientes?id=${entry.client.id}`}
+                          href={`/clientes/${entry.client.id}`}
                           onClick={(e) => e.stopPropagation()}
                           className="text-xs text-muted-foreground truncate hover:text-foreground hover:underline"
                         >

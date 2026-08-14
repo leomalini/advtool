@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
-export const eventTypeSchema = z.enum(['meeting', 'hearing', 'deadline', 'appointment'])
+/** Slug de `event_types.id`. Deixou de ser enum na migration 32 — os tipos são
+ * cadastrados pelo escritório, e a integridade é garantida pela FK, não aqui. */
+export const eventTypeSchema = z.string().min(1, 'Selecione um tipo')
 export const recurrenceTypeSchema = z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'])
 
 export const eventFormSchema = z.object({

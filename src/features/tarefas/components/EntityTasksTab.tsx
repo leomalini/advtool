@@ -2,41 +2,36 @@
 
 import { useState } from 'react'
 import { CheckSquare, Plus } from 'lucide-react'
-import { format, parseISO, isBefore } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
-import { getInitials, getDisplayName, getAvatarTone } from '@/utils/profile'
-import {
-  TASK_STATUS_LABELS,
-  TASK_PRIORITY_LABELS,
-  type TaskStatus,
-} from '@/types/task.types'
+import type { Task, TaskStatus } from '@/types/task.types'
 import type { CreateTaskInput } from '@/schemas/task.schema'
 import { useTasksForEntity } from '../hooks/useTasks'
 import { useCreateTask } from '../hooks/useTaskMutations'
 import { TaskForm } from './TaskForm'
-
-const STATUS_TONE: Record<TaskStatus, string> = {
-  todo: 'bg-muted text-muted-foreground',
-  in_progress: 'bg-info/12 text-info',
-  waiting: 'bg-warning/12 text-warning',
-  done: 'bg-success/12 text-success',
-}
+import { TaskBoard, TASK_STATUSES } from './TaskBoard'
+import { TaskDetailModal } from './TaskDetailModal'
 
 interface EntityTasksTabProps {
   legalProcessId?: string | null
   crmItemIds?: string[]
+  /** O cliente desta aba, quando ela é aberta a partir da página do cliente. */
+  clientId?: string | null
   lockedLegalProcessId?: string | null
   lockedCrmItemId?: string | null
   lockedClientId?: string | null
   itemLabel?: string
 }
 
-/** Tarefas tab — shared between the CRM case modal and the Processo modal so both stay identical. */
+/**
+ * Aba Atividades — o mesmo kanban do módulo Tarefas, sobre o recorte desta
+ * entidade. O quadro em si é o `TaskBoard`, compartilhado com a tela de
+ * Tarefas: arrastar entre colunas se comporta igual nos dois lugares porque é
+ * literalmente o mesmo componente.
+ */
 export function EntityTasksTab({
   legalProcessId,
   crmItemIds,
+  clientId,
   lockedLegalProcessId,
   lockedCrmItemId,
   lockedClientId,
@@ -45,9 +40,17 @@ export function EntityTasksTab({
   const { data: tarefas = [], isLoading, isError } = useTasksForEntity({
     legalProcessId,
     crmItemIds,
+    clientId,
   })
   const createTask = useCreateTask()
   const [createOpen, setCreateOpen] = useState(false)
+  const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('todo')
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+
+  // Lê da lista viva para o modal refletir edições sem precisar reabrir.
+  const openTask = selectedTask
+    ? (tarefas.find((t) => t.id === selectedTask.id) ?? null)
+    : null
 
   async function handleCreate(data: CreateTaskInput) {
     await createTask.mutateAsync({
@@ -60,11 +63,20 @@ export function EntityTasksTab({
     setCreateOpen(false)
   }
 
+  function handleAddTask(status: TaskStatus) {
+    setDefaultStatus(status)
+    setCreateOpen(true)
+  }
+
   if (isLoading) {
     return (
-      <div className="space-y-3 animate-pulse">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-14 rounded-lg bg-muted" />
+      <div className="flex gap-4 overflow-x-auto animate-pulse">
+        {TASK_STATUSES.map((s) => (
+          <div key={s} className="w-60 shrink-0 space-y-3">
+            <div className="h-6 w-24 rounded bg-muted" />
+            <div className="h-20 w-full rounded-lg bg-muted" />
+            <div className="h-20 w-full rounded-lg bg-muted" />
+          </div>
         ))}
       </div>
     )
@@ -76,7 +88,7 @@ export function EntityTasksTab({
         <CheckSquare className="w-8 h-8" />
         <div className="text-center">
           <p className="text-sm font-medium">Não foi possível carregar as tarefas</p>
-          <p className="text-xs mt-1">Tente fechar e abrir novamente.</p>
+          <p className="text-xs mt-1">Tente recarregar a página.</p>
         </div>
       </div>
     )
@@ -85,10 +97,10 @@ export function EntityTasksTab({
   const pendentes = tarefas.filter((t) => t.status !== 'done').length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-foreground/80">Tarefas</h3>
+          <h3 className="text-sm font-semibold text-foreground/80">Atividades</h3>
           {pendentes > 0 && (
             <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
               {pendentes} pendente{pendentes === 1 ? '' : 's'}
@@ -97,7 +109,7 @@ export function EntityTasksTab({
         </div>
         <button
           type="button"
-          onClick={() => setCreateOpen(true)}
+          onClick={() => handleAddTask('todo')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -112,65 +124,7 @@ export function EntityTasksTab({
           <p className="text-xs">As tarefas deste {itemLabel} aparecem aqui</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {tarefas.map((tarefa) => {
-            const isDone = tarefa.status === 'done'
-            const isOverdue =
-              !!tarefa.due_date && !isDone && isBefore(parseISO(tarefa.due_date), new Date())
-            const assigneeName = tarefa.assignee
-              ? getDisplayName(tarefa.assignee.full_name)
-              : null
-
-            return (
-              <div
-                key={tarefa.id}
-                className={cn(
-                  'flex items-start gap-3 rounded-lg border border-border p-3',
-                  isDone && 'opacity-60'
-                )}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                        STATUS_TONE[tarefa.status]
-                      )}
-                    >
-                      {TASK_STATUS_LABELS[tarefa.status]}
-                    </span>
-                    <p className={cn('text-sm font-medium truncate', isDone && 'line-through')}>
-                      {tarefa.title}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span>{TASK_PRIORITY_LABELS[tarefa.priority]}</span>
-                    {tarefa.due_date && (
-                      <>
-                        <span>·</span>
-                        <span className={cn(isOverdue && 'text-destructive font-medium')}>
-                          {format(parseISO(tarefa.due_date), "dd 'de' MMM", { locale: ptBR })}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {assigneeName && (
-                  <div
-                    title={assigneeName}
-                    className={cn(
-                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white text-[10px] font-bold',
-                      getAvatarTone(tarefa.assigned_to ?? tarefa.id)
-                    )}
-                  >
-                    {getInitials(assigneeName)}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <TaskBoard tasks={tarefas} onAddTask={handleAddTask} onTaskClick={setSelectedTask} />
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -178,9 +132,15 @@ export function EntityTasksTab({
           <DialogHeader>
             <DialogTitle>Nova Tarefa</DialogTitle>
           </DialogHeader>
-          <TaskForm onSubmit={handleCreate} isLoading={createTask.isPending} />
+          <TaskForm
+            defaultStatus={defaultStatus}
+            onSubmit={handleCreate}
+            isLoading={createTask.isPending}
+          />
         </DialogContent>
       </Dialog>
+
+      <TaskDetailModal task={openTask} open={!!openTask} onClose={() => setSelectedTask(null)} />
     </div>
   )
 }

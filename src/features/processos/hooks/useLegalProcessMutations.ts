@@ -9,6 +9,7 @@ import {
   addLegalProcessMovement,
   markMovement,
   replaceLegalProcessParties,
+  linkPartyToClient,
 } from '../services/legalProcesses.service'
 import { legalProcessKeys } from './useLegalProcesses'
 import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
@@ -41,6 +42,21 @@ export function useMarkMovement() {
     }) => markMovement(movementId, patch),
     onSuccess: () => invalidate(),
     onError: () => toast.error('Não foi possível atualizar a publicação.'),
+  })
+}
+
+/** Vincula uma parte a um cliente cadastrado — ou desfaz o vínculo com `null`. */
+export function useLinkPartyToClient() {
+  const invalidate = useInvalidateLegalProcesses()
+
+  return useMutation({
+    mutationFn: ({ partyId, clientId }: { partyId: string; clientId: string | null }) =>
+      linkPartyToClient(partyId, clientId),
+    onSuccess: (_data, { clientId }) => {
+      invalidate()
+      toast.success(clientId ? 'Parte vinculada ao cliente.' : 'Vínculo removido.')
+    },
+    onError: () => toast.error('Não foi possível vincular a parte.'),
   })
 }
 

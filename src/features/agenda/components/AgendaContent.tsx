@@ -1,17 +1,17 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   format,
   startOfMonth,
   endOfMonth,
   eachDayOfInterval,
-  isSameMonth,
   startOfWeek,
   endOfWeek,
+  startOfDay,
+  endOfDay,
   addMonths,
-  subMonths,
-  isToday,
+  addWeeks,
   addDays,
   min as minDate,
   max as maxDate,
@@ -23,19 +23,25 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import {
-  EVENT_TYPE_LABELS,
-  EVENT_TYPE_COLORS,
-  type EventType,
-} from '@/types/event.types'
+import { resolveEventType } from '@/types/event.types'
 import type { CalendarEvent } from '@/types/event.types'
 import type { EventFormInput } from '@/schemas/event.schema'
 import { useEvents } from '../hooks/useEvents'
+import { useEventTypes, useEventTypeMap } from '../hooks/useEventTypes'
 import { useCreateEvent } from '../hooks/useEventMutations'
 import { EventForm } from './EventForm'
 import { EventDetailModal } from './EventDetailModal'
+import { MonthGrid } from './MonthGrid'
+import { TimeGrid } from './TimeGrid'
+import { localDayKey } from '../utils/datetime'
 
-const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[]
+type CalendarView = 'month' | 'week' | 'day'
+
+const VIEWS: { id: CalendarView; label: string }[] = [
+  { id: 'month', label: 'Mês' },
+  { id: 'week', label: 'Semana' },
+  { id: 'day', label: 'Dia' },
+]
 
 // ── Próximos Eventos (sidebar) ─────────────────────────────────
 
@@ -46,6 +52,7 @@ interface ProximosEventosProps {
 }
 
 function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosProps) {
+  const eventTypes = useEventTypeMap()
   const hoje = new Date()
   const em7dias = addDays(hoje, 7)
 
@@ -85,7 +92,7 @@ function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosP
             >
               <div
                 className="h-2 w-2 rounded-full mt-1.5 shrink-0"
-                style={{ backgroundColor: EVENT_TYPE_COLORS[ev.type] }}
+                style={{ backgroundColor: resolveEventType(eventTypes, ev.type).color }}
               />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{ev.title}</p>
@@ -108,32 +115,47 @@ function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosP
 // ── Main Component ─────────────────────────────────────────────
 
 export function AgendaContent() {
+  const [view, setView] = useState<CalendarView>('month')
   const [currentDate, setCurrentDate] = useState(() => new Date())
   const [selectedEvento, setSelectedEvento] = useState<CalendarEvent | null>(null)
   const [novoEventoOpen, setNovoEventoOpen] = useState(false)
   const [novoEventoData, setNovoEventoData] = useState<Date | undefined>(undefined)
 
-  const monthStart = startOfMonth(currentDate)
-  const monthEnd = endOfMonth(currentDate)
-  const calStart = startOfWeek(monthStart, { weekStartsOn: 0 })
-  const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
-  const days = eachDayOfInterval({ start: calStart, end: calEnd })
+  // Dias visíveis, por visão. No mês a grade cobre semanas inteiras, incluindo
+  // as bordas do mês vizinho.
+  const days = useMemo(() => {
+    if (view === 'day') return [currentDate]
+    if (view === 'week') {
+      return eachDayOfInterval({
+        start: startOfWeek(currentDate, { weekStartsOn: 0 }),
+        end: endOfWeek(currentDate, { weekStartsOn: 0 }),
+      })
+    }
+    return eachDayOfInterval({
+      start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 }),
+      end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 }),
+    })
+  }, [view, currentDate])
 
-  // One query covers both surfaces: the visible grid and the "next 7 days"
-  // sidebar, which can reach past the grid when the month is nearly over.
+  // Uma consulta cobre as duas superfícies: a grade visível e a barra lateral
+  // de "próximos 7 dias", que pode ultrapassar a grade em qualquer visão.
+  // Instantes, não strings sem fuso: a coluna é timestamptz e uma borda ingênua
+  // recortaria as primeiras e últimas horas do período.
   const hoje = new Date()
-  const rangeFrom = format(minDate([calStart, hoje]), "yyyy-MM-dd'T'00:00:00")
-  const rangeTo = format(maxDate([calEnd, addDays(hoje, 7)]), "yyyy-MM-dd'T'23:59:59")
+  const rangeFrom = startOfDay(minDate([days[0], hoje])).toISOString()
+  const rangeTo = endOfDay(maxDate([days[days.length - 1], addDays(hoje, 7)])).toISOString()
 
   const { data: eventos = [], isLoading } = useEvents(rangeFrom, rangeTo)
+  const { data: tipos = [] } = useEventTypes()
+  const eventTypes = useEventTypeMap()
   const createEvent = useCreateEvent()
-
-  const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>()
     for (const ev of eventos) {
-      const key = ev.start_at.slice(0, 10)
+      // Dia local: `slice(0, 10)` daria o dia UTC, e um evento das 21h cairia
+      // na célula do dia seguinte.
+      const key = localDayKey(ev.start_at)
       const list = map.get(key)
       if (list) list.push(ev)
       else map.set(key, [ev])
@@ -141,12 +163,37 @@ export function AgendaContent() {
     return map
   }, [eventos])
 
-  function getEventosForDay(day: Date): CalendarEvent[] {
-    return eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? []
+  const getEventosForDay = useCallback(
+    (day: Date): CalendarEvent[] => eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? [],
+    [eventsByDay]
+  )
+
+  /** Um passo para trás ou para frente, na unidade da visão atual. */
+  function shift(direction: 1 | -1) {
+    setCurrentDate((current) => {
+      if (view === 'day') return addDays(current, direction)
+      if (view === 'week') return addWeeks(current, direction)
+      return addMonths(current, direction)
+    })
   }
+
+  const periodLabel =
+    view === 'day'
+      ? format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })
+      : view === 'week'
+        ? `${format(days[0], "d 'de' MMM", { locale: ptBR })} – ${format(days[days.length - 1], "d 'de' MMM 'de' yyyy", { locale: ptBR })}`
+        : format(currentDate, 'MMMM yyyy', { locale: ptBR })
 
   function handleDayClick(day: Date) {
     setNovoEventoData(day)
+    setNovoEventoOpen(true)
+  }
+
+  /** Clique num intervalo da grade de horas: já abre o formulário naquele horário. */
+  function handleSlotClick(day: Date, hour: number) {
+    const at = new Date(day)
+    at.setHours(hour, 0, 0, 0)
+    setNovoEventoData(at)
     setNovoEventoOpen(true)
   }
 
@@ -165,132 +212,83 @@ export function AgendaContent() {
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-            aria-label="Mês anterior"
-          >
+          <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Anterior">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-base font-semibold capitalize w-40 text-center">
-            {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+          <h2 className="text-base font-semibold capitalize min-w-[240px] text-center">
+            {periodLabel}
           </h2>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCurrentDate(addMonths(currentDate, 1))}
-            aria-label="Próximo mês"
-          >
+          <Button variant="outline" size="icon" onClick={() => shift(1)} aria-label="Próximo">
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
             Hoje
           </Button>
         </div>
-        <Button size="sm" onClick={handleNovoEventoButton}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Novo Evento
-        </Button>
+
+        <div className="flex items-center gap-3">
+          {/* Seletor de visão */}
+          <div className="flex rounded-lg border p-0.5">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setView(v.id)}
+                className={cn(
+                  'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                  view === v.id
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+
+          <Button size="sm" onClick={handleNovoEventoButton}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Novo Evento
+          </Button>
+        </div>
       </div>
 
       {/* Legenda */}
       <div className="flex items-center gap-4 flex-wrap">
-        {EVENT_TYPES.map((tipo) => (
-          <div key={tipo} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <div
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: EVENT_TYPE_COLORS[tipo] }}
-            />
-            {EVENT_TYPE_LABELS[tipo]}
+        {tipos.map((tipo) => (
+          <div key={tipo.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: tipo.color }} />
+            {tipo.label}
           </div>
         ))}
         <span className="text-xs text-muted-foreground/50 ml-auto hidden sm:block">
-          Clique em um dia para criar um evento
+          {view === 'month'
+            ? 'Clique em um dia para criar um evento'
+            : 'Clique em um horário para criar um evento'}
         </span>
       </div>
 
       {/* Layout principal: calendário + sidebar */}
       <div className="grid grid-cols-[1fr_240px] gap-4 items-start">
         {/* Calendário */}
-        <div className="rounded-xl border overflow-hidden">
-          {/* Dias da semana */}
-          <div className="grid grid-cols-7 border-b bg-muted/30">
-            {weekdays.map((day) => (
-              <div
-                key={day}
-                className="py-2.5 text-center text-[11px] font-medium text-muted-foreground uppercase tracking-wide"
-              >
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Grade de dias */}
-          <div className="grid grid-cols-7">
-            {days.map((day, i) => {
-              const dayEventos = getEventosForDay(day)
-              const isCurrentMonth = isSameMonth(day, currentDate)
-              const isTodayDay = isToday(day)
-
-              return (
-                <div
-                  key={i}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Criar evento em ${format(day, "dd 'de' MMMM", { locale: ptBR })}`}
-                  onClick={() => handleDayClick(day)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') handleDayClick(day)
-                  }}
-                  className={cn(
-                    'min-h-[96px] p-1.5 border-b border-r transition-colors cursor-pointer select-none',
-                    !isCurrentMonth && 'bg-muted/15',
-                    isTodayDay && 'bg-primary/5',
-                    'hover:bg-accent/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-                  )}
-                >
-                  {/* Número do dia */}
-                  <div
-                    className={cn(
-                      'h-6 w-6 flex items-center justify-center rounded-full text-xs font-medium mb-1',
-                      isTodayDay
-                        ? 'bg-primary text-primary-foreground'
-                        : !isCurrentMonth
-                          ? 'text-muted-foreground/40'
-                          : 'text-foreground',
-                    )}
-                  >
-                    {format(day, 'd')}
-                  </div>
-
-                  {/* Eventos do dia */}
-                  <div className="space-y-0.5">
-                    {dayEventos.slice(0, 3).map((ev) => (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation() // impede abrir o modal de criação
-                          setSelectedEvento(ev)
-                        }}
-                        className="w-full rounded px-1 py-0.5 text-[11px] text-white text-left truncate hover:opacity-80 transition-opacity"
-                        style={{ backgroundColor: EVENT_TYPE_COLORS[ev.type] }}
-                      >
-                        {ev.title}
-                      </button>
-                    ))}
-                    {dayEventos.length > 3 && (
-                      <p className="text-[10px] text-muted-foreground pl-1">
-                        +{dayEventos.length - 3} mais
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        {view === 'month' ? (
+          <MonthGrid
+            days={days}
+            currentDate={currentDate}
+            getEventosForDay={getEventosForDay}
+            eventTypes={eventTypes}
+            onDayClick={handleDayClick}
+            onEventClick={setSelectedEvento}
+          />
+        ) : (
+          <TimeGrid
+            days={days}
+            getEventosForDay={getEventosForDay}
+            eventTypes={eventTypes}
+            onSlotClick={handleSlotClick}
+            onEventClick={setSelectedEvento}
+          />
+        )}
 
         {/* Sidebar — próximos 7 dias */}
         <ProximosEventos

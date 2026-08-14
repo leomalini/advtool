@@ -6,7 +6,8 @@ import { format, parseISO, isBefore } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { EVENT_TYPE_LABELS, EVENT_TYPE_COLORS } from '@/types/event.types'
+import { resolveEventType } from '@/types/event.types'
+import { useEventTypeMap } from '../hooks/useEventTypes'
 import type { CalendarEvent } from '@/types/event.types'
 import type { EventFormInput } from '@/schemas/event.schema'
 import { useEventsForEntity } from '../hooks/useEvents'
@@ -20,6 +21,8 @@ interface EntityEventsTabProps {
   /** Every crm_item to read from — a processo passes all its linked cards so
    * events created from a sibling card still show up here. */
   crmItemIds?: string[]
+  /** O cliente desta aba, quando ela é aberta a partir da página do cliente. */
+  clientId?: string | null
   /** Where new events are written. Exactly one of these should be set. */
   lockedLegalProcessId?: string | null
   lockedCrmItemId?: string | null
@@ -32,6 +35,7 @@ interface EntityEventsTabProps {
 export function EntityEventsTab({
   legalProcessId,
   crmItemIds,
+  clientId,
   lockedLegalProcessId,
   lockedCrmItemId,
   lockedClientId,
@@ -40,8 +44,10 @@ export function EntityEventsTab({
   const { data: eventos = [], isLoading, isError } = useEventsForEntity({
     legalProcessId,
     crmItemIds,
+    clientId,
   })
   const createEvent = useCreateEvent()
+  const eventTypes = useEventTypeMap()
   const [createOpen, setCreateOpen] = useState(false)
   const [selected, setSelected] = useState<CalendarEvent | null>(null)
 
@@ -52,6 +58,10 @@ export function EntityEventsTab({
       // and the fields are hidden while locked.
       legal_process_id: lockedLegalProcessId ?? data.legal_process_id,
       crm_item_id: lockedCrmItemId ?? data.crm_item_id,
+      // Faltava: a prop existia e era passada, mas o client_id nunca chegava ao
+      // insert — o evento criado dentro de um processo não aparecia na agenda
+      // do cliente daquele processo.
+      client_id: lockedClientId ?? data.client_id,
     })
     setCreateOpen(false)
   }
@@ -137,7 +147,7 @@ export function EntityEventsTab({
           {eventos.map((evento) => {
             const start = parseISO(evento.start_at)
             const isPast = isBefore(start, new Date())
-            const color = EVENT_TYPE_COLORS[evento.type]
+            const tipo = resolveEventType(eventTypes, evento.type)
 
             return (
               <button
@@ -151,15 +161,15 @@ export function EntityEventsTab({
               >
                 <span
                   className="w-1 self-stretch rounded-full shrink-0"
-                  style={{ backgroundColor: color }}
+                  style={{ backgroundColor: tipo.color }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
-                      style={{ backgroundColor: color }}
+                      style={{ backgroundColor: tipo.color }}
                     >
-                      {EVENT_TYPE_LABELS[evento.type]}
+                      {tipo.label}
                     </span>
                     <p className="text-sm font-medium truncate">{evento.title}</p>
                     {evento.fatal_deadline && (

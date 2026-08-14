@@ -25,7 +25,8 @@ import {
   CalendarClock,
   X,
 } from "lucide-react";
-import { EVENT_TYPE_COLORS, EVENT_TYPE_LABELS } from "@/types/event.types";
+import { resolveEventType } from "@/types/event.types";
+import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { CalendarEvent } from "@/types/event.types";
 import { formatDateTime } from "@/utils/date";
 import { useDeleteEvent, useUpdateEvent } from "../hooks/useEventMutations";
@@ -47,6 +48,7 @@ export function EventDetailModal({
   const [editing, setEditing] = useState(false);
   const deleteEvent = useDeleteEvent();
   const updateEvent = useUpdateEvent();
+  const eventTypes = useEventTypeMap();
   const { data: linkedProcesso } = useLegalProcess(event?.legal_process_id ?? "");
 
   if (!event) return null;
@@ -70,8 +72,7 @@ export function EventDetailModal({
     }
   }
 
-  const color = EVENT_TYPE_COLORS[event.type];
-  const label = EVENT_TYPE_LABELS[event.type];
+  const { color, label } = resolveEventType(eventTypes, event.type);
   const assignees =
     event.assignees?.length
       ? event.assignees

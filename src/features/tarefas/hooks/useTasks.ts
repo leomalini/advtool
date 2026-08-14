@@ -11,8 +11,8 @@ export const taskKeys = {
   comments: (taskId: string) => ['tasks', 'comments', taskId] as const,
   /** Tasks of a processo, including those reached through its crm_items.
    * Ids are sorted by the caller so the key stays stable across fetches. */
-  forEntity: (legalProcessId: string | null, crmItemIds: string[]) =>
-    ['tasks', 'entity', legalProcessId ?? '-', crmItemIds.join(',')] as const,
+  forEntity: (legalProcessId: string | null, crmItemIds: string[], clientId: string | null) =>
+    ['tasks', 'entity', legalProcessId ?? '-', crmItemIds.join(','), clientId ?? '-'] as const,
 }
 
 export function useTasks() {
@@ -26,14 +26,16 @@ export function useTasks() {
 export function useTasksForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
+  clientId?: string | null
 }) {
   const legalProcessId = params.legalProcessId ?? null
   const crmItemIds = [...(params.crmItemIds ?? [])].sort()
+  const clientId = params.clientId ?? null
 
   return useQuery({
-    queryKey: taskKeys.forEntity(legalProcessId, crmItemIds),
-    queryFn: () => getTasksForEntity({ legalProcessId, crmItemIds }),
-    enabled: !!legalProcessId || crmItemIds.length > 0,
+    queryKey: taskKeys.forEntity(legalProcessId, crmItemIds, clientId),
+    queryFn: () => getTasksForEntity({ legalProcessId, crmItemIds, clientId }),
+    enabled: !!legalProcessId || crmItemIds.length > 0 || !!clientId,
   })
 }
 

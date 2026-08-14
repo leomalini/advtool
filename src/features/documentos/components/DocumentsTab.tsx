@@ -45,7 +45,7 @@ interface DocumentsTabProps {
 }
 
 /** Aba Documentos — compartilhada entre CasoModal, a página do processo e
- * ClienteDetailModal, para os três ficarem idênticos. */
+ * a página do cliente, para os três ficarem idênticos. */
 export function DocumentsTab({
   legalProcessId,
   crmItemIds,

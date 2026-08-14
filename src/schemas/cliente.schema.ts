@@ -54,9 +54,33 @@ const optionalPhoneField = z
   .or(z.literal(''))
   .refine((v) => !v || PHONE_DIGITS_REGEX.test(v.replace(/\D/g, '')), 'Telefone inválido')
 
+export const SEXES = ['masculino', 'feminino', 'outro'] as const
+export const MARITAL_STATUSES = [
+  'solteiro',
+  'casado',
+  'divorciado',
+  'viuvo',
+  'uniao_estavel',
+  'separado',
+] as const
+
+/** Campos da qualificação — todos opcionais, porque a maioria dos clientes é
+ * cadastrada só com nome e documento e o gerador omite o que faltar. */
+const qualificationSchema = z.object({
+  birth_date: z.string().optional().or(z.literal('')),
+  sex: z.enum(SEXES).optional().nullable(),
+  nationality: z.string().max(60).optional(),
+  marital_status: z.enum(MARITAL_STATUSES).optional().nullable(),
+  profession: z.string().max(120).optional(),
+  rg: z.string().max(30).optional(),
+  rg_issuer: z.string().max(30).optional(),
+})
+
 export const createIndividualClientSchema = addressSchema
+  .extend(qualificationSchema.shape)
   .extend({
     type: z.literal('individual'),
+    tags: z.array(z.string()).optional(),
     name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres').max(150),
     cpf: z.string().regex(CPF_REGEX, 'CPF inválido (formato: 000.000.000-00)'),
     // Optional — um mesmo cliente pode ter processos em várias áreas jurídicas,
@@ -72,6 +96,7 @@ export const createIndividualClientSchema = addressSchema
 export const createCompanyClientSchema = addressSchema
   .extend({
     type: z.literal('company'),
+    tags: z.array(z.string()).optional(),
     company_name: z.string().min(2, 'Razão Social deve ter ao menos 2 caracteres').max(200),
     trade_name: z.string().max(200).optional(),
     cnpj: z.string().regex(CNPJ_REGEX, 'CNPJ inválido (formato: 00.000.000/0001-00)'),

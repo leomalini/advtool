@@ -40,22 +40,20 @@ export async function getTasks(): Promise<Task[]> {
 export async function getTasksForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
+  /** Tarefas do cliente — as criadas direto dele, sem processo nem card. */
+  clientId?: string | null
 }): Promise<Task[]> {
-  const { legalProcessId, crmItemIds = [] } = params
+  const { legalProcessId, crmItemIds = [], clientId } = params
 
   const terms: string[] = []
   if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
   if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
+  if (clientId) terms.push(`client_id.eq.${clientId}`)
   if (terms.length === 0) return []
 
   const query = supabase.from('tasks').select(TASK_SELECT).order('position')
 
-  const { data, error } =
-    terms.length === 1
-      ? await (legalProcessId && crmItemIds.length === 0
-          ? query.eq('legal_process_id', legalProcessId)
-          : query.in('crm_item_id', crmItemIds))
-      : await query.or(terms.join(','))
+  const { data, error } = await query.or(terms.join(','))
 
   if (error) throw error
   return (data ?? []) as Task[]

@@ -102,20 +102,32 @@ export function useOptimisticMoveTask() {
     mutationFn: ({ id, status, position }: { id: string; status: TaskStatus; position: number }) =>
       updateTask({ id, status, position }, user?.id),
     onMutate: async ({ id, status, position }) => {
+      // Prefixo: cancela o board e as abas de detalhe de uma vez.
       await queryClient.cancelQueries({ queryKey: taskKeys.all })
-      const previous = queryClient.getQueryData<Task[]>(taskKeys.all)
 
-      // Exact key, not prefix: setQueryData matches exactly, so this only
-      // touches the board's list — entity tabs refetch via invalidate below.
-      queryClient.setQueryData<Task[]>(
-        taskKeys.all,
-        (old) => old?.map((t) => (t.id === id ? { ...t, status, position } : t)) ?? []
-      )
-      return { previous }
+      // Toda lista de tarefas em cache — o board (`['tasks']`) e as abas de
+      // detalhe (`['tasks','entity',…]`). Sem incluir as abas, o card arrastado
+      // dentro de um processo ou cliente voltava para a coluna de origem até o
+      // refetch chegar, dando a impressão de que o movimento falhou.
+      // `['tasks','comments',…]` fica de fora de propósito: guarda comentários,
+      // e um update cego por prefixo corromperia esse cache.
+      const filters = [
+        { queryKey: taskKeys.all, exact: true },
+        { queryKey: ['tasks', 'entity'] as const },
+      ]
+
+      const snapshots = filters.flatMap((f) => queryClient.getQueriesData<Task[]>(f))
+
+      const apply = (old: Task[] | undefined) =>
+        old?.map((t) => (t.id === id ? { ...t, status, position } : t)) ?? []
+
+      for (const f of filters) queryClient.setQueriesData<Task[]>(f, apply)
+
+      return { snapshots }
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(taskKeys.all, context.previous)
+      for (const [key, data] of context?.snapshots ?? []) {
+        queryClient.setQueryData(key, data)
       }
       toast.error('Erro ao mover tarefa.')
     },

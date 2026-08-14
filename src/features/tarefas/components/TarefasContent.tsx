@@ -1,34 +1,20 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import {
-  DndContext,
-  DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCorners,
-} from '@dnd-kit/core'
 import { Plus, CheckSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useTasks } from '../hooks/useTasks'
-import { useCreateTask, useOptimisticMoveTask } from '../hooks/useTaskMutations'
+import { useCreateTask } from '../hooks/useTaskMutations'
 import { TaskForm } from './TaskForm'
-import { TaskColumn } from './TaskColumn'
+import { TaskBoard, TASK_STATUSES } from './TaskBoard'
 import { TaskDetailModal } from './TaskDetailModal'
 import { TarefaFilterBar } from './TarefaFilterBar'
 import { filterTasks, emptyTaskFilters, type TaskFilters } from '../utils/filterTasks'
-import { TASK_STATUS_LABELS, type Task, type TaskStatus } from '@/types/task.types'
+import type { Task, TaskStatus } from '@/types/task.types'
 import type { CreateTaskInput } from '@/schemas/task.schema'
-
-const STATUSES: TaskStatus[] = ['todo', 'in_progress', 'waiting', 'done']
-
-function isTaskStatus(value: string): value is TaskStatus {
-  return (STATUSES as string[]).includes(value)
-}
 
 export function TarefasContent() {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -38,54 +24,14 @@ export function TarefasContent() {
 
   const { data: tasks, isLoading } = useTasks()
   const createTask = useCreateTask()
-  const moveTask = useOptimisticMoveTask()
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
 
   const filtered = useMemo(() => filterTasks(tasks ?? [], filters), [tasks, filters])
-
-  const columns = useMemo(
-    () =>
-      STATUSES.map((status) => ({
-        status,
-        label: TASK_STATUS_LABELS[status],
-        tasks: filtered
-          .filter((t) => t.status === status)
-          .sort((a, b) => a.position - b.position),
-      })),
-    [filtered]
-  )
 
   // The modal reads from the live list so edits show up without reopening —
   // holding the object from the click would freeze it.
   const openTask = selectedTask
     ? (tasks?.find((t) => t.id === selectedTask.id) ?? null)
     : null
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    const taskId = active.id as string
-    const overId = String(over.id)
-
-    // `over` is the column when dropped on empty space, but the *task* when
-    // dropped onto another card — which used to fail the status check and
-    // silently discard the move.
-    const targetStatus = isTaskStatus(overId)
-      ? overId
-      : tasks?.find((t) => t.id === overId)?.status
-
-    if (!targetStatus) return
-
-    const current = tasks?.find((t) => t.id === taskId)
-    if (!current || current.status === targetStatus) return
-
-    const stageCount = tasks?.filter((t) => t.status === targetStatus).length ?? 0
-    moveTask.mutate({ id: taskId, status: targetStatus, position: stageCount })
-  }
 
   async function handleSubmit(data: CreateTaskInput) {
     // The form's own status wins; defaultStatus only seeds it. Overriding it
@@ -102,7 +48,7 @@ export function TarefasContent() {
   if (isLoading) {
     return (
       <div className="flex gap-4 overflow-x-auto">
-        {STATUSES.map((s) => (
+        {TASK_STATUSES.map((s) => (
           <div key={s} className="w-60 shrink-0 space-y-3">
             <Skeleton className="h-6 w-24" />
             <Skeleton className="h-20 w-full rounded-lg" />
@@ -144,24 +90,11 @@ export function TarefasContent() {
           }
         />
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="flex gap-4 overflow-x-auto flex-1">
-            {columns.map((col) => (
-              <TaskColumn
-                key={col.status}
-                status={col.status}
-                label={col.label}
-                tasks={col.tasks}
-                onAddTask={() => handleAddTask(col.status)}
-                onTaskClick={setSelectedTask}
-              />
-            ))}
-          </div>
-        </DndContext>
+        <TaskBoard
+          tasks={filtered}
+          onAddTask={handleAddTask}
+          onTaskClick={setSelectedTask}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

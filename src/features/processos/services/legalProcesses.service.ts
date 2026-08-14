@@ -29,7 +29,7 @@ const LEGAL_PROCESS_SELECT = `
   *,
   crm_items:crm_items!crm_items_legal_process_id_fkey(${CRM_ITEM_FIELDS}),
   movements:legal_process_movements(*),
-  parties:legal_process_parties(*)
+  parties:legal_process_parties(*, client:clients(id, type, name, company_name, trade_name))
 `
 
 /** A processo can be linked to items in several workflows — the "master" one
@@ -85,16 +85,29 @@ function splitInput(input: Partial<LegalProcessInput>) {
     comarca,
     case_value,
     filing_date,
+    // Vive em tabela própria — se cair no rest, o insert de crm_items falha
+    // com "column parties does not exist".
+    parties,
     ...crmItemFields
   } = input
+
+  /** Primeira parte de um polo, na ordem de exibição. */
+  const firstOfPolo = (polo: 'ativo' | 'passivo') =>
+    [...(parties ?? [])]
+      .filter((p) => p.polo === polo && p.name.trim())
+      .sort((a, b) => a.position - b.position)[0]?.name ?? null
 
   // '' vem de input/select intocado e o Postgres recusa em coluna date/numeric.
   const legalProcessFields = {
     cnj_number,
     court,
     court_division,
-    plaintiff,
-    defendant,
+    // Espelham a primeira parte de cada polo sempre que a lista vier no patch.
+    // São campos legados (fallback de exibição e alvo da busca em
+    // filterLegalProcesses) — deixá-los intocados enquanto as partes mudam
+    // faria a busca por nome apontar para quem já saiu do processo.
+    plaintiff: parties === undefined ? plaintiff : firstOfPolo('ativo'),
+    defendant: parties === undefined ? defendant : firstOfPolo('passivo'),
     opposing_counsel,
     process_type,
     status,
@@ -108,7 +121,7 @@ function splitInput(input: Partial<LegalProcessInput>) {
     filing_date: filing_date === undefined ? undefined : filing_date || null,
   }
 
-  return { crmItemFields, legalProcessFields }
+  return { crmItemFields, legalProcessFields, parties }
 }
 
 /** Substitui as partes do processo pelas informadas.
@@ -120,24 +133,43 @@ export async function replaceLegalProcessParties(
   legalProcessId: string,
   parties: LegalProcessPartyInput[]
 ): Promise<void> {
+  // Linha adicionada no formulário e deixada em branco não é uma parte.
+  const named = parties.filter((p) => p.name.trim())
+
   const { error: deleteError } = await supabase
     .from('legal_process_parties')
     .delete()
     .eq('legal_process_id', legalProcessId)
   if (deleteError) throw deleteError
 
-  if (parties.length === 0) return
+  if (named.length === 0) return
 
   const { error } = await supabase.from('legal_process_parties').insert(
-    parties.map((p, index) => ({
+    named.map((p, index) => ({
       legal_process_id: legalProcessId,
       name: p.name,
-      document: p.document,
+      document: p.document ?? null,
       polo: p.polo,
-      party_type: p.party_type,
+      party_type: p.party_type ?? null,
       position: p.position ?? index,
+      client_id: p.client_id ?? null,
     }))
   )
+  if (error) throw error
+}
+
+/** Vincula (ou desvincula, com `null`) uma parte a um cliente cadastrado.
+ *
+ * Só faz sentido para partes persistidas: as que vêm do fallback
+ * `plaintiff`/`defendant` não têm linha própria e por isso não têm id. */
+export async function linkPartyToClient(
+  partyId: string,
+  clientId: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('legal_process_parties')
+    .update({ client_id: clientId })
+    .eq('id', partyId)
   if (error) throw error
 }
 
@@ -255,7 +287,7 @@ export async function createLegalProcess(
   input: LegalProcessInput,
   userId: string
 ): Promise<LegalProcessWithRelations> {
-  const { crmItemFields, legalProcessFields } = splitInput(input)
+  const { crmItemFields, legalProcessFields, parties } = splitInput(input)
 
   const { data: legalProcess, error: processError } = await supabase
     .from('legal_processes')
@@ -263,6 +295,10 @@ export async function createLegalProcess(
     .select('id')
     .single()
   if (processError) throw processError
+
+  if (parties?.length) {
+    await replaceLegalProcessParties(legalProcess.id, parties)
+  }
 
   // Every processo needs at least one item in the fixed wf-processos workflow
   // — that's its "master" tracking card (judicial progression through etapas).
@@ -310,7 +346,13 @@ export async function updateLegalProcess(
   // Reaproveita o mesmo split do create — antes esta função duplicava a lista
   // de campos jurídicos, e qualquer coluna nova teria que ser lembrada em dois
   // lugares (foi assim que os campos novos ficariam de fora do update).
-  const { crmItemFields, legalProcessFields } = splitInput(input)
+  const { crmItemFields, legalProcessFields, parties } = splitInput(input)
+
+  // `undefined` = o patch não fala de partes, então não mexe. Um array vazio é
+  // uma ordem legítima de apagar todas.
+  if (parties !== undefined) {
+    await replaceLegalProcessParties(legalProcessId, parties)
+  }
 
   if (Object.keys(crmItemFields).length > 0) {
     // title on LegalProcessInput is nullable (falls back to the client's name),

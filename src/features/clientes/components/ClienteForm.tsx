@@ -12,6 +12,7 @@ import {
   FileText,
   Phone,
   MapPin,
+  Scale,
   SlidersHorizontal,
   User,
   Building2,
@@ -42,8 +43,14 @@ import {
   type CreateIndividualClientInput,
   type CreateCompanyClientInput,
 } from '@/schemas/cliente.schema'
-import type { ClientWithRelations } from '@/types/cliente.types'
-import { getClientDisplayName } from '@/types/cliente.types'
+import { CRM_TAGS, type CrmTag } from '@/schemas/crmItem.schema'
+import { TagToggle } from '@/components/shared/TagToggle'
+import type { ClientWithRelations, ClientSex, MaritalStatus } from '@/types/cliente.types'
+import {
+  getClientDisplayName,
+  SEX_LABELS,
+  MARITAL_STATUS_LABELS,
+} from '@/types/cliente.types'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import { formatCPF, formatCNPJ, formatPhone, formatCEP } from '@/utils/format'
 
@@ -363,6 +370,14 @@ function PFForm({
       phone: defaultValues?.phone ?? '',
       email: defaultValues?.email ?? '',
       legal_area: defaultValues?.legal_area ?? undefined,
+      birth_date: defaultValues?.birth_date ?? '',
+      sex: defaultValues?.sex ?? null,
+      nationality: defaultValues?.nationality ?? '',
+      marital_status: defaultValues?.marital_status ?? null,
+      profession: defaultValues?.profession ?? '',
+      rg: defaultValues?.rg ?? '',
+      rg_issuer: defaultValues?.rg_issuer ?? '',
+      tags: defaultValues?.tags ?? [],
       address_street: defaultValues?.address_street ?? '',
       address_number: defaultValues?.address_number ?? '',
       address_complement: defaultValues?.address_complement ?? '',
@@ -466,6 +481,104 @@ function PFForm({
           </div>
         </section>
 
+        {/* ── Qualificação ──────────────────────────────────────── */}
+        {/* Alimenta o parágrafo que abre a petição. Nada aqui é obrigatório:
+            o gerador omite o que faltar em vez de deixar lacuna. */}
+        <section>
+          <SectionDivider icon={Scale}>Qualificação</SectionDivider>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <FieldLabel>Data de nascimento</FieldLabel>
+                <Input type="date" {...form.register('birth_date')} />
+              </div>
+              <div>
+                <FieldLabel>Sexo</FieldLabel>
+                <Select
+                  value={toSelectValue(form.watch('sex'))}
+                  onValueChange={(v) => {
+                    const sex = fromSelectValue(v) as ClientSex | undefined
+                    form.setValue('sex', sex ?? null)
+                    // A nacionalidade é o adjetivo literal da petição, então
+                    // segue o sexo — enquanto o usuário não escrever outra.
+                    const nationality = form.getValues('nationality')
+                    if (!nationality || nationality === 'brasileiro' || nationality === 'brasileira') {
+                      form.setValue(
+                        'nationality',
+                        sex === 'feminino' ? 'brasileira' : sex ? 'brasileiro' : ''
+                      )
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full text-sm">
+                    <span className="truncate text-sm">
+                      {form.watch('sex') ? SEX_LABELS[form.watch('sex') as ClientSex] : 'Não informado'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE_VALUE}>Não informado</SelectItem>
+                    {(Object.keys(SEX_LABELS) as ClientSex[]).map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SEX_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <FieldLabel>Nacionalidade</FieldLabel>
+                <Input {...form.register('nationality')} placeholder="brasileiro" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <FieldLabel>Estado civil</FieldLabel>
+                <Select
+                  value={toSelectValue(form.watch('marital_status'))}
+                  onValueChange={(v) =>
+                    form.setValue(
+                      'marital_status',
+                      (fromSelectValue(v) as MaritalStatus | undefined) ?? null
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-full text-sm">
+                    <span className="truncate text-sm">
+                      {form.watch('marital_status')
+                        ? MARITAL_STATUS_LABELS[form.watch('marital_status') as MaritalStatus]
+                        : 'Não informado'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE_VALUE}>Não informado</SelectItem>
+                    {(Object.keys(MARITAL_STATUS_LABELS) as MaritalStatus[]).map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {MARITAL_STATUS_LABELS[m]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <FieldLabel>Profissão</FieldLabel>
+                <Input {...form.register('profession')} placeholder="Ex: professor" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <FieldLabel>RG</FieldLabel>
+                <Input {...form.register('rg')} placeholder="12.345.678" />
+              </div>
+              <div>
+                <FieldLabel>Órgão emissor</FieldLabel>
+                <Input {...form.register('rg_issuer')} placeholder="SSP/ES" />
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ── Contato ───────────────────────────────────────────── */}
         <section>
           <SectionDivider icon={Phone}>Contato</SectionDivider>
@@ -542,6 +655,16 @@ function PFForm({
           </div>
         </section>
 
+        {/* ── Etiquetas ─────────────────────────────────────────── */}
+        <section>
+          <SectionDivider icon={Tag}>Etiquetas</SectionDivider>
+          <TagToggle
+            tags={CRM_TAGS}
+            value={(form.watch('tags') ?? []) as CrmTag[]}
+            onChange={(tags) => form.setValue('tags', tags)}
+          />
+        </section>
+
         {/* ── Observações ───────────────────────────────────────── */}
         <section>
           <SectionDivider icon={SlidersHorizontal}>Observações</SectionDivider>
@@ -586,6 +709,7 @@ function PJForm({
       phone: defaultValues?.phone ?? '',
       email: defaultValues?.email ?? '',
       legal_area: defaultValues?.legal_area ?? undefined,
+      tags: defaultValues?.tags ?? [],
       address_street: defaultValues?.address_street ?? '',
       address_number: defaultValues?.address_number ?? '',
       address_complement: defaultValues?.address_complement ?? '',
@@ -787,6 +911,16 @@ function PJForm({
               <Input {...form.register('address_city')} placeholder="São Paulo" />
             </div>
           </div>
+        </section>
+
+        {/* ── Etiquetas ─────────────────────────────────────────── */}
+        <section>
+          <SectionDivider icon={Tag}>Etiquetas</SectionDivider>
+          <TagToggle
+            tags={CRM_TAGS}
+            value={(form.watch('tags') ?? []) as CrmTag[]}
+            onChange={(tags) => form.setValue('tags', tags)}
+          />
         </section>
 
         {/* ── Observações ───────────────────────────────────────── */}

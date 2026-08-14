@@ -199,7 +199,7 @@ export function FinancialEntryDetailModal({
 
                 {entry.client && (
                   <InfoRow icon={<User className="h-4 w-4 text-muted-foreground/60" />}>
-                    <Link href={`/clientes?id=${entry.client.id}`} className="group block">
+                    <Link href={`/clientes/${entry.client.id}`} className="group block">
                       <p className="text-sm group-hover:underline">
                         {getClientDisplayName(
                           entry.client as Parameters<typeof getClientDisplayName>[0]

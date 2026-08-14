@@ -73,7 +73,7 @@ export function CrmItemClienteTab({ client, onLinkClient, isLinking }: CrmItemCl
   return (
     <div className="space-y-3">
       <Link
-        href={`/clientes?id=${client.id}`}
+        href={`/clientes/${client.id}`}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-foreground hover:underline w-fit"
       >
         Ver detalhes completos do cliente

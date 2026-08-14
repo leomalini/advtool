@@ -1,6 +1,31 @@
 import { z } from 'zod'
 import { CRM_LEGAL_AREAS, CRM_TAGS } from './crmItem.schema'
 
+/** Uma parte do processo.
+ *
+ * Nada aqui é obrigatório — nem o nome. Uma linha em branco é a que o usuário
+ * acabou de adicionar e ainda não preencheu; bloquear o salvamento por causa
+ * dela seria hostil. O service descarta as sem nome antes de gravar. */
+export const legalProcessPartySchema = z.object({
+  name: z.string().max(200),
+  document: z
+    .string()
+    .max(30)
+    .optional()
+    .nullable()
+    // Vazio é legítimo (a maioria das partes vem do tribunal sem documento),
+    // mas preenchido pela metade não: 11 dígitos é CPF, 14 é CNPJ, e qualquer
+    // outra contagem é digitação inacabada.
+    .refine(
+      (v) => !v || [11, 14].includes(v.replace(/\D/g, '').length),
+      'Informe um CPF ou CNPJ completo'
+    ),
+  polo: z.enum(['ativo', 'passivo']),
+  party_type: z.string().max(100).optional().nullable(),
+  position: z.number().int().nonnegative(),
+  client_id: z.string().uuid().optional().nullable(),
+})
+
 export const legalProcessSchema = z.object({
   // Campos do crm_item (item genérico do CRM que representa este processo)
   title: z.string().max(200).optional().nullable(),
@@ -33,6 +58,10 @@ export const legalProcessSchema = z.object({
   // coerce: o input de valor entrega string; '' vira null no service.
   case_value: z.coerce.number().nonnegative().optional().nullable(),
   filing_date: z.string().optional().nullable(),
+
+  // Ausente = o formulário não mexeu nas partes. Presente (mesmo vazio) = a
+  // lista completa, que substitui a atual.
+  parties: z.array(legalProcessPartySchema).optional(),
 })
 
 export type LegalProcessInput = z.infer<typeof legalProcessSchema>
