@@ -34,6 +34,7 @@ const TIPO_CONFIG: Record<
   legal_process_created: { icon: Scale, color: 'text-info', bg: 'bg-info/12', label: 'Processo' },
   client_created: { icon: UserPlus, color: 'text-success', bg: 'bg-success/12', label: 'Cliente' },
   client_updated: { icon: UserCog, color: 'text-info', bg: 'bg-info/12', label: 'Cliente' },
+  client_comment: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Nota' },
   task_created: { icon: CheckCircle2, color: 'text-info', bg: 'bg-info/12', label: 'Tarefa' },
   task_done: { icon: CheckCircle2, color: 'text-success', bg: 'bg-success/12', label: 'Concluído' },
   task_comment: { icon: MessageSquare, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Comentário' },

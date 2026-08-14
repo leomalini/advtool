@@ -2,14 +2,14 @@ import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
 import type { CalendarEvent } from '@/types/event.types'
 import type { EventFormInput, UpdateEventInput } from '@/schemas/event.schema'
+import { toInstant, toLocalDateInput, toLocalTimeInput, localDayKey } from '../utils/datetime'
 
 const supabase = createClient()
 
-// Combina data + hora em timestamptz ISO
-function toTimestamp(date: string, time?: string): string {
-  const t = time && time.trim() ? time : '00:00'
-  return `${date}T${t}:00`
-}
+// Combina data + hora do formulário no instante correspondente.
+// Ver utils/datetime.ts: a versão anterior montava a string sem fuso e o
+// Postgres a lia como UTC, deslocando todo horário em 3 horas.
+const toTimestamp = toInstant
 
 // Mapeia EventFormInput → payload do banco
 function toDbPayload(input: EventFormInput, userId: string) {
@@ -137,10 +137,12 @@ function normalizeEventRow(row: unknown): CalendarEvent {
 
 // Mapeia CalendarEvent → EventFormInput (para pré-preencher form de edição)
 export function eventToFormValues(event: CalendarEvent): Partial<EventFormInput> {
-  const startDate = event.start_at.slice(0, 10)
-  const startTime = event.start_at.slice(11, 16)
-  const endDate = event.end_at.slice(0, 10)
-  const endTime = event.end_at.slice(11, 16)
+  // Local, não `slice`: a string vem em UTC, e fatiá-la mostraria a hora
+  // deslocada assim que o valor gravado passou a ser o instante real.
+  const startDate = toLocalDateInput(event.start_at)
+  const startTime = toLocalTimeInput(event.start_at)
+  const endDate = toLocalDateInput(event.end_at)
+  const endTime = toLocalTimeInput(event.end_at)
 
   return {
     title: event.title,
@@ -151,8 +153,8 @@ export function eventToFormValues(event: CalendarEvent): Partial<EventFormInput>
     assignee_ids: event.assignees?.map(a => a.id) ?? [event.assigned_to],
     start_date: startDate,
     start_time: startTime,
-    fatal_deadline_date: event.fatal_deadline?.slice(0, 10) ?? '',
-    fatal_deadline_time: event.fatal_deadline?.slice(11, 16) ?? '',
+    fatal_deadline_date: event.fatal_deadline ? toLocalDateInput(event.fatal_deadline) : '',
+    fatal_deadline_time: event.fatal_deadline ? toLocalTimeInput(event.fatal_deadline) : '',
     show_in_agenda: event.show_in_agenda,
     all_day: event.all_day,
     inform_end: event.inform_end,
@@ -170,11 +172,13 @@ export function eventToFormValues(event: CalendarEvent): Partial<EventFormInput>
   }
 }
 
+// Sem embed de anexos: `event_attachments` foi absorvida por `documents` na
+// migration 23. Os arquivos de um evento saem de
+// getDocumentsForEntity({ eventId }), que é o que a aba Documentos usa.
 const EVENT_SELECT = `
   *,
   assignee:profiles!events_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
-  assignees:event_assignees(profile:profiles(id, full_name, avatar_url, role, created_at)),
-  attachments:event_attachments(*)
+  assignees:event_assignees(profile:profiles(id, full_name, avatar_url, role, created_at))
 `
 
 export async function getEvents(from?: string, to?: string): Promise<CalendarEvent[]> {
@@ -203,25 +207,22 @@ export async function getEvents(from?: string, to?: string): Promise<CalendarEve
 export async function getEventsForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
+  /** Eventos do cliente — os criados direto dele, sem processo nem card. */
+  clientId?: string | null
 }): Promise<CalendarEvent[]> {
-  const { legalProcessId, crmItemIds = [] } = params
+  const { legalProcessId, crmItemIds = [], clientId } = params
 
   const terms: string[] = []
   if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
   // Guard: `crm_item_id.in.()` is invalid syntax, and an orphaned processo has
   // no linked items at all.
   if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
+  if (clientId) terms.push(`client_id.eq.${clientId}`)
   if (terms.length === 0) return []
 
   const query = supabase.from('events').select(EVENT_SELECT).order('start_at', { ascending: false })
 
-  // A single term doesn't need `.or()` — keep the simpler filter.
-  const { data, error } =
-    terms.length === 1
-      ? await (legalProcessId && crmItemIds.length === 0
-          ? query.eq('legal_process_id', legalProcessId)
-          : query.in('crm_item_id', crmItemIds))
-      : await query.or(terms.join(','))
+  const { data, error } = await query.or(terms.join(','))
 
   if (error) throw error
   return (data ?? []).map(normalizeEventRow)
@@ -282,7 +283,9 @@ async function syncNextDeadline(event: {
   const isDeadline = event.type === 'deadline' || !!event.fatal_deadline
   if (!isDeadline) return
 
-  const deadline = (event.fatal_deadline ?? event.start_at).slice(0, 10)
+  // Dia local: o prazo do card é uma data, e o dia UTC de um evento das 21h
+  // já seria o seguinte.
+  const deadline = localDayKey(event.fatal_deadline ?? event.start_at)
 
   // Prefer the direct card; otherwise fall back to the processo's master card,
   // which is where the Processos module reads its summary from.
@@ -347,21 +350,3 @@ export async function deleteEvent(id: string): Promise<void> {
   if (error) throw error
 }
 
-export async function uploadEventAttachment(
-  eventId: string,
-  file: File,
-  userId: string
-): Promise<void> {
-  const filePath = `events/${eventId}/${Date.now()}-${file.name}`
-  const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, file)
-  if (uploadError) throw uploadError
-
-  await supabase.from('event_attachments').insert({
-    event_id: eventId,
-    file_name: file.name,
-    file_path: filePath,
-    file_size: file.size,
-    file_type: file.type,
-    uploaded_by: userId,
-  })
-}

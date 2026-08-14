@@ -71,6 +71,16 @@ export interface LegalProcessMovement {
 
 export type PartyPolo = 'ativo' | 'passivo'
 
+/** O mínimo para exibir o cliente vinculado a uma parte sem carregar o
+ * cadastro inteiro. */
+export interface PartyClient {
+  id: string
+  type: 'individual' | 'company'
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
+}
+
 export interface LegalProcessParty {
   id: string
   legal_process_id: string
@@ -79,16 +89,26 @@ export interface LegalProcessParty {
   polo: PartyPolo
   party_type: string | null
   position: number
+  /** Cliente cadastrado que corresponde a esta parte. Null é o caso normal:
+   * as partes chegam da API como texto puro e a maioria nunca será cliente
+   * nosso (a parte contrária, por exemplo). */
+  client_id: string | null
+  client: PartyClient | null
   created_at: string
 }
 
-/** Parte ainda não persistida — o que vem do lookup por CNJ. */
+/** Parte ainda não persistida — o que vem do lookup por CNJ ou do formulário. */
 export interface LegalProcessPartyInput {
   name: string
-  document: string | null
+  /** Opcional além de nulável: o schema do formulário deixa o campo ausente
+   * quando nunca foi tocado, e o insert normaliza para null. */
+  document?: string | null
   polo: PartyPolo
-  party_type: string | null
+  party_type?: string | null
   position: number
+  /** Preservado no replace: reescrever as partes pelo formulário não pode
+   * desfazer um vínculo com cliente feito na tela de detalhes. */
+  client_id?: string | null
 }
 
 export interface LegalProcessWithRelations extends LegalProcess {
@@ -113,19 +133,38 @@ export interface LegalProcessWithRelations extends LegalProcess {
   parties: LegalProcessParty[]
 }
 
+/** Parte como a tela a consome, já com o cliente resolvido. */
+export interface DisplayParty {
+  /** Null nas partes-legado: elas vêm de `plaintiff`/`defendant` e não existem
+   * como linha em `legal_process_parties`, então não há o que vincular. */
+  id: string | null
+  name: string
+  document: string | null
+  party_type: string | null
+  client: PartyClient | null
+}
+
 /** Partes agrupadas por polo, já ordenadas — o formato que a tela consome. */
 export function groupPartiesByPolo(
   processo: Pick<LegalProcessWithRelations, 'parties' | 'plaintiff' | 'defendant'>
-): Record<PartyPolo, { name: string; document: string | null; party_type: string | null }[]> {
+): Record<PartyPolo, DisplayParty[]> {
   const byPolo: Record<PartyPolo, LegalProcessParty[]> = { ativo: [], passivo: [] }
   for (const party of processo.parties ?? []) byPolo[party.polo].push(party)
 
-  const sorted = (list: LegalProcessParty[]) =>
-    [...list].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+  const sorted = (list: LegalProcessParty[]): DisplayParty[] =>
+    [...list]
+      .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        document: p.document,
+        party_type: p.party_type,
+        client: p.client ?? null,
+      }))
 
   // Fallback para processos cadastrados antes da tabela de partes existir.
-  const fallback = (name: string | null) =>
-    name ? [{ name, document: null, party_type: null }] : []
+  const fallback = (name: string | null): DisplayParty[] =>
+    name ? [{ id: null, name, document: null, party_type: null, client: null }] : []
 
   return {
     ativo: byPolo.ativo.length > 0 ? sorted(byPolo.ativo) : fallback(processo.plaintiff),

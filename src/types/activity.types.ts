@@ -7,6 +7,7 @@ export type ActivityType =
   | 'legal_process_created'
   | 'client_created'
   | 'client_updated'
+  | 'client_comment'
   | 'task_created'
   | 'task_done'
   | 'task_comment'
@@ -38,6 +39,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   legal_process_created: 'cadastrou o processo',
   client_created: 'cadastrou o cliente',
   client_updated: 'atualizou o cliente',
+  client_comment: 'comentou no cliente',
   task_created: 'criou a tarefa',
   task_done: 'concluiu a tarefa',
   task_comment: 'comentou na tarefa',

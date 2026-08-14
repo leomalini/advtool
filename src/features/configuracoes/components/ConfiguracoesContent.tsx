@@ -19,6 +19,7 @@ import {
   Moon,
   Monitor,
   Check,
+  CalendarDays,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ADVOGADOS, AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { WorkflowsManager } from './WorkflowsManager'
+import { EventTypesManager } from './EventTypesManager'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 
@@ -201,7 +203,7 @@ function ThemeCard({
 
 // ── Helpers ────────────────────────────────────────────────────
 
-type TabValue = 'usuarios' | 'areas' | 'workflows' | 'etiquetas' | 'geral'
+type TabValue = 'usuarios' | 'areas' | 'workflows' | 'etiquetas' | 'tipos-evento' | 'geral'
 
 const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'geral', label: 'Geral', icon: Settings },
@@ -209,6 +211,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
+  { value: 'tipos-evento', label: 'Tipos de Evento', icon: CalendarDays },
 ]
 
 // ── Aba Usuários ───────────────────────────────────────────────
@@ -583,6 +586,9 @@ export function ConfiguracoesContent() {
           </TabsContent>
           <TabsContent value="etiquetas">
             <TabEtiquetas />
+          </TabsContent>
+          <TabsContent value="tipos-evento">
+            <EventTypesManager />
           </TabsContent>
           <TabsContent value="geral">
             <TabGeral />

@@ -6,12 +6,26 @@ import {
   createClientRecord,
   updateClientRecord,
   deleteClientRecord,
-  uploadClientAttachment,
-  deleteClientAttachment,
+  addClientComment,
 } from '../services/clientes.service'
 import { clientKeys } from './useClientes'
+import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { useAuth } from '@/hooks/useAuth'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
+
+export function useAddClientComment(clientId: string, entityTitle: string) {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: (content: string) => addClientComment(clientId, content, user!.id, entityTitle),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: clientKeys.comments(clientId) })
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
+    },
+    onError: () => toast.error('Erro ao publicar nota.'),
+  })
+}
 
 export function useCreateCliente() {
   const queryClient = useQueryClient()
@@ -54,30 +68,3 @@ export function useDeleteCliente() {
   })
 }
 
-export function useUploadAttachment(clientId: string) {
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
-
-  return useMutation({
-    mutationFn: (file: File) => uploadClientAttachment(clientId, file, user!.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientKeys.attachments(clientId) })
-      toast.success('Arquivo enviado!')
-    },
-    onError: () => toast.error('Erro ao enviar arquivo.'),
-  })
-}
-
-export function useDeleteAttachment(clientId: string) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: ({ id, filePath }: { id: string; filePath: string }) =>
-      deleteClientAttachment(id, filePath),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientKeys.attachments(clientId) })
-      toast.success('Arquivo removido.')
-    },
-    onError: () => toast.error('Erro ao remover arquivo.'),
-  })
-}

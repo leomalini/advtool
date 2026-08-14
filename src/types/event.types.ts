@@ -1,20 +1,39 @@
 import type { BaseEntity, Profile } from './common.types'
 
-export type EventType = 'meeting' | 'hearing' | 'deadline' | 'appointment'
+/**
+ * Slug do tipo, referenciando `event_types.id`.
+ *
+ * Deixou de ser uma união fechada na migration 32: o escritório cadastra os
+ * seus próprios tipos, então rótulo e cor vêm do banco, não de um mapa no
+ * código. Use `useEventTypeMap()` para resolver.
+ */
+export type EventType = string
+
 export type RecurrenceType = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
 
-export const EVENT_TYPE_LABELS: Record<EventType, string> = {
-  meeting: 'Reunião',
-  hearing: 'Audiência',
-  deadline: 'Prazo',
-  appointment: 'Compromisso',
+export interface EventTypeRecord {
+  id: string
+  label: string
+  color: string
+  position: number
+  /** Um dos quatro originais. Não impede exclusão — só explica a origem. */
+  is_system: boolean
+  created_at: string
 }
 
-export const EVENT_TYPE_COLORS: Record<EventType, string> = {
-  meeting: '#6366f1',
-  hearing: '#ef4444',
-  deadline: '#f59e0b',
-  appointment: '#10b981',
+/** Usada quando o tipo do evento não está (mais) na lista — evita a tela
+ * quebrar por causa de um dado que sumiu. */
+export const UNKNOWN_EVENT_TYPE: Pick<EventTypeRecord, 'label' | 'color'> = {
+  label: 'Sem tipo',
+  color: '#94a3b8',
+}
+
+export function resolveEventType(
+  types: Map<string, EventTypeRecord> | undefined,
+  id: string | null | undefined
+): Pick<EventTypeRecord, 'label' | 'color'> {
+  if (!id) return UNKNOWN_EVENT_TYPE
+  return types?.get(id) ?? UNKNOWN_EVENT_TYPE
 }
 
 export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
@@ -23,18 +42,6 @@ export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
   biweekly: 'Quinzenal',
   monthly: 'Mensal',
   yearly: 'Anual',
-}
-
-export interface EventAttachment {
-  id: string
-  event_id: string
-  file_name: string
-  file_path: string
-  file_size: number
-  file_type: string
-  uploaded_by: string
-  created_at: string
-  uploader?: Profile
 }
 
 export interface CalendarEvent extends BaseEntity {
@@ -66,5 +73,4 @@ export interface CalendarEvent extends BaseEntity {
   // Joins
   assignee?: Profile
   assignees?: Profile[]
-  attachments?: EventAttachment[]
 }

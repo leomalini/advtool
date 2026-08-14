@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, ArrowUpRight, Loader2, Search, FileText, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Loader2, Search, FileText, SlidersHorizontal, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,7 +26,11 @@ import { legalProcessSchema } from '@/schemas/legalProcess.schema'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
 import { CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
 import type { CrmTag } from '@/schemas/crmItem.schema'
-import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
+import type { LegalProcessWithRelations, LegalProcessPartyInput } from '@/types/legalProcess.types'
+import { PROCESS_TYPE_LABELS, PROCESS_STATUS_LABELS } from '@/types/legalProcess.types'
+import { CurrencyInput } from '@/components/shared/CurrencyInput'
+import { TagToggle } from '@/components/shared/TagToggle'
+import { PartiesEditor } from './PartiesEditor'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
 import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
@@ -118,44 +122,6 @@ function ColorDotTriggerValue({
   )
 }
 
-function TagToggle({
-  tags,
-  value,
-  onChange,
-}: {
-  tags: readonly CrmTag[]
-  value: CrmTag[]
-  onChange: (tags: CrmTag[]) => void
-}) {
-  function toggle(tag: CrmTag) {
-    onChange(value.includes(tag) ? value.filter((t) => t !== tag) : [...value, tag])
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {tags.map((tag) => {
-        const et = ETIQUETAS[tag]
-        const active = value.includes(tag)
-        return (
-          <button
-            key={tag}
-            type="button"
-            onClick={() => toggle(tag)}
-            className={cn(
-              'px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
-              active
-                ? cn(et.color, et.textColor, 'border-transparent')
-                : 'bg-card border-border text-muted-foreground hover:border-border hover:bg-muted/40',
-            )}
-          >
-            {et.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 // ── Main form ─────────────────────────────────────────────────────────────────
 
 interface ProcessoFormProps {
@@ -225,6 +191,23 @@ export function ProcessoForm({
           plaintiff: editingProcess.plaintiff ?? undefined,
           defendant: editingProcess.defendant ?? undefined,
           opposing_counsel: editingProcess.opposing_counsel ?? undefined,
+          process_type: editingProcess.process_type,
+          status: editingProcess.status,
+          procedural_class: editingProcess.procedural_class ?? undefined,
+          subject: editingProcess.subject ?? undefined,
+          comarca: editingProcess.comarca ?? undefined,
+          case_value: editingProcess.case_value ?? undefined,
+          filing_date: editingProcess.filing_date ?? undefined,
+          // `client_id` viaja de volta para que salvar o formulário não
+          // desfaça um vínculo feito no popover da tela de detalhes.
+          parties: (editingProcess.parties ?? []).map((p) => ({
+            name: p.name,
+            document: p.document,
+            polo: p.polo,
+            party_type: p.party_type,
+            position: p.position,
+            client_id: p.client_id,
+          })),
         })
       } else {
         lastFetchedCnjRef.current = null
@@ -324,6 +307,14 @@ export function ProcessoForm({
         if (json.court_division) setValue('court_division', json.court_division)
         if (json.plaintiff) setValue('plaintiff', json.plaintiff)
         if (json.defendant) setValue('defendant', json.defendant)
+        if (json.procedural_class) setValue('procedural_class', json.procedural_class)
+        if (json.subject) setValue('subject', json.subject)
+        if (json.case_value != null) setValue('case_value', json.case_value)
+        if (json.filing_date) setValue('filing_date', json.filing_date)
+        if (json.status) setValue('status', json.status)
+        // A API é a fonte das partes: substitui a lista inteira em vez de
+        // concatenar, senão uma segunda consulta duplicaria todo mundo.
+        if (json.parties?.length) setValue('parties', json.parties)
         toast.success('Dados do processo preenchidos automaticamente.')
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
@@ -640,34 +631,146 @@ export function ProcessoForm({
                       )}
                     </div>
 
-                    {/* Tribunal + Vara */}
+                    {/* Tipo + Status */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <FieldLabel>Tipo</FieldLabel>
+                        <Controller
+                          name="process_type"
+                          control={control}
+                          render={({ field }) => (
+                            <Select
+                              value={field.value ?? 'judicial'}
+                              onValueChange={(v) => { if (v) field.onChange(v) }}
+                            >
+                              <SelectTrigger className="w-full text-sm">
+                                <span className="truncate text-sm">
+                                  {PROCESS_TYPE_LABELS[field.value ?? 'judicial']}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(Object.keys(PROCESS_TYPE_LABELS) as (keyof typeof PROCESS_TYPE_LABELS)[]).map((t) => (
+                                  <SelectItem key={t} value={t}>
+                                    {PROCESS_TYPE_LABELS[t]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Situação</FieldLabel>
+                        <Controller
+                          name="status"
+                          control={control}
+                          render={({ field }) => (
+                            <Select
+                              value={field.value ?? 'ativo'}
+                              onValueChange={(v) => { if (v) field.onChange(v) }}
+                            >
+                              <SelectTrigger className="w-full text-sm">
+                                <span className="truncate text-sm">
+                                  {PROCESS_STATUS_LABELS[field.value ?? 'ativo']}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(Object.keys(PROCESS_STATUS_LABELS) as (keyof typeof PROCESS_STATUS_LABELS)[]).map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {PROCESS_STATUS_LABELS[s]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Classe + Assunto — o subtítulo do cabeçalho da tela de detalhes */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <FieldLabel>Classe Processual</FieldLabel>
+                        <Input {...register('procedural_class')} placeholder="Ex: Procedimento Comum Cível" />
+                        <FieldError message={errors.procedural_class?.message} />
+                      </div>
+                      <div>
+                        <FieldLabel>Assunto</FieldLabel>
+                        <Input {...register('subject')} placeholder="Ex: Indenização por Dano Moral" />
+                        <FieldError message={errors.subject?.message} />
+                      </div>
+                    </div>
+
+                    {/* Valor da causa + Ajuizamento + Comarca */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <FieldLabel>Valor da Causa</FieldLabel>
+                        <Controller
+                          name="case_value"
+                          control={control}
+                          render={({ field }) => (
+                            <CurrencyInput
+                              value={field.value ?? undefined}
+                              onChange={(v) => field.onChange(v ?? null)}
+                              className="h-[38px] rounded-lg"
+                            />
+                          )}
+                        />
+                        <FieldError message={errors.case_value?.message} />
+                      </div>
+                      <div>
+                        <FieldLabel>Ajuizamento</FieldLabel>
+                        <Input type="date" {...register('filing_date')} />
+                        <FieldError message={errors.filing_date?.message} />
+                      </div>
+                      <div>
+                        <FieldLabel>Comarca</FieldLabel>
+                        <Input {...register('comarca')} placeholder="Ex: São Paulo" />
+                      </div>
+                    </div>
+
+                    {/* Tribunal + Juízo */}
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <FieldLabel>Tribunal</FieldLabel>
                         <Input {...register('court')} placeholder="Ex: TJSP" />
                       </div>
                       <div className="col-span-2">
-                        <FieldLabel>Vara / Câmara</FieldLabel>
+                        <FieldLabel>Juízo / Vara</FieldLabel>
                         <Input {...register('court_division')} placeholder="Ex: 3ª Vara do Trabalho de São Paulo" />
                       </div>
                     </div>
 
-                    {/* Partes */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <FieldLabel>Requerente / Autor</FieldLabel>
-                        <Input {...register('plaintiff')} placeholder="Nome do requerente" />
-                      </div>
-                      <div>
-                        <FieldLabel>Requerido / Réu</FieldLabel>
-                        <Input {...register('defendant')} placeholder="Nome do requerido" />
-                      </div>
-                      <div>
-                        <FieldLabel>Adv. da Parte Contrária</FieldLabel>
-                        <Input {...register('opposing_counsel')} placeholder="Nome do advogado" />
-                      </div>
+                    <div>
+                      <FieldLabel>Adv. da Parte Contrária</FieldLabel>
+                      <Input {...register('opposing_counsel')} placeholder="Nome do advogado" />
                     </div>
                   </div>
+                </section>
+
+                {/* ── Partes ────────────────────────────────────────────── */}
+                <section>
+                  <SectionDivider icon={Users}>Partes</SectionDivider>
+                  <Controller
+                    name="parties"
+                    control={control}
+                    render={({ field }) => (
+                      <PartiesEditor
+                        value={(field.value ?? []) as LegalProcessPartyInput[]}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                  {/* Erros de parte são por linha, e o array não carrega
+                      mensagem própria — o editor marca o campo em vermelho e
+                      isto explica por que o salvamento não foi adiante. */}
+                  <FieldError
+                    message={
+                      errors.parties
+                        ? 'Revise os documentos das partes: informe CPF ou CNPJ completo, ou deixe em branco.'
+                        : undefined
+                    }
+                  />
                 </section>
 
                 {/* ── Observações ───────────────────────────────────────── */}

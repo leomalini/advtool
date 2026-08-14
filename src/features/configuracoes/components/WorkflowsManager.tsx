@@ -24,6 +24,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { ColorPicker, COLOR_SWATCHES } from "@/components/shared/ColorPicker";
 import {
   Tooltip,
   TooltipContent,
@@ -46,52 +47,6 @@ import {
 import type { Workflow, WorkflowColumn } from "@/types/workflow.types";
 
 const DESC_MAX_LENGTH = 60;
-
-const COLOR_SWATCHES = [
-  "#6366f1",
-  "#8b5cf6",
-  "#ec4899",
-  "#ef4444",
-  "#f97316",
-  "#f59e0b",
-  "#10b981",
-  "#06b6d4",
-  "#0ea5e9",
-  "#3b82f6",
-  "#94a3b8",
-  "#64748b",
-];
-
-function ColorPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (c: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {COLOR_SWATCHES.map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => onChange(c)}
-          className={cn(
-            "h-7 w-7 rounded-full flex items-center justify-center transition-transform hover:scale-110",
-            value === c && "ring-2 ring-offset-2 ring-offset-background",
-          )}
-          style={{
-            backgroundColor: c,
-            ...(value === c ? { boxShadow: `0 0 0 2px ${c}` } : {}),
-          }}
-          aria-label={`Cor ${c}`}
-        >
-          {value === c && <Check className="h-3.5 w-3.5 text-white" />}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 // ── Workflow create/edit dialog ──────────────────────────────────────────────
 

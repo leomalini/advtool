@@ -32,12 +32,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { eventFormSchema, type EventFormInput } from "@/schemas/event.schema";
-import {
-  EVENT_TYPE_LABELS,
-  EVENT_TYPE_COLORS,
-  RECURRENCE_TYPE_LABELS,
-  type EventType,
-} from "@/types/event.types";
+import { RECURRENCE_TYPE_LABELS, resolveEventType } from "@/types/event.types";
+import { EventTypeSelect } from "./EventTypeSelect";
+import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { Profile } from "@/types/common.types";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfiles } from "@/hooks/useProfiles";
@@ -141,13 +138,17 @@ export function EventForm({
     },
   });
 
+  const eventTypes = useEventTypeMap();
+
   const watchType = watch("type");
   const informEnd = watch("inform_end");
   const allDay = watch("all_day");
   const isRecurring = watch("is_recurring");
   const isRetroactive = watch("is_retroactive");
   const assigneeIds = watch("assignee_ids");
-  const typeColor = EVENT_TYPE_COLORS[watchType];
+  // A cor do tipo tinge o cabeçalho e o botão de salvar. Vem do cadastro, e
+  // por isso muda quando um tipo novo é criado no meio do preenchimento.
+  const typeColor = resolveEventType(eventTypes, watchType).color;
 
   // The client field follows the processo whenever that processo has one of
   // its own; it only stays editable for processos with no client set.
@@ -227,36 +228,13 @@ export function EventForm({
                 linha inteira, e alinhado à esquerda não parece órfão. */}
             <div className="max-w-[220px]">
             <FormField label="Tipo">
-              {/* Colored dot overlaid on the select trigger */}
-              <div className="relative">
-                <div
-                  className="absolute left-3 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full z-10 pointer-events-none transition-colors duration-300"
-                  style={{ backgroundColor: typeColor }}
-                />
-                <Controller
-                  name="type"
-                  control={control}
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger className="h-9 text-sm pl-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(
-                          Object.entries(EVENT_TYPE_LABELS) as [
-                            EventType,
-                            string,
-                          ][]
-                        ).map(([t, label]) => (
-                          <SelectItem key={t} value={t}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
+              <Controller
+                name="type"
+                control={control}
+                render={({ field }) => (
+                  <EventTypeSelect value={field.value} onChange={field.onChange} />
+                )}
+              />
             </FormField>
             </div>
           </div>

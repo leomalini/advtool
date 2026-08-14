@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { Plus, Search, Users, Phone, Mail, ArrowRight, Pencil, Trash2, AlertCircle, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { ClienteDetailModal } from './ClienteDetailModal'
 import { ClienteForm } from './ClienteForm'
 import {
   Dialog,
@@ -252,13 +251,8 @@ export function ClientesContent() {
   const [search, setSearch] = useState('')
   const [areaFiltro, setAreaFiltro] = useState<LegalArea | 'todas'>('todas')
 
-  const searchParams = useSearchParams()
   const router = useRouter()
-  const pathname = usePathname()
 
-  // A URL é a fonte da verdade — assim /clientes?id=X funciona vindo de outra página
-  // ou a partir da própria tela de Clientes (ex: clicar em outro cliente na sequência).
-  const detailClientId = searchParams.get('id')
   const [editClient, setEditClient] = useState<ClientWithRelations | null>(null)
   const [deleteClient, setDeleteClient] = useState<ClientWithRelations | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -269,14 +263,10 @@ export function ClientesContent() {
   const updateMutation = useUpdateCliente(editClient?.id ?? '')
   const deleteMutation = useDeleteCliente()
 
-  const detailClient = detailClientId ? clientes.find((c) => c.id === detailClientId) ?? null : null
-
+  // O detalhe é uma página própria desde que o modal foi aposentado — a linha
+  // navega em vez de abrir sobreposição.
   function openDetail(id: string) {
-    router.push(`${pathname}?id=${id}`)
-  }
-
-  function closeDetail() {
-    router.replace(pathname)
+    router.push(`/clientes/${id}`)
   }
 
   const pendingClientIds = useMemo(
@@ -452,13 +442,6 @@ export function ClientesContent() {
         isLoading={deleteMutation.isPending}
       />
 
-      {/* ── Modal de detalhe ── */}
-      <ClienteDetailModal
-        cliente={detailClient}
-        open={!!detailClientId}
-        onOpenChange={(open) => !open && closeDetail()}
-        onEdit={setEditClient}
-      />
     </div>
   )
 }

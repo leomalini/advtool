@@ -11,8 +11,8 @@ export const eventKeys = {
   range: (from: string, to: string) => ['events', from, to] as const,
   /** Events of a processo, including those reached through its crm_items.
    * Ids are sorted by the caller so the key stays stable across fetches. */
-  forEntity: (legalProcessId: string | null, crmItemIds: string[]) =>
-    ['events', 'entity', legalProcessId ?? '-', crmItemIds.join(',')] as const,
+  forEntity: (legalProcessId: string | null, crmItemIds: string[], clientId: string | null) =>
+    ['events', 'entity', legalProcessId ?? '-', crmItemIds.join(','), clientId ?? '-'] as const,
 }
 
 export function useEvents(from?: string, to?: string) {
@@ -26,15 +26,17 @@ export function useEvents(from?: string, to?: string) {
 export function useEventsForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
+  clientId?: string | null
 }) {
   const legalProcessId = params.legalProcessId ?? null
   // Sorted so the query key is stable — the embedded crm_items array has no
   // guaranteed order, and an unstable key would thrash the cache.
   const crmItemIds = [...(params.crmItemIds ?? [])].sort()
+  const clientId = params.clientId ?? null
 
   return useQuery({
-    queryKey: eventKeys.forEntity(legalProcessId, crmItemIds),
-    queryFn: () => getEventsForEntity({ legalProcessId, crmItemIds }),
-    enabled: !!legalProcessId || crmItemIds.length > 0,
+    queryKey: eventKeys.forEntity(legalProcessId, crmItemIds, clientId),
+    queryFn: () => getEventsForEntity({ legalProcessId, crmItemIds, clientId }),
+    enabled: !!legalProcessId || crmItemIds.length > 0 || !!clientId,
   })
 }

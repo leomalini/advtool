@@ -45,11 +45,29 @@ o modelo single-tenant do produto.
 
 Após aplicar tudo, confirme em **Table Editor** que existem:
 
-`profiles`, `clients`, `client_contacts`, `client_attachments`, `crm_items`,
-`crm_item_comments`, `crm_item_column_history`, `legal_processes`,
-`legal_process_movements`, `workflows`, `workflow_columns`, `events`,
-`event_assignees`, `event_attachments`, `tasks`, `task_comments`,
-`task_checklist_items`, `activities`.
+`profiles`, `clients`, `client_contacts`, `crm_items`, `crm_item_comments`,
+`crm_item_column_history`, `legal_processes`, `legal_process_movements`,
+`legal_process_parties`, `workflows`, `workflow_columns`, `events`,
+`event_assignees`, `tasks`, `task_comments`, `task_checklist_items`,
+`financial_entries`, `documents`, `activities`.
+
+> ### ⚠️ Migration que faz DROP precisa varrer o `src/` junto
+>
+> A migration 23 unificou `client_attachments` e `event_attachments` em
+> `documents` e apagou as duas — mas cinco pontos do código continuaram
+> apontando para elas. O embed `attachments:event_attachments(*)` em
+> `EVENT_SELECT` derrubou a Agenda inteira com `PGRST200`, e o erro só apareceu
+> ao abrir a aba, porque `tsc` e o build não sabem nada sobre o schema.
+>
+> Ao remover ou renomear uma tabela, faça `grep` pelo nome dela em `src/` **e**
+> valide os `*_SELECT` contra a API real — embed inválido responde 400/PGRST200
+> antes da RLS, então dá para conferir sem sessão:
+>
+> ```bash
+> curl -s -o /dev/null -w '%{http_code}\n' \
+>   "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/events?select=*,assignees:event_assignees(*)&limit=0" \
+>   -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY"
+> ```
 
 E em **Storage**, o bucket `attachments` (privado).
 

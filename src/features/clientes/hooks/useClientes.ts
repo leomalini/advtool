@@ -4,14 +4,14 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getClients,
   getClientById,
-  getClientAttachments,
   getClientsPendencies,
+  getClientComments,
 } from '../services/clientes.service'
 
 export const clientKeys = {
   all: ['clients'] as const,
   detail: (id: string) => ['clients', id] as const,
-  attachments: (id: string) => ['client-attachments', id] as const,
+  comments: (id: string) => ['clients', 'comments', id] as const,
   pendencies: ['client-pendencies'] as const,
 }
 
@@ -30,10 +30,10 @@ export function useCliente(id: string) {
   })
 }
 
-export function useClienteAttachments(clientId: string) {
+export function useClientComments(clientId: string) {
   return useQuery({
-    queryKey: clientKeys.attachments(clientId),
-    queryFn: () => getClientAttachments(clientId),
+    queryKey: clientKeys.comments(clientId),
+    queryFn: () => getClientComments(clientId),
     enabled: !!clientId,
   })
 }

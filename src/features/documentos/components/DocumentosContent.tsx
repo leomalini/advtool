@@ -226,7 +226,7 @@ export function DocumentosContent() {
 
                     {doc.client ? (
                       <Link
-                        href={`/clientes?id=${doc.client.id}`}
+                        href={`/clientes/${doc.client.id}`}
                         className="text-xs text-muted-foreground truncate hover:text-foreground hover:underline"
                       >
                         {getClientDisplayName(
