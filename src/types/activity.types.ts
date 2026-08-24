@@ -18,6 +18,7 @@ export type ActivityType =
   // mesmo feed dos demais de propósito: quem mexeu no acesso de quem é a
   // informação mais sensível que o sistema passa a registrar.
   | 'user_invited'
+  | 'user_invite_resent'
   | 'user_role_changed'
   | 'user_deactivated'
   | 'user_reactivated'
@@ -55,6 +56,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   attachment_uploaded: 'enviou anexo para',
   financial_entry_created: 'lançou',
   user_invited: 'convidou',
+  user_invite_resent: 'reenviou o convite para',
   user_role_changed: 'alterou o perfil de',
   user_deactivated: 'desativou o acesso de',
   user_reactivated: 'reativou o acesso de',

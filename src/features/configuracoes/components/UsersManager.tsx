@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, MailCheck, ShieldOff, UserPlus, Users } from 'lucide-react'
+import { Copy, Link2, Loader2, MailCheck, ShieldOff, UserPlus, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -24,13 +26,26 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { Can } from '@/components/shared/Can'
 import { useAuth } from '@/hooks/useAuth'
 import { useUsers } from '../hooks/useUsers'
-import { useInviteUser, useUpdateUser } from '../hooks/useUserMutations'
+import { useInviteUser, useResendInvite, useUpdateUser } from '../hooks/useUserMutations'
 import { getAvatarTone, getDisplayName, getInitials, getRoleLabel } from '@/utils/profile'
 import { cn } from '@/lib/utils'
 import type { AppRole } from '@/types/permission.types'
 import type { AdminUser } from '@/types/user.types'
 
 const ROLES: AppRole[] = ['admin', 'attorney', 'paralegal', 'finance']
+
+/**
+ * Um convite que precisa ser entregue à mão. Chega de dois lugares — o convite
+ * novo e a reemissão —, daí viver aqui e não em nenhum dos dois.
+ */
+interface LinkManual {
+  email: string
+  action_link: string
+  /** Ausente quando o admin pediu o link de propósito. */
+  reason?: string
+  /** Convite pendente ou redefinição de senha de quem já entrou. */
+  tipo: 'invite' | 'recovery'
+}
 
 /** O que cada perfil significa na prática. Sem isso, "Estagiário" e
  * "Financeiro" não dizem quem enxerga o quê, e a escolha vira chute. */
@@ -43,7 +58,15 @@ const ROLE_HINTS: Record<AppRole, string> = {
 
 // ── Diálogo de convite ───────────────────────────────────────────────────────
 
-function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function InviteDialog({
+  open,
+  onClose,
+  onLink,
+}: {
+  open: boolean
+  onClose: () => void
+  onLink: (link: LinkManual) => void
+}) {
   const invite = useInviteUser()
 
   const [email, setEmail] = useState('')
@@ -65,7 +88,17 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
     invite.mutate(
       { email, full_name: fullName, role, oab_number: oab },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          // A conta nasceu de qualquer forma; o que varia é se o convite saiu
+          // por e-mail ou se o admin precisa entregá-lo.
+          if (result.action_link) {
+            onLink({
+              email,
+              action_link: result.action_link,
+              reason: result.reason,
+              tipo: 'invite',
+            })
+          }
           reset()
           onClose()
         },
@@ -158,10 +191,96 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
   )
 }
 
+// ── Link manual (quando o e-mail não sai) ────────────────────────────────────
+
+/**
+ * O link é o mesmo que iria no e-mail e vale uma vez: quem copia daqui precisa
+ * entregar à pessoa por outro canal.
+ *
+ * Dois caminhos chegam aqui, e o `reason` os separa. **Sem `reason`** o admin
+ * pediu o link de propósito — o modo de operação de quem ainda não configurou
+ * SMTP, já que o serviço de e-mail embutido do Supabase só entrega para
+ * endereços pré-autorizados da organização. **Com `reason`**, o envio foi
+ * tentado e caiu, e aí o aviso vem antes do link.
+ */
+function ManualLinkDialog({
+  result,
+  onClose,
+}: {
+  result: LinkManual | null
+  onClose: () => void
+}) {
+  const [copiado, setCopiado] = useState(false)
+
+  function handleCopy() {
+    if (!result) return
+    navigator.clipboard.writeText(result.action_link)
+    setCopiado(true)
+    toast.success('Link copiado.')
+  }
+
+  return (
+    <Dialog
+      open={result !== null}
+      onOpenChange={(v) => {
+        if (!v) {
+          setCopiado(false)
+          onClose()
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>
+            {result?.reason
+              ? 'Envie o link manualmente'
+              : result?.tipo === 'recovery'
+                ? 'Link para redefinir a senha'
+                : 'Link de convite'}
+          </DialogTitle>
+          <DialogDescription>
+            {result?.reason ? `${result.reason} ` : ''}
+            Copie o link abaixo e entregue a {result?.email} por WhatsApp ou outro canal.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-2">
+          <Input readOnly value={result?.action_link ?? ''} className="text-xs font-mono" />
+          <Button type="button" variant="outline" size="lg" onClick={handleCopy}>
+            <Copy className="h-3.5 w-3.5 mr-1.5" />
+            {copiado ? 'Copiado' : 'Copiar'}
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          O link dá acesso à conta uma única vez, para definir a senha. Trate-o como uma senha:
+          não reencaminhe para terceiros. Gerar um novo — ou reenviar o convite — invalida este.
+          {result?.tipo === 'recovery' && ' A senha atual continua valendo até a pessoa trocá-la.'}
+        </p>
+
+        <DialogFooter>
+          <Button type="button" onClick={onClose}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Linha da lista ───────────────────────────────────────────────────────────
 
-function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
+function UserRow({
+  user,
+  isSelf,
+  onLink,
+}: {
+  user: AdminUser
+  isSelf: boolean
+  onLink: (link: LinkManual) => void
+}) {
   const updateUser = useUpdateUser()
+  const resendInvite = useResendInvite()
   const [confirmandoDesativar, setConfirmandoDesativar] = useState(false)
 
   const nome = getDisplayName(user.full_name)
@@ -170,7 +289,7 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
     <>
       <div
         className={cn(
-          'grid grid-cols-[auto_1fr_180px_170px_110px] gap-4 px-5 py-3.5 items-center transition-colors hover:bg-muted/20',
+          'grid grid-cols-[auto_1fr_120px_160px_250px] gap-4 px-5 py-3.5 items-center transition-colors hover:bg-muted/20',
           !user.is_active && 'opacity-55'
         )}
       >
@@ -213,14 +332,64 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
         </Select>
 
         <div className="flex items-center justify-end gap-2">
+          {/* "Reenviar" só faz sentido enquanto o convite não foi aceito — sua
+              presença é o indicador de "pendente". */}
           {user.invite_pending && user.is_active && (
-            <span
-              title="Convite enviado, ainda não aceito"
-              className="flex items-center gap-1 text-[10px] text-warning"
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-warning hover:text-warning"
+              title="Convite ainda não aceito. Clique para reenviar por e-mail."
+              onClick={() =>
+                resendInvite.mutate(
+                  { id: user.id, canal: 'email' },
+                  { onSuccess: (result) => !result.sent && onLink({ ...result, tipo: 'invite' }) }
+                )
+              }
+              disabled={resendInvite.isPending}
             >
-              <MailCheck className="h-3 w-3" />
-              pendente
-            </span>
+              {resendInvite.isPending ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <MailCheck className="h-3 w-3 mr-1" />
+              )}
+              Reenviar
+            </Button>
+          )}
+
+          {/* "Link" vale para toda conta ativa, e não é plano B: sem SMTP, o
+              e-mail do Supabase só alcança endereços da própria organização, e
+              entregar o link por WhatsApp é o caminho normal. Para quem ainda
+              não aceitou, é o convite; para quem já entrou, uma redefinição de
+              senha. */}
+          {user.is_active && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              title={
+                user.invite_pending
+                  ? 'Gerar o link de convite para entregar por WhatsApp ou outro canal.'
+                  : 'Gerar um link de redefinição de senha para entregar à pessoa.'
+              }
+              onClick={() =>
+                resendInvite.mutate(
+                  { id: user.id, canal: 'link' },
+                  {
+                    onSuccess: (result) =>
+                      !result.sent &&
+                      onLink({
+                        ...result,
+                        tipo: user.invite_pending ? 'invite' : 'recovery',
+                      }),
+                  }
+                )
+              }
+              disabled={resendInvite.isPending}
+            >
+              <Link2 className="h-3 w-3 mr-1" />
+              Link
+            </Button>
           )}
 
           {user.is_active ? (
@@ -282,6 +451,7 @@ export function UsersManager() {
   const { user } = useAuth()
   const { data: users = [], isLoading, error } = useUsers()
   const [convidando, setConvidando] = useState(false)
+  const [linkManual, setLinkManual] = useState<LinkManual | null>(null)
 
   const ativos = users.filter((u) => u.is_active).length
 
@@ -324,7 +494,7 @@ export function UsersManager() {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
-          <div className="grid grid-cols-[auto_1fr_180px_170px_110px] gap-4 px-5 py-2.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
+          <div className="grid grid-cols-[auto_1fr_120px_160px_250px] gap-4 px-5 py-2.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
             <div className="w-9" />
             <span>Nome</span>
             <span>OAB</span>
@@ -333,13 +503,24 @@ export function UsersManager() {
           </div>
           <div className="divide-y">
             {users.map((u) => (
-              <UserRow key={u.id} user={u} isSelf={u.id === user?.id} />
+              <UserRow
+                key={u.id}
+                user={u}
+                isSelf={u.id === user?.id}
+                onLink={setLinkManual}
+              />
             ))}
           </div>
         </div>
       )}
 
-      <InviteDialog open={convidando} onClose={() => setConvidando(false)} />
+      <InviteDialog
+        open={convidando}
+        onClose={() => setConvidando(false)}
+        onLink={setLinkManual}
+      />
+
+      <ManualLinkDialog result={linkManual} onClose={() => setLinkManual(null)} />
     </div>
   )
 }

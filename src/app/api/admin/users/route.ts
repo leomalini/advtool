@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/auth/requireAdminApi'
 import { recordAdminActivity } from '@/lib/auth/recordAdminActivity'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import { buildAccessLink } from '@/lib/auth/accessLink'
 import { inviteUserSchema } from '@/schemas/user.schema'
-import type { AdminUser } from '@/types/user.types'
+import type { AdminUser, InviteUserResult } from '@/types/user.types'
 import type { AppRole } from '@/types/permission.types'
 
 /** Um escritório não passa disso. Se passar, a listagem trunca em silêncio —
@@ -91,6 +92,15 @@ export async function GET() {
  * por quem chama `/auth/v1/signup`, então lê-lo no trigger seria auto-promoção
  * a admin por HTTP (ver cabeçalho da migration 34). Aqui o valor já passou pelo
  * `requireAdminApi` e pelo Zod.
+ *
+ * ⚠️ Se o passo 1 falhar por causa do E-MAIL, cai em `generateLink`, que
+ * **também cria a conta** (está na doc do método) mas não envia nada — e a
+ * resposta traz o `action_link` para o admin entregar por WhatsApp.
+ *
+ * Isso não é um caso de borda: sem SMTP próprio, o serviço embutido do Supabase
+ * entrega só para endereços pré-autorizados da organização, então convidar um
+ * colega de fora falha **sempre**. Sem este fallback, o escritório não conseguia
+ * sequer criar a conta — a rota abortava e nenhum usuário nascia.
  */
 export async function POST(request: NextRequest) {
   const guard = await requireAdminApi()
@@ -119,24 +129,46 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient()
     const origin = request.nextUrl.origin
 
+    const redirectTo = `${origin}/api/auth/callback?next=/definir-senha`
+    const metadata = { full_name, oab_number }
+
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { full_name, oab_number },
-      redirectTo: `${origin}/api/auth/callback?next=/definir-senha`,
+      data: metadata,
+      redirectTo,
     })
 
-    if (error || !data.user) {
-      console.error('[admin/users] convite falhou:', error?.message)
+    // E-mail duplicado é o único caso que o admin resolve sozinho, e nenhum
+    // fallback ajuda: a conta já existe. Sai antes de tentar o link.
+    if (error?.message?.toLowerCase().includes('already')) {
+      return NextResponse.json({ error: 'Já existe uma conta com este e-mail.' }, { status: 409 })
+    }
 
-      // Único caso que o admin consegue resolver sozinho, então vale distinguir.
-      const jaExiste = error?.message?.toLowerCase().includes('already')
-      return NextResponse.json(
-        {
-          error: jaExiste
-            ? 'Já existe uma conta com este e-mail.'
-            : 'Não foi possível enviar o convite.',
-        },
-        { status: jaExiste ? 409 : 500 }
-      )
+    let usuario = data?.user ?? null
+    let linkManual: string | undefined
+    let motivoDaQueda: string | undefined
+
+    if (error || !usuario) {
+      console.error('[admin/users] convite por e-mail falhou:', error?.message)
+
+      const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: { data: metadata, redirectTo },
+      })
+
+      if (linkError || !link?.user) {
+        console.error('[admin/users] geração do link falhou:', linkError?.message)
+        return NextResponse.json(
+          { error: 'Não foi possível criar o convite.' },
+          { status: 500 }
+        )
+      }
+
+      usuario = link.user
+      linkManual = buildAccessLink(origin, link.properties.hashed_token, 'invite')
+      motivoDaQueda = /rate|limit|seconds/i.test(error?.message ?? '')
+        ? 'O limite de envio de e-mails foi atingido.'
+        : 'O e-mail não pôde ser enviado.'
     }
 
     // Passo 2. O trigger já criou o profile; aqui ele recebe o perfil real e é
@@ -144,7 +176,7 @@ export async function POST(request: NextRequest) {
     const { error: profileError } = await admin
       .from('profiles')
       .update({ full_name, role, oab_number, is_active: true })
-      .eq('id', data.user.id)
+      .eq('id', usuario.id)
 
     if (profileError) {
       // A conta existe mas ficou inativa como `attorney`. Melhor dizer isso do
@@ -161,13 +193,18 @@ export async function POST(request: NextRequest) {
 
     await recordAdminActivity(admin, {
       type: 'user_invited',
-      targetId: data.user.id,
+      targetId: usuario.id,
       targetName: full_name,
       actorId: guard.userId,
-      metadata: { email, role },
+      metadata: { email, role, via: linkManual ? 'link' : 'email' },
     })
 
-    return NextResponse.json({ id: data.user.id }, { status: 201 })
+    const result: InviteUserResult = {
+      id: usuario.id,
+      action_link: linkManual,
+      reason: motivoDaQueda,
+    }
+    return NextResponse.json(result, { status: 201 })
   } catch (err) {
     console.error('[admin/users] POST:', err)
     return NextResponse.json({ error: 'Não foi possível enviar o convite.' }, { status: 500 })

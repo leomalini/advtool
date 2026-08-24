@@ -17,6 +17,7 @@ import {
   CalendarPlus,
   Scale,
   UserPlus,
+  MailCheck,
   UserCog,
   PlusCircle,
   ShieldCheck,
@@ -46,6 +47,7 @@ const TIPO_CONFIG: Record<
   // Administração de acesso. Tom de alerta (warning/destructive) de propósito:
   // no meio de casos e tarefas, uma mudança de permissão precisa saltar.
   user_invited: { icon: UserPlus, color: 'text-info', bg: 'bg-info/12', label: 'Acesso' },
+  user_invite_resent: { icon: MailCheck, color: 'text-info', bg: 'bg-info/12', label: 'Acesso' },
   user_role_changed: { icon: ShieldCheck, color: 'text-warning', bg: 'bg-warning/12', label: 'Acesso' },
   user_deactivated: { icon: ShieldOff, color: 'text-destructive', bg: 'bg-destructive/12', label: 'Acesso' },
   user_reactivated: { icon: ShieldCheck, color: 'text-success', bg: 'bg-success/12', label: 'Acesso' },

@@ -4,7 +4,11 @@ import type { ActivityType } from '@/types/activity.types'
 interface RecordAdminActivityInput {
   type: Extract<
     ActivityType,
-    'user_invited' | 'user_role_changed' | 'user_deactivated' | 'user_reactivated'
+    | 'user_invited'
+    | 'user_invite_resent'
+    | 'user_role_changed'
+    | 'user_deactivated'
+    | 'user_reactivated'
   >
   /** Quem sofreu a ação. */
   targetId: string

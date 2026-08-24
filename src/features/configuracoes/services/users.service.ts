@@ -1,4 +1,9 @@
-import type { AdminUser } from '@/types/user.types'
+import type {
+  AdminUser,
+  InviteUserResult,
+  ResendChannel,
+  ResendInviteResult,
+} from '@/types/user.types'
 import type { InviteUserInput, UpdateUserInput } from '@/schemas/user.schema'
 
 /**
@@ -39,7 +44,11 @@ export async function getUsers(): Promise<AdminUser[]> {
   return body.users
 }
 
-export async function inviteUser(input: InviteUserInput): Promise<void> {
+/**
+ * Devolve o resultado, e não `void`, porque a conta pode nascer sem que o
+ * e-mail saia: nesse caso vem um `action_link` para o admin entregar à mão.
+ */
+export async function inviteUser(input: InviteUserInput): Promise<InviteUserResult> {
   const response = await fetch(BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -47,6 +56,8 @@ export async function inviteUser(input: InviteUserInput): Promise<void> {
   })
 
   if (!response.ok) await throwApiError(response)
+
+  return (await response.json()) as InviteUserResult
 }
 
 export async function updateUser(id: string, patch: UpdateUserInput): Promise<void> {
@@ -57,4 +68,21 @@ export async function updateUser(id: string, patch: UpdateUserInput): Promise<vo
   })
 
   if (!response.ok) await throwApiError(response)
+}
+
+/**
+ * Reemite o convite de quem ainda não o aceitou.
+ *
+ * `canal: 'link'` pula o e-mail e devolve o link direto — é o caminho de quem
+ * ainda não configurou SMTP. Devolve o resultado em vez de `void` porque o
+ * desfecho muda o que a tela faz: com link, ela abre o diálogo de cópia.
+ */
+export async function resendInvite(
+  id: string,
+  canal: ResendChannel = 'email'
+): Promise<ResendInviteResult> {
+  const response = await fetch(`${BASE}/${id}/resend?via=${canal}`, { method: 'POST' })
+  if (!response.ok) await throwApiError(response)
+
+  return (await response.json()) as ResendInviteResult
 }
