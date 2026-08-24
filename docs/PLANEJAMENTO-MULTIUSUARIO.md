@@ -1,6 +1,6 @@
 # Planejamento — Múltiplos Usuários e Níveis de Acesso
 
-> **Status**: Fases 1 a 5 implementadas em código. Pendências que só o operador resolve:
+> **Status**: Fases 1 a 5 implementadas em código, incluindo o reenvio de convite. Pendências que só o operador resolve:
 > aplicar as migrations 34–39 ao banco do `.env`, configurar `SUPABASE_SERVICE_ROLE_KEY`,
 > ajustar o template de convite e a redirect URL no painel do Supabase, e fazer a passada
 > final com uma conta de cada perfil.
@@ -160,6 +160,14 @@ create policy "rbac_delete" on public.financial_entries
 Quatro policies por tabela, uma por comando — `for all` não permite distinguir quem lê de
 quem apaga, que é exatamente a granularidade pedida.
 
+> **Os parênteses são dois, e não é estilo.** Em `USING ( expressão )` o par externo
+> pertence à gramática do `create policy`; o interno é o da subquery escalar, que é o que
+> força o InitPlan. Com um nível só — `using (select public.can(...))` — o parser encontra
+> a palavra-chave `select` onde espera uma expressão e devolve
+> `syntax error at or near "select"` (42601). Foi exatamente assim que a primeira aplicação
+> da migration 35 falhou: o `apply_rbac_policies` montava `using %s` com o `%s` já
+> parentizado, e as ~80 policies saíam inválidas. Hoje o helper usa `using (%s)`.
+
 ### 4.3 Camada 2 — onde fica o guard de rota
 
 A doc do Next 16 (`node_modules/next/dist/docs/01-app/01-getting-started/16-proxy.md`) é
@@ -167,7 +175,7 @@ explícita: *"Proxy is not intended for slow data fetching (...) should not be u
 full session management or authorization solution"* — serve para **checagem otimista**.
 Logo:
 
-- **`src/proxy.ts`** — **inalterado**: continua só redirecionando quem não tem sessão. O plano original previa um mapa `rota → recurso` aqui, mas ele não é implementável: com o perfil vivendo no banco (opção A do §4.1) e não num claim do JWT, o proxy não tem como saber o perfil sem um roundtrip por navegação — exatamente o que a doc do Next desaconselha. O mapa só faria sentido junto com a opção (B).
+- **`src/proxy.ts`** — continua só redirecionando quem não tem sessão, mas `updateSession()` ganhou duas exceções necessárias. **`/api/*` fica inteiramente fora do gate**: cada Route Handler já faz a própria autorização (`requireAdminApi()`, HMAC do webhook, token do link), e gatear por sessão ali devolvia um 307 para `/login` em vez de executar a rota — o que impedia `/api/auth/callback` de trocar o token do convite por sessão (quem clica no link, por definição, ainda não tem sessão) e derrubava em silêncio o webhook do BuscaProcessos, que é servidor-para-servidor. E `/recuperar-senha` entrou na lista de páginas públicas, pelo mesmo motivo. O plano original previa um mapa `rota → recurso` aqui, mas ele não é implementável: com o perfil vivendo no banco (opção A do §4.1) e não num claim do JWT, o proxy não tem como saber o perfil sem um roundtrip por navegação — exatamente o que a doc do Next desaconselha. O mapa só faria sentido junto com a opção (B).
 - **`src/app/(app)/<modulo>/page.tsx`** — cada página (já é Server Component fininho envolvendo o `*Content`) chama `await requirePermission('financeiro')`, que pergunta ao banco pela mesma função `can()` das policies e redireciona. É a única checagem de rota, e é confiável.
 - **`src/app/(auth)/sem-acesso/page.tsx`** — destino de quem tem sessão mas nenhuma permissão (conta desativada). Existe para quebrar o loop: sem ele, o redirect para `/dashboard` dispararia o `requirePermission` de lá, que redirecionaria de volta.
 
@@ -278,18 +286,20 @@ Substitui o mock `ADVOGADOS` na aba "Usuários" de Configurações.
 - [x] `src/app/(auth)/definir-senha/` + `next` no `/api/auth/callback` (só caminhos relativos, senão o callback vira open redirect).
 - [x] `UsersManager.tsx` + `useUsers`/`useUserMutations` — listar, convidar, trocar perfil, ativar/desativar.
 - [x] `.env.example` documenta `SUPABASE_SERVICE_ROLE_KEY` (nome, sem valor).
-- [ ] **Configurar no painel do Supabase**: template de e-mail de convite em pt-BR e `/api/auth/callback` na lista de redirect URLs permitidas. Só você pode fazer.
-- [ ] **Reenviar convite — não implementado.** O comportamento de `inviteUserByEmail` sobre uma conta já convidada e não confirmada não está claro na doc, e não dá para testar daqui sem disparar e-mail real. A tela marca o convite como `pendente`; reenviar, por ora, é pelo painel do Supabase.
+- [x] **Recuperação de senha** — `src/app/(auth)/recuperar-senha/` + link na tela de login. Não existia; sem ela, uma conta cujo convite expirou ficava sem nenhuma saída dentro do app.
+- [x] **Onboarding sem e-mail** — convidar e reemitir devolvem um `action_link` que o admin copia e entrega por WhatsApp. Ver §9, modo A.
+- [ ] **E-mail de verdade** — SMTP próprio + templates. Ver §9, modo B. Só o operador faz.
+- [x] **Reenviar convite** — `src/app/api/admin/users/[id]/resend/route.ts`. A dúvida que travava isso (o que `inviteUserByEmail` faz sobre uma conta já convidada) deixou de importar: a rota aceita `?via=email` ou `?via=link`. No primeiro tenta o e-mail e, **se ele falhar por qualquer motivo**, cai em `generateLink({ type: 'invite' })`; no segundo vai direto ao link. O que separa os dois desfechos na resposta é o `reason`: presente quando o envio caiu, ausente quando o admin pediu o link de propósito. Os dois caminhos são exclusivos de propósito — cada emissão invalida o token anterior, então gerar o link após um envio bem-sucedido mataria o link que acabou de sair por e-mail. O fallback não é teórico: o SMTP padrão do Supabase tem limite de envio baixo, e é justamente onboarding de várias pessoas no mesmo dia que o estoura. Na tela, o selo "pendente" virou dois botões — **Reenviar** e **Link** — que só existem enquanto o convite não foi aceito, então a presença deles já é o indicador de estado. Três estados recusam com 409: convite já aceito, conta sem e-mail e conta desativada — reenviar para uma conta desativada devolveria o acesso que um admin cortou.
 
 **Bug pré-existente corrigido junto**: o webhook do BuscaProcessos passou a usar a service_role. Com o client de sessão ele chegava como `anon` e nunca gravou uma movimentação sequer — falha silenciosa, porque o erro do `insert` era ignorado e o `select` vazio saía por `case_not_found`. A autorização dele é o HMAC, não um perfil.
 
-**Verificação**: `pnpm build` passa; `grep -r "service_role" .next/static/` vem vazio (risco #3). O fluxo de convite ponta a ponta depende do template e da redirect URL acima, e de um e-mail real — não foi exercitado.
+**Verificação**: `pnpm build` passa; `grep -r "service_role" .next/static/` vem vazio (risco #3). O convite pelo **link manual** (§9, modo A) não depende de nada externo. O percurso **por e-mail** depende dos templates e das redirect URLs do §9, modo B, e de um envio real — não foi exercitado.
 
 `is_active = false` é barrado por `public.can()`, que filtra por `is_active` — não precisou de checagem separada no `proxy.ts`. A pessoa cai em `/sem-acesso`, que explica que a conta foi desativada.
 
 ### Fase 5 — Auditoria, limpeza e verificação final (1,5 dia)
 
-- [x] Auditoria das ações de administração no feed: `20260101000039_activities_user_entity.sql` (o CHECK fechado de `entity_type` passa a aceitar `'user'`) + `src/lib/auth/recordAdminActivity.ts`, chamado pelas duas rotas. Best-effort, como todo `recordActivity`. `activities` é append-only pela migration 37 — sem policy de update nem delete —, que é o que torna essas linhas utilizáveis como auditoria.
+- [x] Auditoria das ações de administração no feed: `20260101000039_activities_user_entity.sql` (o CHECK fechado de `entity_type` passa a aceitar `'user'`) + `src/lib/auth/recordAdminActivity.ts`, chamado pelas três rotas (o reenvio registra `user_invite_resent`, com `via: 'email' | 'link'` no metadata — que caminho foi usado é o que distingue "o convite saiu" de "o admin repassou na mão"). `activities.type` é text livre, então o tipo novo não pediu migration. Best-effort, como todo `recordActivity`. `activities` é append-only pela migration 37 — sem policy de update nem delete —, que é o que torna essas linhas utilizáveis como auditoria.
 - [x] `supabase/tests/rls_matrix.sql` — assume cada um dos quatro perfis dentro de uma transação com `rollback` e conta as linhas visíveis por tabela.
 - [x] Mock `ADVOGADOS` (e a interface `Advogado`) removidos de `src/data/mock.ts`.
 - [x] `docs/ROADMAP-MODULOS.md` (princípio transversal #5 e o cabeçalho "não mexe em") e `supabase/README.md` atualizados com o padrão `apply_rbac_policies`.
@@ -347,7 +357,126 @@ correr em paralelo à 3 e a Fase 4 depende só da 1.
 
 ---
 
-## 9. Fora de escopo (decisão explícita)
+## 9. Configuração de operador — entrega do convite
+
+Convite e recuperação de senha são a única parte do sistema que depende de
+infraestrutura fora do repositório. Há **dois modos**, e o A funciona hoje sem
+configurar nada.
+
+### Modo A — sem e-mail (link manual)
+
+O serviço de e-mail embutido do Supabase entrega **só para endereços
+pré-autorizados** (membros da organização no Supabase) e faz **2 mensagens por
+hora**. Convidar um colega de fora por ele não falha com barulho: ou dá erro, ou
+"envia" e nada chega.
+
+Por isso o convite não depende dele. Quando `inviteUserByEmail` falha, a rota
+cai em `generateLink({ type: 'invite' })`, que **também cria a conta** e devolve
+o link sem enviar nada. Na tela de Usuários, o botão **Link** faz o mesmo sob
+demanda, a qualquer momento, para quem ainda não aceitou.
+
+O fluxo, então: convidar → copiar o link → mandar no WhatsApp da pessoa → ela
+define a senha. Zero infraestrutura de e-mail. Para uma equipe de escritório,
+esse canal é honestamente mais confiável que e-mail.
+
+**Recuperação de senha também depende disso.** `resetPasswordForEmail` usa o
+mesmo serviço embutido, então no modo A a tela "Esqueci minha senha" não entrega
+nada. A saída é o mesmo botão **Link**: para uma conta que já aceitou o convite
+ele emite um link de `recovery`, que leva à mesma tela de definir senha. Emitir
+não invalida a senha atual da pessoa — só abre a possibilidade de trocá-la.
+
+O link é o mesmo token que iria no e-mail: vale **uma vez**, e reemitir invalida
+o anterior. Trate-o como senha.
+
+> ⚠️ **Nunca use o `action_link` que o `generateLink` devolve.** A doc do tipo
+> descreve o formato dele: `auth/v1/verify?type=…&token=…&redirect_to=…` — ou
+> seja, ele passa pelo `/auth/v1/verify` do GoTrue, que redireciona com os
+> tokens no **fragmento** da URL, invisível para o servidor. É a mesma armadilha
+> do `{{ .ConfirmationURL }}` nos templates. O link tem que ser montado a partir
+> de `properties.hashed_token`, apontando direto para `/api/auth/callback` — é o
+> que `src/lib/auth/accessLink.ts` faz, e por isso as duas rotas passam por ele.
+
+### Modo B — SMTP próprio
+
+Necessário quando o app passar a falar com **cliente** (aviso de prazo,
+cobrança). Para acesso de equipe, o modo A basta.
+
+**1. Domínio.** Qualquer domínio cujo DNS você controle — não precisa de caixa
+postal. Para escritório de advocacia, `.adv.br` no Registro.br (exige inscrição
+ativa na OAB, menos de R$ 40/ano); alternativas são `.com.br` (CPF ou CNPJ) ou
+um `.com` no Cloudflare Registrar.
+
+**2. Resend.** Cadastre um **subdomínio** (`envio.seudominio.adv.br`), não o
+domínio raiz — é a recomendação do próprio Resend, para isolar a reputação de
+envio. Três registros no DNS:
+
+| Tipo | Nome | Para quê |
+|---|---|---|
+| MX (prio. 10) | `send` | saída pelos servidores do Resend |
+| TXT | `send` | SPF |
+| TXT | `resend._domainkey` | DKIM |
+
+Informe só a parte do subdomínio (`send`, não `send.seudominio.adv.br`). No
+Cloudflare, o DKIM precisa ficar como **DNS only** — proxy ligado quebra a
+verificação. DMARC é opcional para verificar, mas é o que mais ajuda a cair na
+caixa de entrada do Gmail e do Outlook.
+
+**3. Supabase → Project Settings → Authentication → SMTP Settings:**
+
+```
+smtp_host        smtp.resend.com
+smtp_port        587
+smtp_user        resend
+smtp_pass        <API key do Resend>
+smtp_admin_email nao-responda@envio.seudominio.adv.br
+smtp_sender_name <nome do escritório>
+```
+
+O remetente **tem que pertencer ao subdomínio verificado**. Verificar
+`envio.seudominio.adv.br` e configurar remetente em `@seudominio.adv.br` (sem o
+`envio.`) falha — é o erro mais comum aqui.
+
+A API key é segredo e vive **só no painel do Supabase**: quem envia o e-mail é o
+Supabase, não a nossa aplicação, então ela não entra no `.env` nem no repo.
+
+**4. Rate limit.** Com SMTP próprio o Supabase impõe **30 mensagens/hora** por
+padrão. Ajuste em Authentication → Rate Limits, senão o fallback do link manual
+dispara sem necessidade.
+
+**5. Templates** (Authentication → Emails). **Não é cosmético — o e-mail não
+funciona sem isto.** `inviteUserByEmail` **não suporta PKCE** (está na doc do
+método): sem PKCE, o `{{ .ConfirmationURL }}` padrão devolve os tokens no
+**fragmento** da URL (`#access_token=…`), que nunca chega ao servidor. O Route
+Handler não vê nada e a pessoa cai no login sem sessão — exatamente o sintoma de
+"o e-mail chega mas não dá para definir a senha".
+
+**Invite user**:
+```html
+<p>Você foi convidado para o AdvTool. Clique abaixo para definir sua senha:</p>
+<p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=invite">Definir minha senha</a></p>
+```
+
+**Reset password**:
+```html
+<p>Clique abaixo para escolher uma nova senha:</p>
+<p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=recovery">Escolher nova senha</a></p>
+```
+
+`{{ .RedirectTo }}` já vem como `<origem>/api/auth/callback?next=/definir-senha`,
+montado pelo código com a origem certa — daí o `&` e não `?`. Isso faz o mesmo
+template servir dev e produção. Em troca, as duas origens precisam estar em
+**Authentication → URL Configuration → Redirect URLs**:
+
+```
+http://localhost:3000/api/auth/callback
+https://<dominio-de-producao>/api/auth/callback
+```
+
+Se `{{ .RedirectTo }}` vier vazio no e-mail, é porque a origem não está nessa lista.
+
+---
+
+## 10. Fora de escopo (decisão explícita)
 
 - **Multi-tenant / multi-escritório** — segue valendo a decisão de `docs/PLANEJAMENTO.md`. Como este plano concentra toda a autorização em `can()` e nas policies padronizadas, um eventual `org_id` no futuro vira uma condição a mais nas mesmas quatro policies por tabela, não uma reescrita.
 - **Escopo por dono do registro** ("cada advogado só vê o que é seu") — decisão 2 deste documento. As colunas `assigned_to`/`created_by` já existem, então se a regra mudar é uma cláusula adicional nas policies de `select`, não um schema novo.
