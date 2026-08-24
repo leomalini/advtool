@@ -34,6 +34,7 @@ import { formatPrazo, formatRelativeDate } from '../utils/prazo'
 import type { CrmItemWithRelations } from '@/types/crmItem.types'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { Workflow } from '@/types/workflow.types'
+import { Can } from '@/components/shared/Can'
 
 const CHECKBOX_COL_WIDTH = 38
 const MENU_COL_WIDTH = 38
@@ -416,9 +417,11 @@ export function CrmTableView({ workflow, cases, onRowClick }: CrmTableViewProps)
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => onRowClick(caso)}>Abrir caso</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(caso.id)}>
-                      Excluir
-                    </DropdownMenuItem>
+                    <Can resource="crm" action="delete">
+                      <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(caso.id)}>
+                        Excluir
+                      </DropdownMenuItem>
+                    </Can>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

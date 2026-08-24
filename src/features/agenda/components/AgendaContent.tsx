@@ -34,6 +34,7 @@ import { EventDetailModal } from './EventDetailModal'
 import { MonthGrid } from './MonthGrid'
 import { TimeGrid } from './TimeGrid'
 import { localDayKey } from '../utils/datetime'
+import { Can } from '@/components/shared/Can'
 
 type CalendarView = 'month' | 'week' | 'day'
 
@@ -246,10 +247,12 @@ export function AgendaContent() {
             ))}
           </div>
 
-          <Button size="sm" onClick={handleNovoEventoButton}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Novo Evento
-          </Button>
+          <Can resource="agenda" action="create">
+            <Button size="sm" onClick={handleNovoEventoButton}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Novo Evento
+            </Button>
+          </Can>
         </div>
       </div>
 

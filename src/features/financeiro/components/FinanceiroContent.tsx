@@ -52,6 +52,7 @@ import {
   monthRange,
   type FinancialFilters,
 } from '../utils/filterFinancialEntries'
+import { Can } from '@/components/shared/Can'
 
 const chartConfig = {
   receita: { label: 'Receitas', color: 'var(--success)' },
@@ -154,10 +155,12 @@ export function FinanceiroContent() {
             Honorários, custas e despesas do escritório
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Novo Lançamento
-        </Button>
+        <Can resource="financeiro" action="create">
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Novo Lançamento
+          </Button>
+        </Can>
       </div>
 
       {/* ── Cards de resumo ── */}

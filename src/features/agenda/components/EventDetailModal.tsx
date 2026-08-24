@@ -33,6 +33,7 @@ import { useDeleteEvent, useUpdateEvent } from "../hooks/useEventMutations";
 import { EventForm } from "./EventForm";
 import { eventToFormValues } from "../services/events.service";
 import type { EventFormInput } from "@/schemas/event.schema";
+import { Can } from '@/components/shared/Can'
 
 interface EventDetailModalProps {
   event: CalendarEvent | null;
@@ -287,15 +288,17 @@ export function EventDetailModal({
 
             {/* Footer */}
             <div className="shrink-0 border-t px-6 py-3 flex items-center justify-between bg-muted/10">
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleteEvent.isPending}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-destructive hover:bg-destructive/8 transition-colors disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Excluir
-              </button>
+              <Can resource="agenda" action="delete" fallback={<span />}>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleteEvent.isPending}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-destructive hover:bg-destructive/8 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Excluir
+                </button>
+              </Can>
               <button
                 type="button"
                 onClick={() => setEditing(true)}

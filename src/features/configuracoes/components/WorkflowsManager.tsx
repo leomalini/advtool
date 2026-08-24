@@ -45,6 +45,7 @@ import {
   countCasesInColumn,
 } from "@/features/crm/services/workflows.service";
 import type { Workflow, WorkflowColumn } from "@/types/workflow.types";
+import { Can } from '@/components/shared/Can'
 
 const DESC_MAX_LENGTH = 60;
 
@@ -473,10 +474,12 @@ export function WorkflowsManager() {
             Configure os fluxos de trabalho do escritório
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Novo Workflow
-        </Button>
+        <Can resource="configuracoes" action="manage">
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Novo Workflow
+          </Button>
+        </Can>
       </div>
 
       <div className="space-y-3">

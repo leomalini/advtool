@@ -35,6 +35,7 @@ import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import type { Workflow } from '@/types/workflow.types'
+import { Can } from '@/components/shared/Can'
 
 const CHECKBOX_COL_WIDTH = 38
 const MENU_COL_WIDTH = 38
@@ -452,9 +453,11 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => onRowClick(processo)}>Abrir processo</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(processo.id)}>
-                      Excluir
-                    </DropdownMenuItem>
+                    <Can resource="processos" action="delete">
+                      <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(processo.id)}>
+                        Excluir
+                      </DropdownMenuItem>
+                    </Can>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

@@ -16,6 +16,7 @@ import { ETIQUETAS } from '@/data/mock'
 import type { EtiquetaId } from '@/data/mock'
 import { useProfiles } from '@/hooks/useProfiles'
 import { useWorkflows } from '../hooks/useWorkflows'
+import { Can } from '@/components/shared/Can'
 
 interface CrmBulkActionBarProps {
   count: number
@@ -129,13 +130,15 @@ export function CrmBulkActionBar({
         </DropdownMenu>
       )}
 
-      <button
-        onClick={onDelete}
-        className="ml-auto flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-destructive/30 text-[11.5px] font-medium text-destructive hover:bg-destructive/10 transition-colors"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-        Excluir
-      </button>
+      <Can resource="crm" action="delete">
+        <button
+          onClick={onDelete}
+          className="ml-auto flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-destructive/30 text-[11.5px] font-medium text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Excluir
+        </button>
+      </Can>
     </div>
   )
 }

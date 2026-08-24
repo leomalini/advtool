@@ -36,6 +36,7 @@ import { RECURRENCE_TYPE_LABELS, resolveEventType } from "@/types/event.types";
 import { EventTypeSelect } from "./EventTypeSelect";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { Profile } from "@/types/common.types";
+import { getRoleLabel } from "@/utils/profile";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfiles } from "@/hooks/useProfiles";
 import { ClienteCombobox } from "@/features/clientes/components/ClienteCombobox";
@@ -661,8 +662,8 @@ function AssigneeMultiSelect({
                   {profile.full_name}
                 </span>
                 {/* Role badge */}
-                <span className="text-[10px] text-muted-foreground/50 capitalize">
-                  {profile.role === "admin" ? "Admin" : "Advogado"}
+                <span className="text-[10px] text-muted-foreground/50">
+                  {getRoleLabel(profile.role)}
                 </span>
               </button>
             );

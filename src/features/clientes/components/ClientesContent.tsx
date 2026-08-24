@@ -22,6 +22,7 @@ import { useCreateCliente, useUpdateCliente, useDeleteCliente } from '../hooks/u
 import type { ClientWithRelations, LegalArea } from '@/types/cliente.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import { getClientDisplayName, getClientDocument } from '@/types/cliente.types'
+import { Can } from '@/components/shared/Can'
 
 const AREA_FILTRO_ITEMS: { id: LegalArea | 'todas'; label: string }[] = [
   { id: 'todas', label: 'Todos' },
@@ -221,15 +222,17 @@ function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: Cl
           >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0 hover:text-destructive"
-            onClick={() => onDelete(cliente)}
-            title="Remover"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <Can resource="clientes" action="delete">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 hover:text-destructive"
+              onClick={() => onDelete(cliente)}
+              title="Remover"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </Can>
           <Button
             size="sm"
             variant="ghost"
@@ -339,10 +342,12 @@ export function ClientesContent() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            Novo Cliente
-          </Button>
+          <Can resource="clientes" action="create">
+            <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Novo Cliente
+            </Button>
+          </Can>
         </div>
       </div>
 
