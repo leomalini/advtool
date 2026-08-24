@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,7 +48,15 @@ export function LoginForm() {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Senha</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password">Senha</Label>
+          <Link
+            href="/recuperar-senha"
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Esqueci minha senha
+          </Link>
+        </div>
         <Input
           id="password"
           type="password"
