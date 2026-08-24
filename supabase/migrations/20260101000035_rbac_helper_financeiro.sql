@@ -87,9 +87,15 @@ begin
       );
     end if;
 
+    -- ⚠️ Os parênteses ao redor de %s são da GRAMÁTICA do create policy
+    -- (`USING ( expressão )`), não da subquery. Como `v_expr` já traz os seus
+    -- próprios — que são o que força o InitPlan —, o resultado tem dois níveis:
+    -- `using ((select public.can(...)))`. Com um só, o parser encontra a
+    -- palavra-chave `select` onde espera uma expressão e devolve
+    -- "syntax error at or near select".
     if v_cmd = 'insert' then
       execute format(
-        'create policy %I on public.%I for insert with check %s',
+        'create policy %I on public.%I for insert with check (%s)',
         v_name, p_table, v_expr
       );
     elsif v_cmd = 'update' then
@@ -97,12 +103,12 @@ begin
       -- resultado. Sem os dois, dá para editar uma linha para um estado que
       -- não se poderia ter criado.
       execute format(
-        'create policy %I on public.%I for update using %s with check %s',
+        'create policy %I on public.%I for update using (%s) with check (%s)',
         v_name, p_table, v_expr, v_expr
       );
     else
       execute format(
-        'create policy %I on public.%I for %s using %s',
+        'create policy %I on public.%I for %s using (%s)',
         v_name, p_table, v_cmd, v_expr
       );
     end if;
