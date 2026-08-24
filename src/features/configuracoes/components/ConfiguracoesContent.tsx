@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
+import { useMounted } from '@/hooks/useMounted'
 import {
   Users,
   Scale,
@@ -365,6 +366,17 @@ function TabEtiquetas() {
 function TabGeral() {
   const { theme, setTheme } = useTheme()
 
+  // O `useTheme` lê o `localStorage` já no inicializador do `useState`, então o
+  // primeiro render do cliente conhece o tema salvo enquanto o servidor só
+  // conhece o `defaultTheme` ("dark"). Marcar o card ativo a partir daí gera
+  // HTML diferente dos dois lados — é a origem do "Hydration failed".
+  //
+  // Até montar, nenhum card fica ativo: servidor e primeiro render do cliente
+  // concordam, e a marcação correta entra no render seguinte. O `Header` já
+  // resolvia o toggle de tema assim; agora os dois usam o mesmo hook.
+  const mounted = useMounted()
+  const temaAtivo = mounted ? theme : undefined
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div>
@@ -388,7 +400,7 @@ function TabGeral() {
               <ThemeCard
                 key={option.value}
                 option={option}
-                isActive={theme === option.value}
+                isActive={temaAtivo === option.value}
                 onClick={() => setTheme(option.value)}
               />
             ))}

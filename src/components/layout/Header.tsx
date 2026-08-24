@@ -2,17 +2,8 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import { useEffect, useState, useSyncExternalStore } from 'react'
-
-const emptySubscribe = () => () => {}
-
-function useMounted() {
-  return useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false
-  )
-}
+import { useEffect, useState } from 'react'
+import { useMounted } from '@/hooks/useMounted'
 import {
   Sun,
   Moon,
