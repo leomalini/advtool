@@ -15,6 +15,7 @@ import { TarefaFilterBar } from './TarefaFilterBar'
 import { filterTasks, emptyTaskFilters, type TaskFilters } from '../utils/filterTasks'
 import type { Task, TaskStatus } from '@/types/task.types'
 import type { CreateTaskInput } from '@/schemas/task.schema'
+import { Can } from '@/components/shared/Can'
 
 export function TarefasContent() {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -63,10 +64,12 @@ export function TarefasContent() {
     <div className="space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Gerencie as tarefas do escritório</p>
-        <Button size="sm" onClick={() => handleAddTask('todo')}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Nova Tarefa
-        </Button>
+        <Can resource="tarefas" action="create">
+          <Button size="sm" onClick={() => handleAddTask('todo')}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Nova Tarefa
+          </Button>
+        </Can>
       </div>
 
       {tasks && tasks.length > 0 && (
@@ -83,10 +86,12 @@ export function TarefasContent() {
           title="Nenhuma tarefa ainda"
           description='Clique em "Nova Tarefa" para começar.'
           action={
-            <Button size="sm" onClick={() => handleAddTask('todo')}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Nova Tarefa
-            </Button>
+            <Can resource="tarefas" action="create">
+              <Button size="sm" onClick={() => handleAddTask('todo')}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Nova Tarefa
+              </Button>
+            </Can>
           }
         />
       ) : (

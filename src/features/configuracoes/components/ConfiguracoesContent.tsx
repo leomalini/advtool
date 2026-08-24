@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
+import { useMounted } from '@/hooks/useMounted'
 import {
   Users,
   Scale,
@@ -10,7 +11,6 @@ import {
   Settings,
   Plus,
   Pencil,
-  UserPlus,
   Building2,
   Upload,
   Save,
@@ -25,11 +25,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ADVOGADOS, AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { WorkflowsManager } from './WorkflowsManager'
 import { EventTypesManager } from './EventTypesManager'
+import { UsersManager } from './UsersManager'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
+import { Can } from '@/components/shared/Can'
+import { usePermissions } from '@/hooks/usePermissions'
 
 // ── Theme Preview Card ─────────────────────────────────────────
 
@@ -214,86 +217,6 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'tipos-evento', label: 'Tipos de Evento', icon: CalendarDays },
 ]
 
-// ── Aba Usuários ───────────────────────────────────────────────
-
-function TabUsuarios() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Usuários do Escritório</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {ADVOGADOS.length} usuário{ADVOGADOS.length !== 1 ? 's' : ''} cadastrados
-          </p>
-        </div>
-        <Button size="sm">
-          <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-          Convidar Usuário
-        </Button>
-      </div>
-
-      <div className="rounded-xl border overflow-hidden">
-        <div className="grid grid-cols-[auto_1fr_200px_160px_100px] gap-4 px-5 py-2.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
-          <div className="w-9" />
-          <span>Nome</span>
-          <span>OAB</span>
-          <span>Perfil</span>
-          <span />
-        </div>
-        <div className="divide-y">
-          {ADVOGADOS.map((adv) => (
-            <div
-              key={adv.id}
-              className="grid grid-cols-[auto_1fr_200px_160px_100px] gap-4 px-5 py-4 items-center hover:bg-muted/20 transition-colors"
-            >
-              {/* Avatar */}
-              <div
-                className={cn(
-                  'h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold',
-                  adv.cor,
-                )}
-              >
-                {adv.iniciais}
-              </div>
-
-              {/* Nome + email */}
-              <div>
-                <p className="text-sm font-medium">{adv.nome}</p>
-                <p className="text-xs text-muted-foreground">{adv.email}</p>
-              </div>
-
-              {/* OAB */}
-              <p className="text-sm text-muted-foreground font-mono">{adv.oab}</p>
-
-              {/* Perfil */}
-              <span
-                className={cn(
-                  'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border',
-                  adv.id === 'adv-1'
-                    ? 'bg-chart-2/12 text-chart-2 border-chart-2/25'
-                    : 'bg-info/12 text-info border-info/25',
-                )}
-              >
-                {adv.id === 'adv-1' ? 'Admin' : 'Advogado'}
-              </span>
-
-              {/* Ação */}
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Aba Áreas Jurídicas ────────────────────────────────────────
 
 function TabAreas() {
@@ -314,10 +237,12 @@ function TabAreas() {
             Configure as áreas de atuação do escritório
           </p>
         </div>
-        <Button size="sm">
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Nova Área
-        </Button>
+        <Can resource="configuracoes" action="manage">
+          <Button size="sm">
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Nova Área
+          </Button>
+        </Can>
       </div>
 
       <div className="rounded-xl border overflow-hidden">
@@ -390,10 +315,12 @@ function TabEtiquetas() {
             Organize casos e tarefas com etiquetas personalizadas
           </p>
         </div>
-        <Button size="sm">
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Nova Etiqueta
-        </Button>
+        <Can resource="configuracoes" action="manage">
+          <Button size="sm">
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Nova Etiqueta
+          </Button>
+        </Can>
       </div>
 
       <div className="rounded-xl border overflow-hidden">
@@ -439,6 +366,17 @@ function TabEtiquetas() {
 function TabGeral() {
   const { theme, setTheme } = useTheme()
 
+  // O `useTheme` lê o `localStorage` já no inicializador do `useState`, então o
+  // primeiro render do cliente conhece o tema salvo enquanto o servidor só
+  // conhece o `defaultTheme` ("dark"). Marcar o card ativo a partir daí gera
+  // HTML diferente dos dois lados — é a origem do "Hydration failed".
+  //
+  // Até montar, nenhum card fica ativo: servidor e primeiro render do cliente
+  // concordam, e a marcação correta entra no render seguinte. O `Header` já
+  // resolvia o toggle de tema assim; agora os dois usam o mesmo hook.
+  const mounted = useMounted()
+  const temaAtivo = mounted ? theme : undefined
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div>
@@ -462,7 +400,7 @@ function TabGeral() {
               <ThemeCard
                 key={option.value}
                 option={option}
-                isActive={theme === option.value}
+                isActive={temaAtivo === option.value}
                 onClick={() => setTheme(option.value)}
               />
             ))}
@@ -550,6 +488,15 @@ function TabGeral() {
 // ── Main Component ─────────────────────────────────────────────
 
 export function ConfiguracoesContent() {
+  const { can } = usePermissions()
+
+  // A aba Usuários é administração de acesso, não configuração do escritório —
+  // segue `usuarios:manage`, que só o admin tem. As demais ficam visíveis para
+  // quem tem `configuracoes:view`; o que some para eles são os botões de ação.
+  const visibleTabs = TABS.filter(
+    (tab) => tab.value !== 'usuarios' || can('usuarios', 'manage')
+  )
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -562,7 +509,7 @@ export function ConfiguracoesContent() {
 
       <Tabs defaultValue="geral">
         <TabsList variant="line" className="border-b w-full rounded-none pb-0 gap-0 h-auto">
-          {TABS.map(({ value, label, icon: Icon }) => (
+          {visibleTabs.map(({ value, label, icon: Icon }) => (
             <TabsTrigger
               key={value}
               value={value}
@@ -576,7 +523,7 @@ export function ConfiguracoesContent() {
 
         <div className="pt-5">
           <TabsContent value="usuarios">
-            <TabUsuarios />
+            <UsersManager />
           </TabsContent>
           <TabsContent value="areas">
             <TabAreas />

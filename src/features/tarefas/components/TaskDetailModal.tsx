@@ -35,6 +35,7 @@ import {
 } from '../hooks/useTaskMutations'
 import { TaskForm } from './TaskForm'
 import { isTaskOverdue } from '../utils/filterTasks'
+import { Can } from '@/components/shared/Can'
 
 const STATUS_TONE: Record<TaskStatus, string> = {
   todo: 'bg-muted text-muted-foreground',
@@ -348,14 +349,16 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
 
               {/* Footer */}
               <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t bg-background">
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Excluir
-                </button>
+                <Can resource="tarefas" action="delete" fallback={<span />}>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Excluir
+                  </button>
+                </Can>
                 <div className="flex items-center gap-2">
                   {task.status !== 'done' && (
                     <button

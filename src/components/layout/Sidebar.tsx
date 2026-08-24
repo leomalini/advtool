@@ -19,6 +19,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
+import { getRoleLabel } from "@/utils/profile";
+import type { Resource } from "@/types/permission.types";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -29,35 +32,46 @@ import {
 import { useClientesPendencies } from "@/features/clientes/hooks/useClientes";
 import { useLegalProcessesPendencies } from "@/features/processos/hooks/useLegalProcesses";
 
-const navGroups = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  /** Recurso correspondente em `role_permissions`. O item some do menu quando o
+   * perfil não tem `view` sobre ele. Esconder é cosmético — quem barra a rota é
+   * o `requirePermission()` da página, e o dado, a RLS. */
+  resource: Resource;
+}
+
+const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Geral",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/crm", label: "CRM", icon: Briefcase },
-      { href: "/processos", label: "Processos", icon: Gavel },
-      { href: "/agenda", label: "Agenda", icon: Calendar },
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, resource: "dashboard" },
+      { href: "/crm", label: "CRM", icon: Briefcase, resource: "crm" },
+      { href: "/processos", label: "Processos", icon: Gavel, resource: "processos" },
+      { href: "/agenda", label: "Agenda", icon: Calendar, resource: "agenda" },
     ],
   },
   {
     label: "Gestão",
     items: [
-      { href: "/clientes", label: "Clientes", icon: Users },
-      { href: "/tarefas", label: "Tarefas", icon: CheckSquare },
-      { href: "/documentos", label: "Documentos", icon: FolderOpen },
-      { href: "/financeiro", label: "Financeiro", icon: DollarSign },
+      { href: "/clientes", label: "Clientes", icon: Users, resource: "clientes" },
+      { href: "/tarefas", label: "Tarefas", icon: CheckSquare, resource: "tarefas" },
+      { href: "/documentos", label: "Documentos", icon: FolderOpen, resource: "documentos" },
+      { href: "/financeiro", label: "Financeiro", icon: DollarSign, resource: "financeiro" },
     ],
   },
 ];
 
-const bottomItems = [
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
+const bottomItems: NavItem[] = [
+  { href: "/configuracoes", label: "Configurações", icon: Settings, resource: "configuracoes" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarOpen, toggleSidebar } = useUIStore();
   const { user, signOut } = useAuth();
+  const { can, role, isLoading: loadingPermissions } = usePermissions();
   // O badge soma as duas fontes: contar só clientes esconderia um prazo sem
   // tarefa, que é a pendência mais cara da lista.
   const { data: clientPendencies = [] } = useClientesPendencies();
@@ -65,6 +79,19 @@ export function Sidebar() {
 
   const pendencyCount = clientPendencies.length + processoPendencies.length;
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? "AD";
+
+  // Só os grupos que sobraram algum item depois do filtro — um cabeçalho
+  // "Gestão" sozinho seria pior que a ausência dele.
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => can(item.resource, "view")),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const visibleBottomItems = bottomItems.filter((item) =>
+    can(item.resource, "view"),
+  );
 
   function renderNavItem(
     href: string,
@@ -146,29 +173,34 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation — enquanto as permissões carregam o menu fica vazio, em vez
+          de mostrar tudo e retirar itens no frame seguinte. */}
       <nav className="flex-1 px-2 py-3.5 space-y-0.5 overflow-y-auto">
-        {navGroups.map((group) => (
-          <div key={group.label} className="mb-0.5">
-            {sidebarOpen && (
-              <div className="px-2.5 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-sidebar-foreground/40 first:pt-2">
-                {group.label}
-              </div>
-            )}
-            {group.items.map(({ href, label, icon: Icon }) =>
-              renderNavItem(href, label, Icon),
-            )}
-          </div>
-        ))}
+        {!loadingPermissions &&
+          visibleGroups.map((group) => (
+            <div key={group.label} className="mb-0.5">
+              {sidebarOpen && (
+                <div className="px-2.5 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-sidebar-foreground/40 first:pt-2">
+                  {group.label}
+                </div>
+              )}
+              {group.items.map(({ href, label, icon: Icon }) =>
+                renderNavItem(href, label, Icon),
+              )}
+            </div>
+          ))}
       </nav>
 
       {/* Bottom nav — Pendências + Configurações */}
-      <div className="px-2 pb-2 pt-1 space-y-0.5 border-t border-sidebar-border">
-        {renderNavItem("/pendencias", "Pendências", AlertCircle, pendencyCount)}
-        {bottomItems.map(({ href, label, icon: Icon }) =>
-          renderNavItem(href, label, Icon),
-        )}
-      </div>
+      {!loadingPermissions && (can("pendencias", "view") || visibleBottomItems.length > 0) && (
+        <div className="px-2 pb-2 pt-1 space-y-0.5 border-t border-sidebar-border">
+          {can("pendencias", "view") &&
+            renderNavItem("/pendencias", "Pendências", AlertCircle, pendencyCount)}
+          {visibleBottomItems.map(({ href, label, icon: Icon }) =>
+            renderNavItem(href, label, Icon),
+          )}
+        </div>
+      )}
 
       {/* User */}
       <div className="border-t border-sidebar-border px-2 py-3">
@@ -183,7 +215,9 @@ export function Sidebar() {
               <p className="text-xs font-medium truncate text-sidebar-foreground">
                 {user?.email ?? "advogado@escritorio.adv.br"}
               </p>
-              <p className="text-xs text-sidebar-foreground/50 truncate">AdvTool</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">
+                {role ? getRoleLabel(role) : "AdvTool"}
+              </p>
             </div>
             <Button
               variant="ghost"

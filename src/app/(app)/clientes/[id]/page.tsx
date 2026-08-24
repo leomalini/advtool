@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import { requirePermission } from '@/lib/auth/requirePermission'
 import { ClienteDetailPage } from '@/features/clientes/components/ClienteDetailPage'
 
 export default async function ClienteDetailRoute({
@@ -6,6 +7,7 @@ export default async function ClienteDetailRoute({
 }: {
   params: Promise<{ id: string }>
 }) {
+  await requirePermission('clientes')
   const { id } = await params
 
   return (

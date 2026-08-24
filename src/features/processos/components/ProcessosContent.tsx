@@ -18,6 +18,7 @@ import {
 } from '../utils/filterLegalProcesses'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
 import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
+import { Can } from '@/components/shared/Can'
 
 export function ProcessosContent() {
   const workflow = useWorkflow('wf-processos')
@@ -68,10 +69,12 @@ export function ProcessosContent() {
             Todos os processos judiciais em andamento no escritório
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Novo Processo
-        </Button>
+        <Can resource="processos" action="create">
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Novo Processo
+          </Button>
+        </Can>
       </div>
 
       {/* Filter bar */}

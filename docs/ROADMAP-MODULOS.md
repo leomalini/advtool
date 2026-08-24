@@ -2,7 +2,11 @@
 
 > **Status**: Ativo — fonte de verdade atual para o desenvolvimento dos módulos abaixo.
 > **Substitui, para os tópicos que cobre**: `docs/PLANEJAMENTO.md` (seções de Dashboard/Agenda/Financeiro/Documentos/Pendências e a recomendação de API de tribunais), `docs/modulo-processos.md` (arquitetura pré-split `crm_items`/`legal_processes`), `docs/integracao-tribunais.md` (documento inteiro, descreve uma integração DataJud/Escavador que nunca foi construída), `docs/PENDENCIAS.md` (nomenclatura pré-refatoração).
-> **Não mexe em**: a decisão de single-tenant (um único escritório, sem multi-usuário/multi-tenant — ver `docs/PLANEJAMENTO.md`), que continua válida e fora de escopo aqui.
+> **Não mexe em**: a decisão de single-tenant — um único escritório — que continua válida e fora de escopo aqui.
+> **Desatualizado desde então**: a parte "sem multi-usuário" caiu. Vários usuários com
+> perfis distintos (`admin`, `attorney`, `paralegal`, `finance`) e RLS por permissão são
+> agora o modelo real — ver `docs/PLANEJAMENTO-MULTIUSUARIO.md`. Isso afeta o princípio
+> transversal #5 abaixo.
 
 ## Por que este documento existe
 
@@ -63,7 +67,7 @@ Estes valem para **todas** as fases abaixo — é o que garante consistência en
 2. **Hooks**: leitura em `use<Plural>.ts` (`useEvents`, `useTasks`), mutação em `use<Singular>Mutations.ts` (`useTaskMutations`, `useEventMutations`). Sempre React Query — nunca Supabase direto num componente.
 3. **Schema Zod em `src/schemas/<singular>.schema.ts`, tipos em `src/types/<singular>.types.ts`**, com sufixo `WithRelations` quando há joins (`LegalProcessWithRelations`).
 4. **Abas compartilhadas entre `CasoModal` e `ProcessoModal`**: seguir o precedente já estabelecido por `CrmItemTimeline.tsx`/`CrmItemClienteTab.tsx` — um único componente, recebendo `crmItemId`/`legalProcessId` por prop, reutilizado nos dois modais (e em `ClienteDetailModal` quando fizer sentido). **Nunca duplicar a mesma aba entre os dois modais** — é a regra mais importante para a consistência pedida.
-5. **RLS**: toda tabela nova recebe `enable row level security` + `create policy "auth_full" ... for all using (auth.role() = 'authenticated')` — a mesma política uniforme já usada em 100% do schema hoje (reflete a decisão de single-tenant já tomada; não introduzir granularidade nova sem decisão explícita em contrário).
+5. **RLS**: ~~toda tabela nova recebe `auth_full`~~ — **superado por `docs/PLANEJAMENTO-MULTIUSUARIO.md`**, que é a decisão explícita em contrário que este item previa. O `auth_full` uniforme não existe mais em nenhuma tabela. Toda tabela nova chama `select public.apply_rbac_policies('<tabela>', '<recurso>:view', '<recurso>:create', '<recurso>:update', '<recurso>:delete')` (migration 35), passando `'*'` para tabela de apoio que todo perfil lê e `NULL` para o comando que ninguém pode. Recriar `auth_full` reabre acesso total para qualquer conta autenticada.
 6. **Migrations novas continuam a sequência `20260101NNNNNN`** — não é a data real, é um epoch fixo + contador sequencial de 6 dígitos, confirmado nas 14 migrations existentes. A próxima é `20260101000015`.
 7. **Design tokens**: usar sempre `src/app/globals.css` como fonte da verdade (`--chart-1` a `--chart-5`, `--success/--warning/--info/--destructive`). **`docs/DESIGN-SYSTEM.md` está desatualizado** (documenta uma paleta "Cool Slate + Blue"/Plus Jakarta Sans que não existe mais — o sistema real, rotulado no próprio CSS, é "Graphite": monocromático + accent índigo `#5165f0`, fonte Hanken Grotesk + JetBrains Mono).
 8. **Toda ação relevante de um service novo insere em `activities`**, best-effort (loga erro, não lança — telemetria auxiliar não deve travar a operação principal), para o feed do Dashboard funcionar como o "sistema nervoso" entre módulos.

@@ -20,6 +20,7 @@ import { useCrmItems, useCrmItemCounts } from "../hooks/useCrmItems";
 import { useCreateCrmItem, useUpdateCrmItem } from "../hooks/useCrmItemMutations";
 import { useWorkflows } from "../hooks/useWorkflows";
 import type { CrmItemInput } from "@/schemas/crmItem.schema";
+import { Can } from '@/components/shared/Can'
 
 type ViewMode = "kanban" | "table";
 
@@ -139,10 +140,12 @@ export function CrmWorkboard() {
             </button>
           </div>
 
-          <Button size="sm" onClick={() => openCreateModal()}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Novo Item
-          </Button>
+          <Can resource="crm" action="create">
+            <Button size="sm" onClick={() => openCreateModal()}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Novo Item
+            </Button>
+          </Can>
         </div>
       </div>
 

@@ -22,6 +22,7 @@ import {
   useUpdateEventType,
 } from '@/features/agenda/hooks/useEventTypes'
 import type { EventTypeRecord } from '@/types/event.types'
+import { Can } from '@/components/shared/Can'
 
 // ── Diálogo de criação/edição ────────────────────────────────────────────────
 
@@ -219,10 +220,12 @@ export function EventTypesManager() {
             Classificam os eventos da agenda e definem a cor no calendário
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Novo Tipo
-        </Button>
+        <Can resource="configuracoes" action="manage">
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Novo Tipo
+          </Button>
+        </Can>
       </div>
 
       {isLoading ? (

@@ -42,6 +42,8 @@ export function getAvatarTone(id: string): string {
 export const PROFILE_ROLE_LABELS: Record<string, string> = {
   admin: 'Administrador',
   attorney: 'Advogado',
+  paralegal: 'Estagiário',
+  finance: 'Financeiro',
 }
 
 export function getRoleLabel(role: string): string {

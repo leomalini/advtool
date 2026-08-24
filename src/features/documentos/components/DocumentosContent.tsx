@@ -29,6 +29,7 @@ import {
 } from '@/types/document.types'
 import { useDocuments } from '../hooks/useDocuments'
 import { useDeleteDocument, useOpenDocument } from '../hooks/useDocumentMutations'
+import { Can } from '@/components/shared/Can'
 
 const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 const ALL = '__all__'
@@ -265,14 +266,16 @@ export function DocumentosContent() {
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
-                      <button
-                        type="button"
-                        title="Excluir"
-                        onClick={() => setPendingDelete(doc)}
-                        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <Can resource="documentos" action="delete">
+                        <button
+                          type="button"
+                          title="Excluir"
+                          onClick={() => setPendingDelete(doc)}
+                          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </Can>
                     </div>
                   </div>
                 ))}

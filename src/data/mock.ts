@@ -53,16 +53,6 @@ export interface Cliente {
   observacoes: string
 }
 
-export interface Advogado {
-  id: string
-  nome: string
-  email: string
-  oab: string
-  avatar?: string
-  iniciais: string
-  cor: string
-}
-
 export interface TimelineItem {
   id: string
   tipo:
@@ -201,27 +191,6 @@ export const ETIQUETAS: Record<EtiquetaId, Etiqueta> = {
   acordo: { id: 'acordo', label: 'Acordo', color: 'bg-[#eafaf2] dark:bg-[rgba(62,207,142,.12)]', textColor: 'text-[#0c8a5d] dark:text-[#7fe0b4]' },
   novo: { id: 'novo', label: 'Novo', color: 'bg-[#e3f2fb] dark:bg-[rgba(56,189,248,.12)]', textColor: 'text-[#1a7fb8] dark:text-[#7fd0f5]' },
 }
-
-// ----- ADVOGADOS -------------------------------------------
-
-export const ADVOGADOS: Advogado[] = [
-  {
-    id: 'adv-1',
-    nome: 'Dra. Ana Souza',
-    email: 'ana@escritorio.adv.br',
-    oab: 'OAB/SP 123.456',
-    iniciais: 'AS',
-    cor: 'bg-violet-500',
-  },
-  {
-    id: 'adv-2',
-    nome: 'Dr. Ricardo Lima',
-    email: 'ricardo@escritorio.adv.br',
-    oab: 'OAB/SP 789.012',
-    iniciais: 'RL',
-    cor: 'bg-cyan-500',
-  },
-]
 
 // ----- CLIENTES --------------------------------------------
 

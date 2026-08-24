@@ -14,6 +14,14 @@ export type ActivityType =
   | 'event_created'
   | 'attachment_uploaded'
   | 'financial_entry_created'
+  // Administração de acesso (Fase 5 do planejamento multiusuário). Ficam no
+  // mesmo feed dos demais de propósito: quem mexeu no acesso de quem é a
+  // informação mais sensível que o sistema passa a registrar.
+  | 'user_invited'
+  | 'user_invite_resent'
+  | 'user_role_changed'
+  | 'user_deactivated'
+  | 'user_reactivated'
   // Legacy: written before leads became crm_items. Nothing produces these
   // anymore, but ~half the existing feed rows use them, so they still need
   // to render readably.
@@ -31,6 +39,7 @@ export type EntityType =
   | 'legal_process'
   | 'financial_entry'
   | 'document'
+  | 'user'
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   case_created: 'criou o caso',
@@ -46,6 +55,11 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   event_created: 'agendou evento',
   attachment_uploaded: 'enviou anexo para',
   financial_entry_created: 'lançou',
+  user_invited: 'convidou',
+  user_invite_resent: 'reenviou o convite para',
+  user_role_changed: 'alterou o perfil de',
+  user_deactivated: 'desativou o acesso de',
+  user_reactivated: 'reativou o acesso de',
   lead_created: 'criou o caso',
   lead_moved: 'moveu o caso',
 }

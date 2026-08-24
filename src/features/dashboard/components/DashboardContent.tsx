@@ -10,7 +10,9 @@ import { FinanceiroResumo } from "./FinanceiroResumo";
 import { ActivityFeed } from "./ActivityFeed";
 import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useCurrentProfile } from "@/hooks/useProfiles";
+import { usePermissions } from "@/hooks/usePermissions";
 import { getDisplayName } from "@/utils/profile";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -34,6 +36,11 @@ function pluralize(n: number, singular: string, plural: string): string {
 export function DashboardContent() {
   const { data: stats } = useDashboardStats();
   const profile = useCurrentProfile();
+  const { can } = usePermissions();
+
+  // Sem `financeiro:view`, a RLS devolve lista vazia e o card mostraria zeros —
+  // pior que ausência, porque parece "o escritório não faturou nada".
+  const showFinanceiro = can("financeiro", "view");
 
   const hoje = new Date();
   const dataFormatada = format(hoje, "EEEE, dd 'de' MMMM 'de' yyyy", {
@@ -110,10 +117,15 @@ export function DashboardContent() {
       </div>
 
       {/* ── Seção 4: Áreas + Advogados + Financeiro ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-4",
+          showFinanceiro ? "lg:grid-cols-3" : "lg:grid-cols-2",
+        )}
+      >
         <AreasChart />
         <AdvogadosCard />
-        <FinanceiroResumo />
+        {showFinanceiro && <FinanceiroResumo />}
       </div>
 
       {/* ── Seção 5: Feed de atividades ── */}

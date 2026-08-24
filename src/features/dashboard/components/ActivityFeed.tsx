@@ -17,8 +17,11 @@ import {
   CalendarPlus,
   Scale,
   UserPlus,
+  MailCheck,
   UserCog,
   PlusCircle,
+  ShieldCheck,
+  ShieldOff,
 } from 'lucide-react'
 
 // Keyed by the ActivityType values the services actually write. The previous
@@ -41,6 +44,13 @@ const TIPO_CONFIG: Record<
   event_created: { icon: CalendarPlus, color: 'text-info', bg: 'bg-info/12', label: 'Agenda' },
   attachment_uploaded: { icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Documento' },
   financial_entry_created: { icon: Scale, color: 'text-success', bg: 'bg-success/12', label: 'Financeiro' },
+  // Administração de acesso. Tom de alerta (warning/destructive) de propósito:
+  // no meio de casos e tarefas, uma mudança de permissão precisa saltar.
+  user_invited: { icon: UserPlus, color: 'text-info', bg: 'bg-info/12', label: 'Acesso' },
+  user_invite_resent: { icon: MailCheck, color: 'text-info', bg: 'bg-info/12', label: 'Acesso' },
+  user_role_changed: { icon: ShieldCheck, color: 'text-warning', bg: 'bg-warning/12', label: 'Acesso' },
+  user_deactivated: { icon: ShieldOff, color: 'text-destructive', bg: 'bg-destructive/12', label: 'Acesso' },
+  user_reactivated: { icon: ShieldCheck, color: 'text-success', bg: 'bg-success/12', label: 'Acesso' },
   // Legacy pre-crm_items rows — kept so old feed entries stay readable.
   lead_created: { icon: PlusCircle, color: 'text-success', bg: 'bg-success/12', label: 'Caso' },
   lead_moved: { icon: MoveRight, color: 'text-chart-2', bg: 'bg-chart-2/12', label: 'Movido' },

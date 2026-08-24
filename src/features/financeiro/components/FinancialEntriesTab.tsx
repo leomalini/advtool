@@ -22,6 +22,7 @@ import {
 } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
+import { Can } from '@/components/shared/Can'
 
 interface FinancialEntriesTabProps {
   legalProcessId?: string | null
@@ -110,14 +111,16 @@ export function FinancialEntriesTab({
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Novo lançamento
-        </button>
+        <Can resource="financeiro" action="create">
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Novo lançamento
+          </button>
+        </Can>
       </div>
 
       {entries.length === 0 ? (
@@ -220,17 +223,19 @@ export function FinancialEntriesTab({
                       >
                         {isPaid ? <Undo2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
                       </button>
-                      <button
-                        type="button"
-                        title="Excluir"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setPendingDelete(entry)
-                        }}
-                        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <Can resource="financeiro" action="delete">
+                        <button
+                          type="button"
+                          title="Excluir"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setPendingDelete(entry)
+                          }}
+                          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </Can>
                     </div>
                   </div>
                 </div>

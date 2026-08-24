@@ -37,9 +37,12 @@ O bucket `attachments` é criado pela migration
 criá-lo à mão pelo Studio. A migration é idempotente: em bases onde o bucket já
 foi criado manualmente, ela não falha.
 
-As três policies (`auth_upload`, `auth_read`, `auth_delete`) liberam o bucket
-inteiro para qualquer usuário autenticado, sem escopo por pasta — consistente com
-o modelo single-tenant do produto.
+As três policies originais (`auth_upload`, `auth_read`, `auth_delete`) liberavam o
+bucket inteiro para qualquer conta autenticada. **A migration 38 as substituiu**
+por `attachments_select` / `attachments_insert` / `attachments_delete`, que
+seguem `documentos:view` / `:create` / `:delete` da matriz de permissões. Continua
+sem escopo por pasta — a decisão de negócio é que todo mundo do escritório vê os
+mesmos documentos; o que muda por perfil é quem envia e quem apaga.
 
 ## Verificação
 
@@ -49,7 +52,32 @@ Após aplicar tudo, confirme em **Table Editor** que existem:
 `crm_item_column_history`, `legal_processes`, `legal_process_movements`,
 `legal_process_parties`, `workflows`, `workflow_columns`, `events`,
 `event_assignees`, `tasks`, `task_comments`, `task_checklist_items`,
-`financial_entries`, `documents`, `activities`.
+`financial_entries`, `documents`, `activities`, `role_permissions`.
+
+> ### ⚠️ RLS: `auth_full` não existe mais — use `apply_rbac_policies`
+>
+> Até a migration 33, toda tabela tinha a mesma policy
+> `for all using (auth.role() = 'authenticated')`: qualquer conta logada lia,
+> editava e apagava tudo. As migrations 34–38 trocaram isso por permissão real
+> por perfil (`admin`, `attorney`, `paralegal`, `finance`) — ver
+> `docs/PLANEJAMENTO-MULTIUSUARIO.md`.
+>
+> **Tabela nova não recria `auth_full`.** Chama o helper da migration 35:
+>
+> ```sql
+> select public.apply_rbac_policies(
+>   'minha_tabela', 'recurso:view', 'recurso:create', 'recurso:update', 'recurso:delete'
+> );
+> ```
+>
+> `'*'` no lugar de `'recurso:acao'` libera para qualquer membro ativo (tabelas
+> de apoio como `event_types` e `workflows`); `NULL` não cria policy nenhuma
+> para aquele comando, ou seja, ninguém pode.
+>
+> Lembre que **RLS negando não gera erro** — devolve lista vazia ou
+> `0 rows updated`. Policy errada parece "sumiu tudo". Confira com
+> `supabase/tests/rls_matrix.sql`, que assume os quatro perfis e conta o que
+> cada um enxerga.
 
 > ### ⚠️ Migration que faz DROP precisa varrer o `src/` junto
 >
