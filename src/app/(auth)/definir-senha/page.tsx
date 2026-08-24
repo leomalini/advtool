@@ -6,11 +6,16 @@ import { createClient } from '@/lib/supabase/server'
 import { DefinirSenhaForm } from './DefinirSenhaForm'
 
 /**
- * Destino do link de convite, via `/api/auth/callback?next=/definir-senha`.
+ * Destino de DOIS links, ambos via `/api/auth/callback?next=/definir-senha`:
+ * o convite (`type=invite`) e a recuperação de senha (`type=recovery`).
  *
- * A pessoa chega aqui já com sessão (o callback trocou o código por uma), mas
- * sem senha própria — daí `updateUser({ password })` funcionar sem pedir a
- * antiga. Sem sessão não há o que definir, então volta para o login.
+ * A pessoa chega aqui já com sessão — o callback trocou o token do e-mail por
+ * uma —, e é essa sessão que autoriza `updateUser({ password })` sem pedir a
+ * senha antiga. Sem sessão não há o que definir, então volta para o login.
+ *
+ * NÃO é uma página pública: se estivesse em `PAGINAS_PUBLICAS` do
+ * `middleware.ts`, quem tem sessão seria mandado ao dashboard sem nunca poder
+ * escolher a senha.
  */
 export default async function DefinirSenhaPage() {
   const supabase = await createClient()
