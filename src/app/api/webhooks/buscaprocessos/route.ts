@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
 
 const WEBHOOK_SECRET = process.env.BUSCA_PROCESSOS_WEBHOOK_SECRET
@@ -56,8 +56,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ received: true, processed: false })
   }
 
+  if (!hasServiceRoleKey()) {
+    console.error('[webhook] SUPABASE_SERVICE_ROLE_KEY ausente — movimentação descartada.')
+    return NextResponse.json({ received: true, processed: false }, { status: 503 })
+  }
+
   try {
-    const supabase = await createClient()
+    // service_role, e não o client de sessão: um webhook não tem sessão. Com o
+    // client de sessão a requisição chegava ao PostgREST como `anon`, então a
+    // RLS já barrava tudo — o `select` voltava vazio e saía por
+    // `case_not_found`, e o erro do `insert` era ignorado. O webhook nunca
+    // gravou nada. Aqui a autorização é o HMAC verificado acima, não um perfil.
+    const supabase = createAdminClient()
     const data = payload.data
 
     // BuscaProcessos sends the CNJ number in various field positions
