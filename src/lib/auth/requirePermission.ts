@@ -34,12 +34,29 @@ export async function requirePermission(
     p_action: action,
   })
 
-  // Falha fechada: sem resposta afirmativa, ninguém entra. O log existe porque
-  // o modo de falha mais provável não é "sem permissão" e sim "migration 34 não
-  // aplicada neste banco" — sem ele, todo mundo cai em /sem-acesso e a causa
-  // fica invisível (PGRST202 = função `can` ausente do schema).
+  // Falha fechada — mas "não consegui avaliar" NÃO é "não pode".
+  //
+  // Antes, um erro aqui seguia pelo mesmo caminho da negação e levava a pessoa
+  // a `/sem-acesso`, que afirma "sua conta foi desativada por um administrador
+  // do escritório". Quando a causa é infraestrutura, isso é um diagnóstico
+  // falso — e alarmante — entregue a quem só queria entrar.
+  //
+  // Os dois modos de falha prováveis não têm nada a ver com permissão:
+  //
+  //   · PGRST303 "JWT issued at future" — desvio de relógio entre o nó de auth
+  //     e o PostgREST do Supabase. O PostgREST já tolera 30s ao validar `iat`,
+  //     então quando estoura é problema de infraestrutura do projeto, não do
+  //     código nem do relógio da máquina. Aparece no login, que é quando o
+  //     token é usado milissegundos depois de emitido.
+  //   · PGRST202 — a função `can` não existe no schema, ou seja, a migration 34
+  //     não foi aplicada nesta base.
+  //
+  // Nos dois casos o certo é falhar VISÍVEL: o error boundary do grupo `(app)`
+  // mostra "não foi possível verificar" com botão de tentar de novo, e o código
+  // do erro fica no log para o diagnóstico.
   if (error) {
     console.error('[auth] rpc can() falhou:', error.code, error.message)
+    throw new Error(`Não foi possível verificar as permissões (${error.code}).`)
   }
 
   if (allowed === true) return
