@@ -2,8 +2,14 @@ import type { Profile } from './common.types'
 
 export type FinancialEntryType = 'receita' | 'despesa'
 export type FinancialEntryCategory = 'honorario' | 'custas' | 'pericia' | 'outros'
-/** "Atrasado" não é um estado guardado — ver isFinancialEntryOverdue. */
+/** "Atrasado" não é um estado guardado — ver getFinancialSituation. */
 export type FinancialEntryStatus = 'pendente' | 'pago'
+/**
+ * Como o lançamento é liquidado: numa data, ou ao cumprir uma condição.
+ * É o ÚNICO critério de classificação — ausência de data não define nada
+ * (ver a migration 40).
+ */
+export type FinancialSettlementKind = 'scheduled' | 'conditional'
 
 export const FINANCIAL_TYPE_LABELS: Record<FinancialEntryType, string> = {
   receita: 'Receita',
@@ -22,6 +28,11 @@ export const FINANCIAL_STATUS_LABELS: Record<FinancialEntryStatus, string> = {
   pago: 'Pago',
 }
 
+export const FINANCIAL_SETTLEMENT_KIND_LABELS: Record<FinancialSettlementKind, string> = {
+  scheduled: 'Com vencimento',
+  conditional: 'Condição especial',
+}
+
 export interface FinancialEntry {
   id: string
   type: FinancialEntryType
@@ -30,7 +41,11 @@ export interface FinancialEntry {
   /** numeric(12,2) — PostgREST devolve como number. */
   amount: number
   status: FinancialEntryStatus
-  due_date: string
+  settlement_kind: FinancialSettlementKind
+  /** Vencimento quando 'scheduled'; previsão opcional quando 'conditional'. */
+  due_date: string | null
+  /** O que precisa acontecer — obrigatório quando 'conditional'. */
+  condition_description: string | null
   paid_at: string | null
   client_id: string | null
   crm_item_id: string | null
@@ -56,11 +71,61 @@ export interface FinancialEntryWithRelations extends FinancialEntry {
   creator?: Profile
 }
 
-/** Derivado, nunca armazenado: um lançamento vencido continuaria "pendente"
- * para sempre se o atraso fosse um status gravado. */
-export function isFinancialEntryOverdue(entry: FinancialEntry): boolean {
-  if (entry.status === 'pago') return false
-  return entry.due_date < new Date().toISOString().slice(0, 10)
+// ── Situação: a taxonomia da tela ───────────────────────────────────────────
+
+/**
+ * Os quatro estados que o usuário enxerga. Os três primeiros são o que "A
+ * receber" agrega:
+ *
+ *     A receber (TUDO) = A vencer + Vencido + Condição especial
+ *
+ * Nenhum deles é gravado: todos derivam de `status` + `settlement_kind` +
+ * `due_date`, para que um lançamento não possa ficar preso num rótulo que
+ * deixou de ser verdade.
+ */
+export type FinancialSituation = 'a_vencer' | 'vencido' | 'condicao_especial' | 'pago'
+
+export const FINANCIAL_SITUATION_LABELS: Record<FinancialSituation, string> = {
+  a_vencer: 'A vencer',
+  vencido: 'Vencido',
+  condicao_especial: 'Condição especial',
+  pago: 'Pago',
+}
+
+/**
+ * Hoje em 'yyyy-MM-dd', montado a partir dos componentes LOCAIS.
+ *
+ * `toISOString().slice(0, 10)` converteria para UTC: em Brasília (UTC-3),
+ * qualquer horário a partir das 21h já devolve o dia seguinte — e um
+ * lançamento que vence hoje apareceria "Vencido" ao fim da tarde.
+ */
+export function todayISO(): string {
+  return toISODate(new Date())
+}
+
+/** 'yyyy-MM-dd' a partir dos componentes locais de uma data. */
+export function toISODate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Fonte única da situação de um lançamento. Toda superfície — badge, filtro,
+ * indicadores, gráfico — passa por aqui, para as três telas não divergirem.
+ *
+ * ⚠️ Condição especial ganha de vencido, de propósito. Uma previsão que passou
+ * não é inadimplência: pintar de vermelho um "receber após o alvará" cuja
+ * estimativa furou cobraria o cliente por um atraso que não é dele.
+ */
+export function getFinancialSituation(
+  entry: Pick<FinancialEntry, 'status' | 'settlement_kind' | 'due_date'>,
+  today: string = todayISO()
+): FinancialSituation {
+  if (entry.status === 'pago') return 'pago'
+  if (entry.settlement_kind === 'conditional') return 'condicao_especial'
+  return entry.due_date !== null && entry.due_date < today ? 'vencido' : 'a_vencer'
 }
 
 export function formatCurrency(value: number): string {

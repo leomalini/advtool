@@ -8,8 +8,6 @@ import { ptBR } from 'date-fns/locale'
 import {
   TrendingUp,
   TrendingDown,
-  Clock,
-  ShieldAlert,
   Plus,
   Scale,
   Check,
@@ -30,7 +28,7 @@ import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
   formatCurrency,
-  isFinancialEntryOverdue,
+  getFinancialSituation,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
@@ -46,13 +44,19 @@ import {
 import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
 import { FinanceiroFilterBar } from './FinanceiroFilterBar'
+import { FinancialSituationBadge } from './FinancialSituationBadge'
 import {
   filterFinancialEntries,
   emptyFinancialFilters,
   monthRange,
   type FinancialFilters,
+  type FinancialSituationFilter,
 } from '../utils/filterFinancialEntries'
 import { Can } from '@/components/shared/Can'
+
+/** Chave da coluna "Sem data" no gráfico. Não é 'yyyy-MM' de propósito: o
+ * parse de mês tem que falhar ruidosamente se alguém tratá-la como um mês. */
+const UNDATED_KEY = 'undated'
 
 const chartConfig = {
   receita: { label: 'Receitas', color: 'var(--success)' },
@@ -88,10 +92,50 @@ function SummaryCard({ icon, label, value, sublabel, colorClass, bgClass }: Summ
   )
 }
 
+interface ReceivableTileProps {
+  label: string
+  value: number
+  sublabel?: string
+  colorClass: string
+  active: boolean
+  onClick: () => void
+}
+
+/** Uma das três parcelas que somam "A receber". Clicável porque o indicador e
+ * o filtro passaram a falar a mesma língua: o card mostra o número, o clique
+ * mostra de quais lançamentos ele veio. */
+function ReceivableTile({
+  label,
+  value,
+  sublabel,
+  colorClass,
+  active,
+  onClick,
+}: ReceivableTileProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-lg border p-3 text-left transition-all',
+        'hover:border-foreground/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        active ? 'border-foreground/40 bg-muted/40' : 'border-border'
+      )}
+    >
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={cn('text-lg font-semibold tabular-nums mt-0.5', colorClass)}>
+        {formatCurrency(value)}
+      </p>
+      <p className="text-[11px] text-muted-foreground/80 mt-0.5 h-4">{sublabel ?? ''}</p>
+    </button>
+  )
+}
+
 export function FinanceiroContent() {
   const { data: entries = [], isLoading } = useFinancialEntries()
   const { data: summary } = useFinancialSummary()
-  const { data: cashFlow = [] } = useMonthlyCashFlow(6)
+  const { data: cashFlow } = useMonthlyCashFlow(6)
   const createEntry = useCreateFinancialEntry()
   const updateEntry = useUpdateFinancialEntry()
   const [createOpen, setCreateOpen] = useState(false)
@@ -103,33 +147,68 @@ export function FinanceiroContent() {
   const selected = selectedId ? (entries.find((e) => e.id === selectedId) ?? null) : null
   const setSelected = (entry: { id: string } | null) => setSelectedId(entry?.id ?? null)
 
-  const chartData = useMemo(
-    () =>
-      cashFlow.map((m) => ({
-        // 'yyyy-MM' → 'Jan', com o dia 1 só para o parse funcionar
-        mes: format(parseISO(`${m.month}-01`), 'MMM', { locale: ptBR }),
-        month: m.month,
-        receita: m.receita,
-        despesa: m.despesa,
-      })),
-    [cashFlow]
-  )
+  const chartData = useMemo(() => {
+    if (!cashFlow) return []
+
+    const months = cashFlow.months.map((m) => ({
+      // 'yyyy-MM' → 'Jan', com o dia 1 só para o parse funcionar
+      mes: format(parseISO(`${m.month}-01`), 'MMM', { locale: ptBR }),
+      month: m.month,
+      receita: m.receita,
+      despesa: m.despesa,
+    }))
+
+    // A coluna "Sem data" só aparece quando existe algo nela: uma barra vazia
+    // permanente ensinaria o olho a ignorá-la justamente quando ela importa.
+    if (cashFlow.undated.count === 0) return months
+
+    return [
+      ...months,
+      {
+        mes: 'Sem data',
+        month: UNDATED_KEY,
+        receita: cashFlow.undated.receita,
+        despesa: cashFlow.undated.despesa,
+      },
+    ]
+  }, [cashFlow])
 
   const filtered = useMemo(
     () => filterFinancialEntries(entries, filters),
     [entries, filters]
   )
 
-  /** Clicar num mês do gráfico filtra a tabela por aquele período — e clicar de
-   * novo no mesmo mês desfaz, para o gesto ser reversível sem caçar o botão de
+  /** Alterna um bucket: clicar de novo no mesmo card desfaz o filtro. */
+  function toggleSituation(situation: FinancialSituationFilter) {
+    setFilters((prev) => ({
+      ...prev,
+      situation: prev.situation === situation ? null : situation,
+    }))
+  }
+
+  /** Clicar numa coluna do gráfico filtra a tabela por aquele recorte — e
+   * clicar de novo desfaz, para o gesto ser reversível sem caçar o botão de
    * limpar. */
-  function handleMonthClick(month: string) {
-    const { from, to } = monthRange(month)
+  function handleColumnClick(key: string) {
+    if (key === UNDATED_KEY) {
+      // "Sem data" não é um período: vira o filtro próprio, e o intervalo sai
+      // do caminho para os dois não se contradizerem.
+      setFilters((prev) => ({
+        ...prev,
+        undatedOnly: !prev.undatedOnly,
+        dueFrom: null,
+        dueTo: null,
+      }))
+      return
+    }
+
+    const { from, to } = monthRange(key)
     const alreadyFiltered = filters.dueFrom === from && filters.dueTo === to
     setFilters((prev) => ({
       ...prev,
       dueFrom: alreadyFiltered ? null : from,
       dueTo: alreadyFiltered ? null : to,
+      undatedOnly: false,
     }))
   }
 
@@ -138,8 +217,11 @@ export function FinanceiroContent() {
       ? filters.dueFrom.slice(0, 7)
       : null
 
-  const totalReceitas = cashFlow.reduce((s, m) => s + m.receita, 0)
-  const totalDespesas = cashFlow.reduce((s, m) => s + m.despesa, 0)
+  // Os totais do rodapé ficam nos 6 meses. Somar o sem-data aqui inflaria o
+  // "Resultado" com dinheiro que depende de um evento sem prazo — ele aparece
+  // na coluna e no seu próprio número, separado do que tem data.
+  const totalReceitas = (cashFlow?.months ?? []).reduce((s, m) => s + m.receita, 0)
+  const totalDespesas = (cashFlow?.months ?? []).reduce((s, m) => s + m.despesa, 0)
 
   async function handleCreate(data: FinancialEntryInput) {
     await createEntry.mutateAsync(data)
@@ -163,8 +245,8 @@ export function FinanceiroContent() {
         </Can>
       </div>
 
-      {/* ── Cards de resumo ── */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* ── Realizado no mês ── */}
+      <div className="grid grid-cols-2 gap-4">
         <SummaryCard
           icon={<TrendingUp className="h-4.5 w-4.5 text-success" />}
           label="Recebido no mês"
@@ -179,23 +261,79 @@ export function FinanceiroContent() {
           colorClass="text-destructive"
           bgClass="bg-destructive/10"
         />
-        <SummaryCard
-          icon={<Clock className="h-4.5 w-4.5 text-warning" />}
-          label="A receber"
-          value={formatCurrency(summary?.outstanding ?? 0)}
-          sublabel="Receitas ainda não pagas"
-          colorClass="text-warning"
-          bgClass="bg-warning/10"
-        />
-        <SummaryCard
-          icon={<ShieldAlert className="h-4.5 w-4.5 text-muted-foreground" />}
-          label="Vencido"
-          value={formatCurrency(summary?.overdue ?? 0)}
-          sublabel={summary?.overdue ? 'Cobrança em atraso' : 'Nenhum atraso'}
-          colorClass={summary?.overdue ? 'text-destructive' : 'text-muted-foreground'}
-          bgClass={summary?.overdue ? 'bg-destructive/10' : 'bg-muted'}
-        />
       </div>
+
+      {/* ── A receber ──
+          Hierarquia, não quatro cards soltos: o número grande é o TUDO, e as
+          três parcelas ao lado somam exatamente ele. */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+            <button
+              type="button"
+              onClick={() => toggleSituation('a_receber')}
+              aria-pressed={filters.situation === 'a_receber'}
+              className={cn(
+                'shrink-0 rounded-lg border p-3 text-left transition-all lg:w-56',
+                'hover:border-foreground/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                filters.situation === 'a_receber'
+                  ? 'border-foreground/40 bg-muted/40'
+                  : 'border-transparent'
+              )}
+            >
+              <p className="text-xs text-muted-foreground">A receber</p>
+              <p className="text-3xl font-semibold tabular-nums mt-0.5">
+                {formatCurrency(summary?.receivableTotal ?? 0)}
+              </p>
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Tudo que ainda não foi recebido
+              </p>
+            </button>
+
+            <span className="hidden lg:block text-lg text-muted-foreground/40">=</span>
+
+            {/* min-w-0: um item flex tem `min-width: auto`, então sem isto o
+                grid se recusa a encolher abaixo do conteúdo das três parcelas
+                e empurra a linha para fora do card em telas estreitas. */}
+            <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
+              <ReceivableTile
+                label="A vencer"
+                value={summary?.receivableUpcoming ?? 0}
+                sublabel="Com data, no prazo"
+                colorClass="text-warning"
+                active={filters.situation === 'a_vencer'}
+                onClick={() => toggleSituation('a_vencer')}
+              />
+              <ReceivableTile
+                label="Vencido"
+                value={summary?.receivableOverdue ?? 0}
+                sublabel={summary?.receivableOverdue ? 'Cobrança em atraso' : 'Nenhum atraso'}
+                colorClass={
+                  summary?.receivableOverdue ? 'text-destructive' : 'text-muted-foreground'
+                }
+                active={filters.situation === 'vencido'}
+                onClick={() => toggleSituation('vencido')}
+              />
+              <ReceivableTile
+                label="Condição especial"
+                value={summary?.receivableConditional ?? 0}
+                sublabel={
+                  summary?.receivableConditionalCount
+                    ? `${summary.receivableConditionalCount} lançamento${
+                        summary.receivableConditionalCount === 1 ? '' : 's'
+                      }`
+                    : 'Nenhum'
+                }
+                colorClass={
+                  summary?.receivableConditional ? 'text-info' : 'text-muted-foreground'
+                }
+                active={filters.situation === 'condicao_especial'}
+                onClick={() => toggleSituation('condicao_especial')}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Fluxo de caixa ── */}
       <Card>
@@ -204,24 +342,34 @@ export function FinanceiroContent() {
             <CardTitle className="text-sm font-semibold">
               Fluxo de Caixa — últimos 6 meses
             </CardTitle>
-            {selectedMonth ? (
+            {selectedMonth || filters.undatedOnly ? (
               <button
                 type="button"
-                onClick={() => setFilters((p) => ({ ...p, dueFrom: null, dueTo: null }))}
+                onClick={() =>
+                  setFilters((p) => ({
+                    ...p,
+                    dueFrom: null,
+                    dueTo: null,
+                    undatedOnly: false,
+                  }))
+                }
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3 w-3" />
-                Filtrando {format(parseISO(`${selectedMonth}-01`), "MMMM", { locale: ptBR })}
+                Filtrando{' '}
+                {selectedMonth
+                  ? format(parseISO(`${selectedMonth}-01`), 'MMMM', { locale: ptBR })
+                  : 'sem data'}
               </button>
             ) : (
               <span className="text-[11px] text-muted-foreground/70 hidden sm:block">
-                Clique num mês para filtrar a tabela
+                Clique numa coluna para filtrar a tabela
               </span>
             )}
           </div>
         </CardHeader>
         <CardContent>
-          {cashFlow.length === 0 ? (
+          {chartData.length === 0 ? (
             <Skeleton className="h-[200px] w-full rounded-lg" />
           ) : (
             <>
@@ -237,8 +385,8 @@ export function FinanceiroContent() {
                     // Recharts 3 entrega o índice da coluna ativa, não o payload
                     // (activePayload existia na v2). Resolvemos pelo chartData.
                     const index = Number(state?.activeIndex)
-                    const month = Number.isInteger(index) ? chartData[index]?.month : undefined
-                    if (month) handleMonthClick(month)
+                    const key = Number.isInteger(index) ? chartData[index]?.month : undefined
+                    if (key) handleColumnClick(key)
                   }}
                   className="cursor-pointer"
                 >
@@ -259,10 +407,36 @@ export function FinanceiroContent() {
                       v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)
                     }
                   />
+                  {/* ⚠️ Passar `formatter` substitui a LINHA INTEIRA do
+                      tooltip — o quadradinho colorido e o nome da série somem
+                      junto (ver ChartTooltipContent). Por isso o formatter
+                      remonta a linha: sem ela, o tooltip mostra dois valores
+                      nus e não dá para saber qual é receita e qual é despesa. */}
                   <ChartTooltip
                     content={
                       <ChartTooltipContent
-                        formatter={(value) => formatCurrency(Number(value))}
+                        formatter={(value, name) => {
+                          const serie = chartConfig[name as keyof typeof chartConfig]
+                          return (
+                            <div className="flex w-full items-center justify-between gap-4">
+                              <span className="flex items-center gap-1.5">
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                  style={{ backgroundColor: serie?.color }}
+                                />
+                                <span className="text-muted-foreground">
+                                  {serie?.label ?? name}
+                                </span>
+                              </span>
+                              <span
+                                className="font-medium tabular-nums"
+                                style={{ color: serie?.color }}
+                              >
+                                {formatCurrency(Number(value))}
+                              </span>
+                            </div>
+                          )
+                        }}
                       />
                     }
                   />
@@ -307,6 +481,16 @@ export function FinanceiroContent() {
                     {formatCurrency(totalReceitas - totalDespesas)}
                   </p>
                 </div>
+
+                {/* Fora do resultado de propósito — ver o cálculo dos totais. */}
+                {cashFlow && cashFlow.undated.count > 0 && (
+                  <div className="ml-auto text-right">
+                    <p className="text-xs text-muted-foreground">Sem data definida</p>
+                    <p className="text-sm font-semibold text-info tabular-nums">
+                      {formatCurrency(cashFlow.undated.receita - cashFlow.undated.despesa)}
+                    </p>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -341,8 +525,10 @@ export function FinanceiroContent() {
               </p>
             </div>
           ) : (
-            <div>
-              <div className={cn(TABLE_GRID, 'gap-3 px-4 py-2 bg-muted/30 border-y text-xs font-medium text-muted-foreground')}>
+            // As colunas fixas somam ~736px + gaps; abaixo disso a tabela rola
+            // dentro do próprio card, em vez de empurrar a página.
+            <div className="overflow-x-auto">
+              <div className={cn(TABLE_GRID, 'min-w-[820px] gap-3 px-4 py-2 bg-muted/30 border-y text-xs font-medium text-muted-foreground')}>
                 <span>Descrição</span>
                 <span>Cliente</span>
                 <span>Processo</span>
@@ -369,7 +555,9 @@ export function FinanceiroContent() {
                 {filtered.map((entry) => {
                   const isReceita = entry.type === 'receita'
                   const isPaid = entry.status === 'pago'
-                  const overdue = isFinancialEntryOverdue(entry)
+                  const situation = getFinancialSituation(entry)
+                  const overdue = situation === 'vencido'
+                  const isConditional = entry.settlement_kind === 'conditional'
 
                   return (
                     <div
@@ -382,24 +570,28 @@ export function FinanceiroContent() {
                       }}
                       className={cn(
                         TABLE_GRID,
-                        'gap-3 px-4 py-3 items-center cursor-pointer hover:bg-muted/20 transition-colors group',
+                        // Mesmo min-w do cabeçalho — sem isto as duas partes
+                        // desalinham assim que a tabela rola na horizontal.
+                        'min-w-[820px] gap-3 px-4 py-3 items-center cursor-pointer hover:bg-muted/20 transition-colors group',
                         'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
                       )}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={cn(
-                            'inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium border shrink-0',
-                            isPaid
-                              ? 'bg-success/10 text-success border-success/25'
-                              : overdue
-                                ? 'bg-destructive/10 text-destructive border-destructive/25'
-                                : 'bg-warning/10 text-warning border-warning/25'
-                          )}
-                        >
-                          {isPaid ? 'Pago' : overdue ? 'Atrasado' : 'Pendente'}
-                        </span>
-                        <span className="text-sm truncate">{entry.description}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FinancialSituationBadge entry={entry} short bordered />
+                          <span className="text-sm truncate">{entry.description}</span>
+                        </div>
+                        {/* A condição é o "vencimento" destes lançamentos —
+                            escondê-la deixaria a linha sem dizer o que se
+                            espera para receber. */}
+                        {isConditional && entry.condition_description && (
+                          <p
+                            className="text-[11px] text-info/80 truncate mt-0.5 pl-1"
+                            title={entry.condition_description}
+                          >
+                            {entry.condition_description}
+                          </p>
+                        )}
                       </div>
 
                       {/* Cliente e Processo são links: clicar leva ao registro,
@@ -445,9 +637,23 @@ export function FinanceiroContent() {
                         {formatCurrency(Number(entry.amount))}
                       </p>
 
-                      <p className={cn('text-xs text-muted-foreground', overdue && 'text-destructive')}>
-                        {format(parseISO(entry.due_date), 'dd/MM/yyyy', { locale: ptBR })}
-                      </p>
+                      {/* Sem data é estado válido agora (condição especial):
+                          formatar null aqui devolveria "Invalid Date". */}
+                      {entry.due_date ? (
+                        <p
+                          className={cn(
+                            'text-xs text-muted-foreground',
+                            overdue && 'text-destructive'
+                          )}
+                        >
+                          {isConditional && (
+                            <span className="text-muted-foreground/60">prev. </span>
+                          )}
+                          {format(parseISO(entry.due_date), 'dd/MM/yyyy', { locale: ptBR })}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground/60">Sem data</p>
+                      )}
 
                       {/* Baixa em um clique — o gesto mais repetido do módulo,
                           sem precisar abrir o lançamento. */}

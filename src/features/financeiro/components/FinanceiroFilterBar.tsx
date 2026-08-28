@@ -17,19 +17,23 @@ import {
   hasActiveFinancialFilters,
   countActiveFinancialFilters,
   emptyFinancialFilters,
+  FINANCIAL_SITUATION_FILTER_LABELS,
   type FinancialFilters,
-  type FinancialStatusFilter,
+  type FinancialSituationFilter,
 } from '../utils/filterFinancialEntries'
 
 const ALL = '__all__'
 const TYPES = Object.keys(FINANCIAL_TYPE_LABELS) as FinancialEntryType[]
 
-const STATUS_LABELS: Record<FinancialStatusFilter, string> = {
-  pendente: 'Pendente',
-  pago: 'Pago',
-  atrasado: 'Atrasado',
-}
-const STATUSES = Object.keys(STATUS_LABELS) as FinancialStatusFilter[]
+/** Ordem deliberada: o guarda-chuva primeiro, depois os três buckets que o
+ * compõem, e "Pago" por último — a mesma leitura dos cards de indicador. */
+const SITUATIONS: FinancialSituationFilter[] = [
+  'a_receber',
+  'a_vencer',
+  'vencido',
+  'condicao_especial',
+  'pago',
+]
 
 interface FinanceiroFilterBarProps {
   filters: FinancialFilters
@@ -94,19 +98,23 @@ export function FinanceiroFilterBar({
 
         {/* Situação */}
         <Select
-          value={filters.status ?? ALL}
-          onValueChange={(v) => set('status', v === ALL ? null : (v as FinancialStatusFilter))}
+          value={filters.situation ?? ALL}
+          onValueChange={(v) =>
+            set('situation', v === ALL ? null : (v as FinancialSituationFilter))
+          }
         >
-          <SelectTrigger className="h-9 w-[140px] text-sm">
+          <SelectTrigger className="h-9 w-[170px] text-sm">
             <SelectValue>
-              {filters.status ? STATUS_LABELS[filters.status] : 'Toda situação'}
+              {filters.situation
+                ? FINANCIAL_SITUATION_FILTER_LABELS[filters.situation]
+                : 'Toda situação'}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>Toda situação</SelectItem>
-            {STATUSES.map((s) => (
+            {SITUATIONS.map((s) => (
               <SelectItem key={s} value={s}>
-                {STATUS_LABELS[s]}
+                {FINANCIAL_SITUATION_FILTER_LABELS[s]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -152,12 +160,17 @@ export function FinanceiroFilterBar({
           />
         </div>
 
+        {/* Período e "sem data" são mutuamente exclusivos: um intervalo não tem
+            como conter a ausência de data, então marcar um desliga o outro. */}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Vencimento</span>
           <Input
             type="date"
             value={filters.dueFrom ?? ''}
-            onChange={(e) => set('dueFrom', e.target.value || null)}
+            onChange={(e) =>
+              onChange({ ...filters, dueFrom: e.target.value || null, undatedOnly: false })
+            }
+            disabled={filters.undatedOnly}
             className="h-9 w-[150px] text-sm"
             aria-label="Vencimento de"
           />
@@ -165,11 +178,25 @@ export function FinanceiroFilterBar({
           <Input
             type="date"
             value={filters.dueTo ?? ''}
-            onChange={(e) => set('dueTo', e.target.value || null)}
+            onChange={(e) =>
+              onChange({ ...filters, dueTo: e.target.value || null, undatedOnly: false })
+            }
+            disabled={filters.undatedOnly}
             className="h-9 w-[150px] text-sm"
             aria-label="Vencimento até"
           />
         </div>
+
+        {filters.undatedOnly && (
+          <button
+            type="button"
+            onClick={() => set('undatedOnly', false)}
+            className="flex items-center gap-1 h-9 px-2.5 rounded-md border border-info/30 bg-info/5 text-xs text-info"
+          >
+            Sem data definida
+            <X className="w-3 h-3" />
+          </button>
+        )}
       </div>
     </div>
   )
