@@ -8,6 +8,7 @@ import {
   Calendar,
   Check,
   Gavel,
+  Hourglass,
   Pencil,
   Tag,
   Trash2,
@@ -21,7 +22,7 @@ import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
   formatCurrency,
-  isFinancialEntryOverdue,
+  getFinancialSituation,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
@@ -30,6 +31,7 @@ import { useLegalProcess } from '@/features/processos/hooks/useLegalProcesses'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { useUpdateFinancialEntry, useDeleteFinancialEntry } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
+import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { Can } from '@/components/shared/Can'
 
 interface FinancialEntryDetailModalProps {
@@ -80,7 +82,9 @@ export function FinancialEntryDetailModal({
 
   const isReceita = entry.type === 'receita'
   const isPaid = entry.status === 'pago'
-  const overdue = isFinancialEntryOverdue(entry)
+  const situation = getFinancialSituation(entry)
+  const overdue = situation === 'vencido'
+  const isConditional = entry.settlement_kind === 'conditional'
   const accent = isReceita ? 'var(--success)' : 'var(--destructive)'
 
   return (
@@ -110,7 +114,13 @@ export function FinancialEntryDetailModal({
                     description: entry.description,
                     amount: Number(entry.amount),
                     status: entry.status,
-                    due_date: entry.due_date,
+                    settlement_kind: entry.settlement_kind,
+                    // A chave é enviada mesmo valendo undefined, e o spread do
+                    // form a sobrepõe ao default `todayISO()` — que é o que
+                    // deixa o campo vazio ao editar uma condição sem previsão,
+                    // em vez de inventar a data de hoje.
+                    due_date: entry.due_date ?? undefined,
+                    condition_description: entry.condition_description ?? undefined,
                     paid_at: entry.paid_at ?? undefined,
                     client_id: entry.client_id ?? undefined,
                     crm_item_id: entry.crm_item_id ?? undefined,
@@ -147,18 +157,7 @@ export function FinancialEntryDetailModal({
                   >
                     {isReceita ? 'Receita' : 'Despesa'}
                   </span>
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                      isPaid
-                        ? 'bg-success/12 text-success'
-                        : overdue
-                          ? 'bg-destructive/12 text-destructive'
-                          : 'bg-warning/12 text-warning'
-                    )}
-                  >
-                    {isPaid ? 'Pago' : overdue ? 'Atrasado' : 'Pendente'}
-                  </span>
+                  <FinancialSituationBadge entry={entry} className="px-2" />
                 </div>
 
                 <DialogTitle className="text-[17px] font-medium leading-snug pr-8">
@@ -176,23 +175,48 @@ export function FinancialEntryDetailModal({
 
               {/* Corpo */}
               <div className="flex-1 overflow-y-auto min-h-0 px-6 py-5 space-y-4">
-                <InfoRow icon={<Calendar className="h-4 w-4 text-muted-foreground/60" />}>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50">
-                    {isPaid ? 'Pago em' : 'Vencimento'}
-                  </p>
-                  <p className={cn('text-sm', overdue && 'text-destructive font-medium')}>
-                    {format(
-                      parseISO(isPaid && entry.paid_at ? entry.paid_at : entry.due_date),
-                      "dd 'de' MMMM 'de' yyyy",
-                      { locale: ptBR }
-                    )}
-                  </p>
-                  {isPaid && entry.paid_at && entry.paid_at !== entry.due_date && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Vencia em {format(parseISO(entry.due_date), 'dd/MM/yyyy', { locale: ptBR })}
+                {/* A condição vem antes da data: para estes lançamentos é ela
+                    que determina o recebimento, e a data é só estimativa. */}
+                {isConditional && (
+                  <InfoRow icon={<Hourglass className="h-4 w-4 text-info/70" />}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50">
+                      Condição para {isReceita ? 'receber' : 'pagar'}
                     </p>
-                  )}
-                </InfoRow>
+                    <p className="text-sm">{entry.condition_description}</p>
+                  </InfoRow>
+                )}
+
+                {/* `displayDate` pode ser null: condição especial sem previsão
+                    é estado válido, e parseISO(null) quebraria a tela. */}
+                {(() => {
+                  const displayDate = isPaid && entry.paid_at ? entry.paid_at : entry.due_date
+                  const label = isPaid ? 'Pago em' : isConditional ? 'Previsão' : 'Vencimento'
+
+                  return (
+                    <InfoRow icon={<Calendar className="h-4 w-4 text-muted-foreground/60" />}>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50">
+                        {label}
+                      </p>
+                      {displayDate ? (
+                        <p className={cn('text-sm', overdue && 'text-destructive font-medium')}>
+                          {format(parseISO(displayDate), "dd 'de' MMMM 'de' yyyy", {
+                            locale: ptBR,
+                          })}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Sem data definida
+                        </p>
+                      )}
+                      {isPaid && entry.paid_at && entry.due_date && entry.paid_at !== entry.due_date && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {isConditional ? 'Previa' : 'Vencia'} em{' '}
+                          {format(parseISO(entry.due_date), 'dd/MM/yyyy', { locale: ptBR })}
+                        </p>
+                      )}
+                    </InfoRow>
+                  )
+                })()}
 
                 <InfoRow icon={<Tag className="h-4 w-4 text-muted-foreground/60" />}>
                   <p className="text-sm">{FINANCIAL_CATEGORY_LABELS[entry.category]}</p>

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -23,14 +24,25 @@ import {
   FINANCIAL_TYPE_LABELS,
   FINANCIAL_CATEGORY_LABELS,
   FINANCIAL_STATUS_LABELS,
+  FINANCIAL_SETTLEMENT_KIND_LABELS,
+  todayISO,
   type FinancialEntryType,
   type FinancialEntryCategory,
   type FinancialEntryStatus,
+  type FinancialSettlementKind,
 } from '@/types/financialEntry.types'
 
 const TYPES = Object.keys(FINANCIAL_TYPE_LABELS) as FinancialEntryType[]
 const CATEGORIES = Object.keys(FINANCIAL_CATEGORY_LABELS) as FinancialEntryCategory[]
 const STATUSES = Object.keys(FINANCIAL_STATUS_LABELS) as FinancialEntryStatus[]
+const SETTLEMENT_KINDS = Object.keys(
+  FINANCIAL_SETTLEMENT_KIND_LABELS
+) as FinancialSettlementKind[]
+
+const SETTLEMENT_KIND_HINTS: Record<FinancialSettlementKind, string> = {
+  scheduled: 'Tem uma data para acontecer',
+  conditional: 'Depende de um evento',
+}
 
 interface FinancialEntryFormProps {
   defaultValues?: Partial<FinancialEntryInput>
@@ -53,6 +65,7 @@ export function FinancialEntryForm({
     handleSubmit,
     control,
     watch,
+    getValues,
     setValue,
     formState: { errors },
   } = useForm<FinancialEntryInput>({
@@ -62,13 +75,17 @@ export function FinancialEntryForm({
       type: 'receita',
       category: 'honorario',
       status: 'pendente',
-      due_date: new Date().toISOString().slice(0, 10),
+      settlement_kind: 'scheduled',
+      due_date: todayISO(),
       ...defaultValues,
     },
   })
 
   const type = watch('type')
   const status = watch('status')
+  const settlementKind = watch('settlement_kind')
+  const isConditional = settlementKind === 'conditional'
+  const isReceita = type === 'receita'
 
   // O cliente segue o processo sempre que o processo tiver um — mesma regra do
   // EventForm, para os dois campos não divergirem.
@@ -156,12 +173,78 @@ export function FinancialEntryForm({
         </div>
       </div>
 
+      {/* Forma de liquidação — o campo que separa "A vencer" de "Condição
+          especial". É uma escolha explícita de propósito: deixar em branco a
+          data NÃO classifica o lançamento (ver a migration 40). */}
+      <div className="space-y-2">
+        <Label>{isReceita ? 'Forma de recebimento' : 'Forma de pagamento'} *</Label>
+        <Controller
+          name="settlement_kind"
+          control={control}
+          render={({ field }) => (
+            <div className="grid grid-cols-2 gap-2">
+              {SETTLEMENT_KINDS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    field.onChange(k)
+                    // A data muda de papel junto com o modo: vencimento é
+                    // obrigatório, previsão nasce vazia para não inventar uma
+                    // estimativa que ninguém escolheu.
+                    // getValues, não watch: leitura pontual dentro do handler,
+                    // sem criar assinatura de re-render.
+                    if (k === 'conditional') setValue('due_date', '')
+                    else if (!getValues('due_date')) setValue('due_date', todayISO())
+                  }}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left transition-all',
+                    field.value === k
+                      ? k === 'conditional'
+                        ? 'border-info bg-info/10 text-info'
+                        : 'border-foreground/40 bg-muted/50'
+                      : 'border-border text-muted-foreground hover:border-foreground/30'
+                  )}
+                >
+                  <span className="block text-sm font-medium">
+                    {FINANCIAL_SETTLEMENT_KIND_LABELS[k]}
+                  </span>
+                  <span className="block text-[11px] opacity-70">
+                    {SETTLEMENT_KIND_HINTS[k]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        />
+      </div>
+
+      {isConditional && (
+        <div className="space-y-2">
+          <Label>Condição *</Label>
+          <Textarea
+            {...register('condition_description')}
+            rows={2}
+            placeholder="Ex: após o trânsito em julgado / após a liberação do alvará"
+          />
+          {errors.condition_description && (
+            <p className="text-xs text-destructive">{errors.condition_description.message}</p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Vencimento *</Label>
+          <Label>{isConditional ? 'Previsão' : 'Vencimento *'}</Label>
           <Input type="date" {...register('due_date')} />
-          {errors.due_date && (
+          {errors.due_date ? (
             <p className="text-xs text-destructive">{errors.due_date.message}</p>
+          ) : (
+            isConditional && (
+              <p className="text-[11px] text-muted-foreground">
+                Opcional. Previsão vencida não conta como atraso.
+              </p>
+            )
           )}
         </div>
 

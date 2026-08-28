@@ -58,19 +58,27 @@ export function FinanceiroResumo() {
               </p>
             </div>
 
+            {/* "A receber" é o total — a vencer + vencido + condição especial.
+                As duas parcelas que mudam a leitura do número aparecem ao lado
+                dele, não escondidas atrás de um clique. */}
             <div className="rounded-lg bg-warning/10 border border-warning/20 p-3">
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-xs text-warning font-medium">A receber</span>
-                {summary.overdue > 0 && (
+                {summary.receivableOverdue > 0 && (
                   <span className="flex items-center gap-1 text-xs text-destructive font-medium">
                     <AlertTriangle className="h-3 w-3" />
-                    {formatBRL(summary.overdue)} vencido
+                    {formatBRL(summary.receivableOverdue)} vencido
                   </span>
                 )}
               </div>
               <p className="text-2xl font-bold text-warning tabular-nums">
-                {formatBRL(summary.outstanding)}
+                {formatBRL(summary.receivableTotal)}
               </p>
+              {summary.receivableConditionalCount > 0 && (
+                <p className="text-[11px] text-info mt-1">
+                  {formatBRL(summary.receivableConditional)} em condição especial
+                </p>
+              )}
             </div>
           </>
         )}

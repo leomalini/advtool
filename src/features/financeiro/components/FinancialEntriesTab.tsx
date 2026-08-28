@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
   formatCurrency,
-  isFinancialEntryOverdue,
+  getFinancialSituation,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
@@ -22,6 +22,7 @@ import {
 } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
+import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { Can } from '@/components/shared/Can'
 
 interface FinancialEntriesTabProps {
@@ -33,6 +34,26 @@ interface FinancialEntriesTabProps {
   lockedCrmItemId?: string | null
   lockedClientId?: string | null
   itemLabel?: string
+}
+
+/**
+ * A linha do "quando". Cobre os quatro casos que a taxonomia produz — inclusive
+ * o sem data, onde formatar `null` devolveria "Invalid Date" na tela.
+ *
+ * Para condição especial o texto da condição vem antes da previsão: é ele que
+ * diz o que precisa acontecer; a data, quando existe, é só uma estimativa.
+ */
+function describeWhen(entry: FinancialEntryWithRelations): string {
+  const asDate = (iso: string) => format(parseISO(iso), 'dd/MM/yyyy', { locale: ptBR })
+
+  if (entry.status === 'pago' && entry.paid_at) return `Pago em ${asDate(entry.paid_at)}`
+
+  if (entry.settlement_kind === 'conditional') {
+    const condition = entry.condition_description ?? 'Condição especial'
+    return entry.due_date ? `${condition} · prev. ${asDate(entry.due_date)}` : condition
+  }
+
+  return entry.due_date ? `Vence ${asDate(entry.due_date)}` : 'Sem data definida'
 }
 
 /** Aba Financeiro — compartilhada entre CasoModal, a página do processo e
@@ -94,11 +115,19 @@ export function FinancialEntriesTab({
     )
   }
 
+  const sum = (list: FinancialEntryWithRelations[]) =>
+    list.reduce((s, e) => s + Number(e.amount), 0)
+
   const receitas = entries.filter((e) => e.type === 'receita')
   const despesas = entries.filter((e) => e.type === 'despesa')
-  const recebido = receitas.filter((e) => e.status === 'pago').reduce((s, e) => s + Number(e.amount), 0)
-  const aReceber = receitas.filter((e) => e.status !== 'pago').reduce((s, e) => s + Number(e.amount), 0)
-  const totalDespesas = despesas.reduce((s, e) => s + Number(e.amount), 0)
+  const recebido = sum(receitas.filter((e) => e.status === 'pago'))
+  // "A receber" aqui é a mesma definição da tela principal: TUDO que não foi
+  // pago, com data ou por condição.
+  const aReceber = sum(receitas.filter((e) => e.status !== 'pago'))
+  const condicionais = receitas.filter(
+    (e) => getFinancialSituation(e) === 'condicao_especial'
+  )
+  const totalDespesas = sum(despesas)
 
   return (
     <div className="space-y-5">
@@ -140,6 +169,13 @@ export function FinancialEntriesTab({
             <div className="rounded-xl border border-border p-3">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">A receber</p>
               <p className="text-sm font-semibold text-warning mt-1">{formatCurrency(aReceber)}</p>
+              {/* Quanto do "a receber" não tem data para acontecer — o número
+                  sozinho sugeriria que tudo ali já está agendado. */}
+              {condicionais.length > 0 && (
+                <p className="text-[10px] text-info mt-0.5">
+                  {formatCurrency(sum(condicionais))} em condição especial
+                </p>
+              )}
             </div>
             <div className="rounded-xl border border-border p-3">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Despesas</p>
@@ -153,7 +189,8 @@ export function FinancialEntriesTab({
             {entries.map((entry) => {
               const isReceita = entry.type === 'receita'
               const isPaid = entry.status === 'pago'
-              const overdue = isFinancialEntryOverdue(entry)
+              const situation = getFinancialSituation(entry)
+              const overdue = situation === 'vencido'
 
               return (
                 <div
@@ -172,27 +209,14 @@ export function FinancialEntriesTab({
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                          isPaid
-                            ? 'bg-success/12 text-success'
-                            : overdue
-                              ? 'bg-destructive/12 text-destructive'
-                              : 'bg-warning/12 text-warning'
-                        )}
-                      >
-                        {isPaid ? 'Pago' : overdue ? 'Atrasado' : 'Pendente'}
-                      </span>
+                      <FinancialSituationBadge entry={entry} />
                       <p className="text-sm font-medium truncate">{entry.description}</p>
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span>{FINANCIAL_CATEGORY_LABELS[entry.category]}</span>
                       <span>·</span>
                       <span className={cn(overdue && 'text-destructive font-medium')}>
-                        {isPaid && entry.paid_at
-                          ? `Pago em ${format(parseISO(entry.paid_at), 'dd/MM/yyyy', { locale: ptBR })}`
-                          : `Vence ${format(parseISO(entry.due_date), 'dd/MM/yyyy', { locale: ptBR })}`}
+                        {describeWhen(entry)}
                       </span>
                     </div>
                   </div>
