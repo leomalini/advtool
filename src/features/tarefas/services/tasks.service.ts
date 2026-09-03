@@ -22,6 +22,18 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
   return out as T
 }
 
+/** Atividades criadas a partir de uma publicação. */
+export async function getTasksForPublication(publicationId: string): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select(TASK_SELECT)
+    .eq('publication_id', publicationId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as Task[]
+}
+
 export async function getTasks(): Promise<Task[]> {
   const { data, error } = await supabase
     .from('tasks')

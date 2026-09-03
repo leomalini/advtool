@@ -17,6 +17,8 @@ export const createTaskSchema = z.object({
   client_id: optionalUuid,
   crm_item_id: optionalUuid,
   legal_process_id: optionalUuid,
+  /** Publicação que originou a providência. */
+  publication_id: optionalUuid,
   due_date: z.string().optional().nullable(),
 })
 
