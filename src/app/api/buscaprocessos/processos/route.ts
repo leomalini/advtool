@@ -22,6 +22,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (err instanceof Error && err.name === 'TimeoutError') {
       return NextResponse.json({ error: 'Timeout na API BuscaProcessos' }, { status: 504 })
     }
+    // Sem este log, uma falha de mapeamento (a API responde 200 e o parse
+    // quebra aqui) chegava ao usuário como um 500 opaco, indistinguível de
+    // uma falha da própria API.
+    console.error('[buscaprocessos/processos]', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

@@ -70,8 +70,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const supabase = createAdminClient()
     const data = payload.data
 
-    // BuscaProcessos sends the CNJ number in various field positions
-    const cnj = (data['numeroCnj'] ?? data['numero']) as string | undefined
+    // A API devolve o mesmo campo em camelCase e snake_case conforme o
+    // endpoint (numeroCnj / numero_cnj), e o corpo do webhook é declarado no
+    // OpenAPI como objeto livre — aceitamos as três grafias.
+    const cnj = (data['numeroCnj'] ?? data['numero_cnj'] ?? data['numero']) as
+      | string
+      | undefined
     if (!cnj) return NextResponse.json({ received: true, processed: false })
 
     const { data: matchingProcess } = await supabase
@@ -84,16 +88,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ received: true, processed: false, reason: 'case_not_found' })
     }
 
-    const movimentoData = (data['movimento'] ?? data) as Record<string, unknown>
+    const movimentoData = (data['movimentacao'] ?? data['movimento'] ?? data) as Record<
+      string,
+      unknown
+    >
     const movDate = (movimentoData['data'] ?? payload.created_at) as string
+
+    // O texto da movimentação vem em `conteudo` (é o nome do campo em
+    // GET /processos/cnj/{cnj}/movimentacoes). `titulo` nunca existiu nessa
+    // API; ficava como fallback para nada e toda movimentação era gravada
+    // como "Nova movimentação".
     const movDesc = String(
-      movimentoData['titulo'] ?? movimentoData['descricao'] ?? 'Nova movimentação',
+      movimentoData['conteudo'] ??
+        movimentoData['descricao'] ??
+        movimentoData['titulo'] ??
+        'Nova movimentação',
     )
+
+    // `classificacao_predita.nome` é o rótulo curto do ato ("Conclusão"),
+    // que é exatamente o papel da coluna `title`.
+    const classificacao = movimentoData['classificacao_predita'] as
+      | { nome?: string }
+      | null
+      | undefined
+
+    // `tipo_publicacao` só vem preenchido quando a origem é diário oficial —
+    // é o que separa publicação de movimentação de serventuário.
+    const isPublicacao = Boolean(movimentoData['tipo_publicacao'])
 
     await supabase.from('legal_process_movements').insert({
       legal_process_id: matchingProcess.id,
       movement_date: movDate,
       description: movDesc,
+      title: classificacao?.nome ?? null,
+      kind: isPublicacao ? 'publicacao' : 'movimentacao',
       source: 'busca_processos',
       raw_data: data,
     })
