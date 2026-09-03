@@ -20,6 +20,7 @@ import {
   Monitor,
   Check,
   CalendarDays,
+  Newspaper,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,7 @@ import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { WorkflowsManager } from './WorkflowsManager'
 import { EventTypesManager } from './EventTypesManager'
 import { UsersManager } from './UsersManager'
+import { OabMonitoringManager } from './OabMonitoringManager'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -206,11 +208,19 @@ function ThemeCard({
 
 // ── Helpers ────────────────────────────────────────────────────
 
-type TabValue = 'usuarios' | 'areas' | 'workflows' | 'etiquetas' | 'tipos-evento' | 'geral'
+type TabValue =
+  | 'usuarios'
+  | 'publicacoes'
+  | 'areas'
+  | 'workflows'
+  | 'etiquetas'
+  | 'tipos-evento'
+  | 'geral'
 
 const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'geral', label: 'Geral', icon: Settings },
   { value: 'usuarios', label: 'Usuários', icon: Users },
+  { value: 'publicacoes', label: 'Publicações', icon: Newspaper },
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
@@ -524,6 +534,9 @@ export function ConfiguracoesContent() {
         <div className="pt-5">
           <TabsContent value="usuarios">
             <UsersManager />
+          </TabsContent>
+          <TabsContent value="publicacoes">
+            <OabMonitoringManager />
           </TabsContent>
           <TabsContent value="areas">
             <TabAreas />

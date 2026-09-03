@@ -16,6 +16,7 @@ export interface AdminUser {
   role: AppRole
   is_active: boolean
   oab_number: string | null
+  oab_state: string | null
   created_at: string
   /** `true` enquanto o convite não foi aceito (e-mail ainda não confirmado). */
   invite_pending: boolean

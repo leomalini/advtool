@@ -73,12 +73,14 @@ function InviteDialog({
   const [fullName, setFullName] = useState('')
   const [role, setRole] = useState<AppRole>('attorney')
   const [oab, setOab] = useState('')
+  const [oabState, setOabState] = useState('')
 
   function reset() {
     setEmail('')
     setFullName('')
     setRole('attorney')
     setOab('')
+    setOabState('')
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -86,7 +88,7 @@ function InviteDialog({
     if (invite.isPending) return
 
     invite.mutate(
-      { email, full_name: fullName, role, oab_number: oab },
+      { email, full_name: fullName, role, oab_number: oab, oab_state: oabState },
       {
         onSuccess: (result) => {
           // A conta nasceu de qualquer forma; o que varia é se o convite saiu
@@ -164,17 +166,32 @@ function InviteDialog({
             <p className="text-xs text-muted-foreground">{ROLE_HINTS[role]}</p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="invite-oab">
-              OAB <span className="text-muted-foreground font-normal">(opcional)</span>
-            </Label>
-            <Input
-              id="invite-oab"
-              value={oab}
-              onChange={(e) => setOab(e.target.value)}
-              placeholder="OAB/SP 123.456"
-            />
+          <div className="grid grid-cols-[1fr_5rem] gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="invite-oab">
+                OAB <span className="text-muted-foreground font-normal">(opcional)</span>
+              </Label>
+              <Input
+                id="invite-oab"
+                value={oab}
+                onChange={(e) => setOab(e.target.value)}
+                placeholder="123.456"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite-oab-uf">UF</Label>
+              <Input
+                id="invite-oab-uf"
+                value={oabState}
+                onChange={(e) => setOabState(e.target.value.toUpperCase().slice(0, 2))}
+                placeholder="SP"
+                maxLength={2}
+              />
+            </div>
           </div>
+          {/* A UF é o que permite buscar publicações por esta inscrição: a API
+              de intimações recebe UF:NÚMERO, e sem o estado a pessoa fica de
+              fora da consulta. */}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={invite.isPending}>
@@ -270,6 +287,51 @@ function ManualLinkDialog({
 
 // ── Linha da lista ───────────────────────────────────────────────────────────
 
+/**
+ * OAB e UF editáveis na própria lista.
+ *
+ * Elas passaram a ser dado operacional, não decorativo: é por aqui que o
+ * módulo de Publicações sabe quais inscrições consultar. Sem edição, quem já
+ * estava cadastrado antes da UF existir nunca entraria na busca.
+ */
+function OabCell({
+  user,
+  onSave,
+}: {
+  user: AdminUser
+  onSave: (patch: { oab_number: string | null; oab_state: string | null }) => void
+}) {
+  const [numero, setNumero] = useState(user.oab_number ?? '')
+  const [uf, setUf] = useState(user.oab_state ?? '')
+
+  function commit() {
+    const nextNumero = numero.trim() || null
+    const nextUf = uf.trim().toUpperCase() || null
+    if (nextNumero === (user.oab_number ?? null) && nextUf === (user.oab_state ?? null)) return
+    onSave({ oab_number: nextNumero, oab_state: nextUf })
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        value={numero}
+        onChange={(e) => setNumero(e.target.value)}
+        onBlur={commit}
+        placeholder="OAB"
+        className="h-7 px-2 text-xs"
+      />
+      <Input
+        value={uf}
+        onChange={(e) => setUf(e.target.value.toUpperCase().slice(0, 2))}
+        onBlur={commit}
+        placeholder="UF"
+        maxLength={2}
+        className="h-7 w-11 px-2 text-center text-xs"
+      />
+    </div>
+  )
+}
+
 function UserRow({
   user,
   isSelf,
@@ -289,7 +351,7 @@ function UserRow({
     <>
       <div
         className={cn(
-          'grid grid-cols-[auto_1fr_120px_160px_250px] gap-4 px-5 py-3.5 items-center transition-colors hover:bg-muted/20',
+          'grid grid-cols-[auto_1fr_170px_160px_250px] gap-4 px-5 py-3.5 items-center transition-colors hover:bg-muted/20',
           !user.is_active && 'opacity-55'
         )}
       >
@@ -310,7 +372,7 @@ function UserRow({
           <p className="text-xs text-muted-foreground truncate">{user.email}</p>
         </div>
 
-        <span className="text-xs text-muted-foreground truncate">{user.oab_number ?? '—'}</span>
+        <OabCell user={user} onSave={(patch) => updateUser.mutate({ id: user.id, ...patch })} />
 
         {/* Trocar o perfil vale na próxima requisição da pessoa: `public.can()`
             lê o banco a cada checagem, não um claim do token. */}
@@ -494,7 +556,7 @@ export function UsersManager() {
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
-          <div className="grid grid-cols-[auto_1fr_120px_160px_250px] gap-4 px-5 py-2.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
+          <div className="grid grid-cols-[auto_1fr_170px_160px_250px] gap-4 px-5 py-2.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
             <div className="w-9" />
             <span>Nome</span>
             <span>OAB</span>
