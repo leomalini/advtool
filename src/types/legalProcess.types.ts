@@ -1,3 +1,5 @@
+import type { Publication } from './publication.types'
+
 import type { CrmItemWithRelations } from './crmItem.types'
 
 // ── Legal Process Types ──────────────────────────────────────────────────────
@@ -8,6 +10,9 @@ import type { CrmItemWithRelations } from './crmItem.types'
 
 export type ProcessType = 'judicial' | 'administrativo'
 export type ProcessStatus = 'ativo' | 'arquivado' | 'suspenso'
+
+/** Frequências aceitas por POST /v1/monitoramentos/processos. */
+export type MonitoringFrequency = 'DIARIA' | 'SEMANAL' | 'MENSAL'
 
 export const PROCESS_TYPE_LABELS: Record<ProcessType, string> = {
   judicial: 'Judicial',
@@ -41,6 +46,23 @@ export interface LegalProcess {
   subject: string | null
   process_type: ProcessType
   status: ProcessStatus
+  /** Id do monitoramento na BuscaProcessos. Preenchido pela API, não pelo
+   * formulário — é por ele que o monitoramento (cobrado por mês) é cancelado. */
+  monitoring_id: string | null
+  monitoring_frequency: MonitoringFrequency | null
+  /** Estado devolvido pela API, texto livre do lado deles (ex.: ENCONTRADO). */
+  monitoring_status: string | null
+  monitoring_synced_at: string | null
+  /** Resumo gerado pela IA da BuscaProcessos, guardado para não reconsultar
+   * (R$ 0,12 por consulta) a cada abertura da tela. */
+  ai_summary: string | null
+  /** Quando a IA gerou o resumo — do lado deles. */
+  ai_summary_updated_at: string | null
+  /** Quando NÓS consultamos cada bloco. Bloco com carimbo não é reconsultado. */
+  capa_synced_at: string | null
+  movements_synced_at: string | null
+  documents_synced_at: string | null
+  ai_summary_synced_at: string | null
   created_at: string
   updated_at: string
 }
@@ -111,6 +133,22 @@ export interface LegalProcessPartyInput {
   client_id?: string | null
 }
 
+/** Documento disponível no tribunal — catálogo, não arquivo nosso. Baixar o
+ * PDF é uma operação cobrada à parte (R$ 0,20), feita sob demanda. */
+export interface LegalProcessPublicDocument {
+  id: string
+  legal_process_id: string
+  external_id: string
+  title: string | null
+  description: string | null
+  document_date: string | null
+  doc_type: string | null
+  file_extension: string | null
+  page_count: number | null
+  download_url: string | null
+  created_at: string
+}
+
 export interface LegalProcessWithRelations extends LegalProcess {
   /** The master crm_item (wf-processos), or null when the processo has no
    * linked item left — an integrity anomaly the delete guard in
@@ -131,6 +169,11 @@ export interface LegalProcessWithRelations extends LegalProcess {
   crm_items: CrmItemWithRelations[]
   movements: LegalProcessMovement[]
   parties: LegalProcessParty[]
+  public_documents: LegalProcessPublicDocument[]
+  /** Publicações deste processo — moram no módulo de Publicações, não na
+   * timeline: a mesma publicação nas duas tabelas teria dois estados de
+   * leitura. */
+  publications: Publication[]
 }
 
 /** Parte como a tela a consome, já com o cliente resolvido. */

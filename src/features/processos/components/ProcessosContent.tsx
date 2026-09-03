@@ -8,7 +8,7 @@ import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
 import { useLegalProcesses } from '../hooks/useLegalProcesses'
 import { useCreateLegalProcess } from '../hooks/useLegalProcessMutations'
 import { ProcessoTableView } from './ProcessoTableView'
-import { ProcessoForm } from './ProcessoForm'
+import { ProcessoForm, type ProcessoFormSubmitMeta } from './ProcessoForm'
 import { MovimentacoesFeed } from './MovimentacoesFeed'
 import { ProcessoFilterBar } from './ProcessoFilterBar'
 import {
@@ -31,6 +31,9 @@ export function ProcessosContent() {
 
   const createOpen = searchParams.get('create') === '1'
   const deepLinkClientId = searchParams.get('clientId')
+  // Vem da tela de publicações: publicação de processo não cadastrado abre o
+  // formulário já com o número, e a consulta automática preenche o resto.
+  const deepLinkCnj = searchParams.get('cnj')
 
   function openDetail(processo: LegalProcessWithRelations) {
     router.push(`/processos/${processo.id}`)
@@ -50,8 +53,8 @@ export function ProcessosContent() {
 
   const createProcess = useCreateLegalProcess()
 
-  async function handleCreateSubmit(data: LegalProcessInput) {
-    await createProcess.mutateAsync(data)
+  async function handleCreateSubmit(data: LegalProcessInput, meta: ProcessoFormSubmitMeta) {
+    await createProcess.mutateAsync({ input: data, capaAlreadyFetched: meta.capaFetched })
     closeCreate()
   }
 
@@ -115,6 +118,7 @@ export function ProcessosContent() {
         defaultValues={{
           column_id: workflow.colunas[0]?.id ?? '',
           client_id: deepLinkClientId ?? undefined,
+          cnj_number: deepLinkCnj ?? undefined,
           tags: [],
         }}
         onSubmit={handleCreateSubmit}

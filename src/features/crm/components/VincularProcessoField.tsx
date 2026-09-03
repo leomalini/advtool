@@ -8,6 +8,7 @@ import { formatCnjNumber } from '@/utils/cnj'
 import { useWorkflow } from '../hooks/useWorkflows'
 import { useLegalProcess } from '@/features/processos/hooks/useLegalProcesses'
 import { useCreateLegalProcess } from '@/features/processos/hooks/useLegalProcessMutations'
+import { lookupCnjViaApi } from '@/features/processos/services/cnjLookup'
 import {
   findLegalProcessByCnj,
   searchLegalProcessesByCnjPrefix,
@@ -49,6 +50,8 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
   const [searched, setSearched] = useState(false)
   const [localResult, setLocalResult] = useState<LegalProcessWithRelations | null>(null)
   const [judicialFields, setJudicialFields] = useState<JudicialFields>(EMPTY_JUDICIAL_FIELDS)
+  /** CNJ cuja capa esta tela já consultou — não vale pagar de novo na criação. */
+  const capaFetchedForRef = useRef<string | null>(null)
   const [suggestions, setSuggestions] = useState<LegalProcessWithRelations[]>([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const lastSearchedRef = useRef<string | null>(null)
@@ -128,18 +131,25 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
           return
         }
 
-        const res = await fetch(`/api/buscaprocessos/processos/${encodeURIComponent(cnjInput)}`, {
-          signal: controller.signal,
-        })
+        const outcome = await lookupCnjViaApi(cnjInput, controller.signal)
         if (controller.signal.aborted) return
-        const json = await res.json()
 
-        if (res.ok) {
+        // Consulta ainda em processamento: soltar o ref deixa a pessoa tentar
+        // de novo com o mesmo número quando o resultado tiver saído.
+        if (outcome.status === 'pending') {
+          lastSearchedRef.current = null
+          toast.info(outcome.message)
+          setSearched(true)
+          return
+        }
+
+        if (outcome.status === 'ok') {
+          capaFetchedForRef.current = cnjInput.replace(/D/g, '')
           setJudicialFields({
-            court: json.court ?? '',
-            court_division: json.court_division ?? '',
-            plaintiff: json.plaintiff ?? '',
-            defendant: json.defendant ?? '',
+            court: outcome.data.court ?? '',
+            court_division: outcome.data.court_division ?? '',
+            plaintiff: outcome.data.plaintiff ?? '',
+            defendant: outcome.data.defendant ?? '',
             opposing_counsel: '',
           })
         }
@@ -172,21 +182,25 @@ export function VincularProcessoField({ value, onChange, defaults }: VincularPro
     }
     createProcess.mutate(
       {
-        title: null,
-        client_id: defaults?.client_id ?? null,
-        legal_area: defaults?.legal_area ?? null,
-        column_id: firstColumnId,
-        assigned_to: defaults?.assigned_to ?? null,
-        tags: [],
-        next_deadline: new Date().toISOString().slice(0, 10),
-        next_task_summary: null,
-        notes: null,
-        cnj_number: cnjInput,
-        court: judicialFields.court || null,
-        court_division: judicialFields.court_division || null,
-        plaintiff: judicialFields.plaintiff || null,
-        defendant: judicialFields.defendant || null,
-        opposing_counsel: judicialFields.opposing_counsel || null,
+        input: {
+          title: null,
+          client_id: defaults?.client_id ?? null,
+          legal_area: defaults?.legal_area ?? null,
+          column_id: firstColumnId,
+          assigned_to: defaults?.assigned_to ?? null,
+          tags: [],
+          next_deadline: new Date().toISOString().slice(0, 10),
+          next_task_summary: null,
+          notes: null,
+          cnj_number: cnjInput,
+          court: judicialFields.court || null,
+          court_division: judicialFields.court_division || null,
+          plaintiff: judicialFields.plaintiff || null,
+          defendant: judicialFields.defendant || null,
+          opposing_counsel: judicialFields.opposing_counsel || null,
+        },
+        // A busca desta tela já trouxe a capa deste CNJ.
+        capaAlreadyFetched: capaFetchedForRef.current === cnjInput.replace(/D/g, ''),
       },
       {
         onSuccess: (created) => {

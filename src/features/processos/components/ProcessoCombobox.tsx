@@ -7,7 +7,7 @@ import { useDebounce } from '@/hooks/useDebounce'
 import { useLegalProcesses } from '../hooks/useLegalProcesses'
 import { useCreateLegalProcess } from '../hooks/useLegalProcessMutations'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
-import { ProcessoForm } from './ProcessoForm'
+import { ProcessoForm, type ProcessoFormSubmitMeta } from './ProcessoForm'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { formatCnjNumber } from '@/utils/cnj'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
@@ -63,8 +63,11 @@ export function ProcessoCombobox({
     setQuery('')
   }
 
-  async function handleCreateSubmit(data: LegalProcessInput) {
-    const created = await createProcesso.mutateAsync(data)
+  async function handleCreateSubmit(data: LegalProcessInput, meta: ProcessoFormSubmitMeta) {
+    const created = await createProcesso.mutateAsync({
+      input: data,
+      capaAlreadyFetched: meta.capaFetched,
+    })
     setCreateOpen(false)
     select(created.id)
   }

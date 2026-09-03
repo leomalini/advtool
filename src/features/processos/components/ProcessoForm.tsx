@@ -39,6 +39,7 @@ import { useDebounce } from '@/hooks/useDebounce'
 import { formatCnjNumber } from '@/utils/cnj'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { findLegalProcessByCnj, searchLegalProcessesByCnjPrefix } from '../services/legalProcesses.service'
+import { lookupCnjViaApi } from '../services/cnjLookup'
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,21 @@ function ColorDotTriggerValue({
   )
 }
 
+/** Só os dígitos: o mesmo processo aparece com e sem pontuação conforme quem
+ * escreveu — e o preenchimento automático reescreve o campo no formato da API.
+ * Comparar a string formatada daria falso negativo. */
+function digitsOf(value: string): string {
+  return value.replace(/D/g, '')
+}
+
 // ── Main form ─────────────────────────────────────────────────────────────────
+
+/** O que o formulário sabe e o gravador precisa, além dos campos. */
+export interface ProcessoFormSubmitMeta {
+  /** A busca automática consultou a capa na BuscaProcessos e preencheu os
+   * campos. Evita que a sincronização pague pela mesma consulta de novo. */
+  capaFetched: boolean
+}
 
 interface ProcessoFormProps {
   open: boolean
@@ -130,7 +145,7 @@ interface ProcessoFormProps {
   defaultValues?: Partial<LegalProcessInput>
   editingProcess?: LegalProcessWithRelations | null
   isLoading?: boolean
-  onSubmit: (data: LegalProcessInput) => void
+  onSubmit: (data: LegalProcessInput, meta: ProcessoFormSubmitMeta) => void
 }
 
 export function ProcessoForm({
@@ -144,6 +159,11 @@ export function ProcessoForm({
   const isEditing = !!editingProcess
   const [lookingUpCnj, setLookingUpCnj] = useState(false)
   const lastFetchedCnjRef = useRef<string | null>(null)
+  /** Dígitos do CNJ cuja capa a busca automática trouxe. Guardar o número, e
+   * não um booleano, faz o dado expirar sozinho quando alguém troca o CNJ
+   * depois da busca; guardar só os dígitos sobrevive à reformatação que o
+   * próprio preenchimento faz no campo. */
+  const capaFetchedForRef = useRef<string | null>(null)
   const [cnjSuggestions, setCnjSuggestions] = useState<LegalProcessWithRelations[]>([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [duplicateProcess, setDuplicateProcess] = useState<LegalProcessWithRelations | null>(null)
@@ -289,32 +309,38 @@ export function ProcessoForm({
 
         setDuplicateProcess(null)
 
-        const res = await fetch(
-          `/api/buscaprocessos/processos/${encodeURIComponent(cnj)}`,
-          { signal: controller.signal },
-        )
+        const outcome = await lookupCnjViaApi(cnj, controller.signal)
         if (controller.signal.aborted) return
 
-        const json = await res.json()
-
-        if (!res.ok) {
-          toast.error(json.error ?? 'Processo não encontrado.')
+        if (outcome.status === 'error') {
+          toast.error(outcome.message)
           return
         }
 
-        if (json.cnj_number) setValue('cnj_number', json.cnj_number)
-        if (json.court) setValue('court', json.court)
-        if (json.court_division) setValue('court_division', json.court_division)
-        if (json.plaintiff) setValue('plaintiff', json.plaintiff)
-        if (json.defendant) setValue('defendant', json.defendant)
-        if (json.procedural_class) setValue('procedural_class', json.procedural_class)
-        if (json.subject) setValue('subject', json.subject)
-        if (json.case_value != null) setValue('case_value', json.case_value)
-        if (json.filing_date) setValue('filing_date', json.filing_date)
-        if (json.status) setValue('status', json.status)
+        // Ainda processando quando as tentativas acabaram: soltar o ref deixa
+        // a pessoa disparar a consulta de novo com o mesmo número.
+        if (outcome.status === 'pending') {
+          lastFetchedCnjRef.current = null
+          toast.info(outcome.message)
+          return
+        }
+
+        const payload = outcome.data
+        capaFetchedForRef.current = digitsOf(cnj)
+
+        if (payload.cnj_number) setValue('cnj_number', payload.cnj_number)
+        if (payload.court) setValue('court', payload.court)
+        if (payload.court_division) setValue('court_division', payload.court_division)
+        if (payload.plaintiff) setValue('plaintiff', payload.plaintiff)
+        if (payload.defendant) setValue('defendant', payload.defendant)
+        if (payload.procedural_class) setValue('procedural_class', payload.procedural_class)
+        if (payload.subject) setValue('subject', payload.subject)
+        if (payload.case_value != null) setValue('case_value', payload.case_value)
+        if (payload.filing_date) setValue('filing_date', payload.filing_date)
+        if (payload.status) setValue('status', payload.status)
         // A API é a fonte das partes: substitui a lista inteira em vez de
         // concatenar, senão uma segunda consulta duplicaria todo mundo.
-        if (json.parties?.length) setValue('parties', json.parties)
+        if (payload.parties?.length) setValue('parties', payload.parties)
         toast.success('Dados do processo preenchidos automaticamente.')
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
@@ -336,7 +362,12 @@ export function ProcessoForm({
       toast.error('Não é possível salvar: número de processo já cadastrado.')
       return
     }
-    onSubmit(data as LegalProcessInput)
+
+    const capaFetched =
+      Boolean(capaFetchedForRef.current) &&
+      capaFetchedForRef.current === digitsOf(data.cnj_number ?? '')
+
+    onSubmit(data as LegalProcessInput, { capaFetched })
   }
 
   return (

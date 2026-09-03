@@ -24,6 +24,7 @@ import {
   MapPin,
   Pencil,
   Plus,
+  RefreshCw,
   Scale,
   Search,
   Send,
@@ -38,12 +39,16 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
+import { ResumoIaCard } from './ResumoIaCard'
+import { DocumentosPublicosTab } from './DocumentosPublicosTab'
+import { PublicacaoTimelineCard, DocumentoTimelineCard } from './TimelineCards'
 import { formatDocument } from '@/utils/format'
 import { useLegalProcess } from '../hooks/useLegalProcesses'
 import {
   useUpdateLegalProcess,
   useMarkMovement,
   useLinkPartyToClient,
+  useSyncProcesso,
 } from '../hooks/useLegalProcessMutations'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { ETIQUETAS } from '@/data/mock'
@@ -56,7 +61,9 @@ import {
   type PartyClient,
   type LegalProcessMovement,
   type LegalProcessWithRelations,
+  type LegalProcessPublicDocument,
 } from '@/types/legalProcess.types'
+import type { Publication } from '@/types/publication.types'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
 import type { CreateTaskInput } from '@/schemas/task.schema'
 import { ProcessoForm } from './ProcessoForm'
@@ -85,8 +92,23 @@ const PAGE_SIZE = 20
  * Vivem no mesmo grupo porque, para quem usa, são todas "o que tem neste
  * processo" — separá-las em duas barras obrigava a procurar em dois lugares. */
 type TimelineFilter = 'tudo' | 'publicacoes' | 'movimentacoes'
-type EntityTab = 'agenda' | 'tarefas' | 'documentos' | 'financeiro' | 'comentarios' | 'cliente' | 'etapas'
+type EntityTab =
+  | 'agenda'
+  | 'tarefas'
+  | 'documentos'
+  | 'financeiro'
+  | 'comentarios'
+  | 'cliente'
+  | 'etapas'
 type Tab = TimelineFilter | EntityTab
+
+/** Item da linha do tempo. Publicação e movimentação vivem em tabelas
+ * diferentes e só compartilham a data — o tipo explícito evita ter de adivinhar
+ * qual é qual pela presença de um campo. */
+type TimelineEntry =
+  | { type: 'movement'; sortKey: string; movement: LegalProcessMovement }
+  | { type: 'publication'; sortKey: string; publication: Publication }
+  | { type: 'document'; sortKey: string; document: LegalProcessPublicDocument }
 
 const TIMELINE_TABS: readonly TimelineFilter[] = ['tudo', 'publicacoes', 'movimentacoes']
 
@@ -97,6 +119,9 @@ function isTimelineTab(tab: Tab): tab is TimelineFilter {
 const ENTITY_TABS: { id: EntityTab; label: string }[] = [
   { id: 'agenda', label: 'Agenda' },
   { id: 'tarefas', label: 'Tarefas' },
+  // Uma aba só para arquivo, com as duas origens separadas lá dentro: quem
+  // procura um documento não sabe de antemão se ele veio do tribunal ou foi
+  // enviado por alguém do escritório.
   { id: 'documentos', label: 'Documentos' },
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'comentarios', label: 'Comentários' },
@@ -342,6 +367,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const crmItemIds = useMemo(() => processo?.crm_items.map((c) => c.id) ?? [], [processo])
 
   const updateProcess = useUpdateLegalProcess(processoId, item?.id ?? '')
+  const syncProcess = useSyncProcesso()
   const markMovement = useMarkMovement()
   const createTask = useCreateTask()
   const openDocument = useOpenDocument()
@@ -383,31 +409,87 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     [processo]
   )
 
-  const publicacoes = sortedMovements.filter((m) => m.kind === 'publicacao')
-  const movimentacoes = sortedMovements.filter((m) => m.kind === 'movimentacao')
+  // Publicações moram no módulo próprio — inclusive as que chegam pelo
+  // endpoint de movimentações, que a sincronização desvia para lá. `kind` em
+  // `movements` só sobrevive por causa de linhas antigas.
+  // Memoizados porque alimentam o merge da timeline: recriar os arrays a cada
+  // render refaria a ordenação de tudo sem nada ter mudado.
+  const publicacoes = useMemo(() => processo?.publications ?? [], [processo])
+  const documentosPublicos = useMemo(() => processo?.public_documents ?? [], [processo])
+  const movimentacoes = useMemo(
+    () => sortedMovements.filter((m) => m.kind !== 'publicacao'),
+    [sortedMovements],
+  )
+
+  /** "Tudo" mistura as duas origens, então a lista precisa carregar o tipo de
+   * cada item — publicação e movimentação moram em tabelas diferentes e não
+   * têm campos em comum além da data. */
+  const timelineEntries: TimelineEntry[] = useMemo(() => {
+    const entries: TimelineEntry[] = [
+      ...movimentacoes.map((movement) => ({
+        type: 'movement' as const,
+        // Chave de ordenação com hora: dois andamentos do mesmo dia mantêm a
+        // ordem em que aconteceram.
+        sortKey: movement.movement_date,
+        movement,
+      })),
+      ...publicacoes.map((publication) => ({
+        type: 'publication' as const,
+        // A publicação só tem data. No empate do mesmo dia ela fica acima, que
+        // é onde se olha primeiro: ela é a que tem prazo correndo.
+        sortKey: `${publication.publication_date}T23:59:59`,
+        publication,
+      })),
+      ...documentosPublicos.map((document) => ({
+        type: 'document' as const,
+        // Documento sem data de expedição cai para a data de importação, senão
+        // sumiria no fim da lista.
+        sortKey: document.document_date ?? document.created_at,
+        document,
+      })),
+    ]
+
+    return entries.sort((a, b) => b.sortKey.localeCompare(a.sortKey))
+  }, [movimentacoes, publicacoes, documentosPublicos])
 
   // Abas de entidade não mostram a timeline; 'tudo' só evita um ramo morto no memo.
   const timelineFilter: TimelineFilter = isTimelineTab(tab) ? tab : 'tudo'
 
   const filtered = useMemo(() => {
-    const base =
-      timelineFilter === 'publicacoes'
-        ? publicacoes
-        : timelineFilter === 'movimentacoes'
-          ? movimentacoes
-          : sortedMovements
+    // Todas as abas de timeline usam a mesma lista e os mesmos cards; o filtro
+    // só muda quais tipos entram. Ter uma lista própria para publicações dava a
+    // ela outra aparência conforme a aba, o que lia como outra tela.
+    const base: TimelineEntry[] =
+      timelineFilter === 'movimentacoes'
+        ? timelineEntries.filter((entry) => entry.type === 'movement')
+        : timelineFilter === 'publicacoes'
+          ? timelineEntries.filter((entry) => entry.type === 'publication')
+          : timelineEntries
 
     const q = search.trim().toLowerCase()
     if (!q) return base
 
-    return base.filter((m) =>
-      [m.title, m.description, m.author, m.event_number?.toString()]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    )
-  }, [timelineFilter, search, sortedMovements, publicacoes, movimentacoes])
+    return base.filter((entry) => {
+      const haystack =
+        entry.type === 'movement'
+          ? [
+              entry.movement.title,
+              entry.movement.description,
+              entry.movement.author,
+              entry.movement.event_number?.toString(),
+            ]
+          : entry.type === 'publication'
+            ? [
+                entry.publication.title,
+                entry.publication.excerpt,
+                entry.publication.publication_type,
+                entry.publication.content_text,
+              ]
+            : [entry.document.title, entry.document.description, entry.document.doc_type]
+
+      return haystack.filter(Boolean).join(' ').toLowerCase().includes(q)
+    })
+  }, [timelineFilter, search, timelineEntries])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
@@ -486,7 +568,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const partiesByPolo = groupPartiesByPolo(processo)
   const tags = (item?.tags ?? []) as CrmTag[]
   const tarefasPendentes = tarefas.filter((t) => t.status !== 'done').length
-  const naoLidas = publicacoes.filter((p) => !p.read_at).length
+  const naoLidas = publicacoes.filter((publicacao) => !publicacao.read_at).length
 
   const timelineTabs: { id: TimelineFilter; label: string; count: number }[] = [
     // "Tudo" é o total real, não a soma das outras duas — publicações e
@@ -570,6 +652,27 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 >
                   {PROCESS_STATUS_LABELS[processo.status]}
                 </span>
+                {/* Recoleta na BuscaProcessos. Sem CNJ não há o que consultar. */}
+                {processo.cnj_number && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={syncProcess.isPending}
+                    onClick={() =>
+                      syncProcess.mutate({
+                        legalProcessId: processo.id,
+                        cnj: processo.cnj_number as string,
+                      })
+                    }
+                  >
+                    {syncProcess.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    Atualizar dados
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                   <Pencil className="h-3.5 w-3.5 mr-1.5" />
                   Editar
@@ -656,6 +759,18 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
               />
             </div>
           </div>
+
+          {/* ── Resumo por IA ── */}
+          <ResumoIaCard
+            summary={processo.ai_summary}
+            updatedAt={processo.ai_summary_updated_at}
+            hasCnj={Boolean(processo.cnj_number)}
+            onSync={() =>
+              processo.cnj_number &&
+              syncProcess.mutate({ legalProcessId: processo.id, cnj: processo.cnj_number })
+            }
+            isSyncing={syncProcess.isPending}
+          />
 
           {/* ── Cards de ação ── */}
           <div className="flex gap-4">
@@ -747,10 +862,13 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
 
             {isTimelineTab(tab) && (
               <>
-            {/* Contagem + paginação */}
+            {/* Contagem + paginação.
+                A aba de publicações tem lista própria, sem paginação: a
+                contagem vem dela, e o "mostrando de X a Y" não se aplica. */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
               <p className="text-xs text-muted-foreground">
                 {filtered.length} {filtered.length === 1 ? 'item encontrado' : 'itens encontrados'}
+                {timelineFilter === 'publicacoes' && naoLidas > 0 && ` · ${naoLidas} não lida(s)`}
                 {filtered.length > 0 && (
                   <>
                     {' · '}
@@ -804,12 +922,36 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
               <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
                 <Scale className="h-7 w-7" />
                 <p className="text-sm">
-                  {search.trim() ? 'Nenhum item para essa busca' : 'Nenhuma movimentação registrada'}
+                  {search.trim()
+                    ? 'Nenhum item para essa busca'
+                    : 'Nada registrado neste processo ainda'}
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {pageItems.map((movement) => {
+                {pageItems.map((entry) => {
+                  if (entry.type === 'publication') {
+                    return (
+                      <PublicacaoTimelineCard
+                        key={entry.publication.id}
+                        publicacao={entry.publication}
+                      />
+                    )
+                  }
+
+                  if (entry.type === 'document') {
+                    return (
+                      <DocumentoTimelineCard
+                        key={entry.document.id}
+                        documento={entry.document}
+                        cnj={processo.cnj_number}
+                      />
+                    )
+                  }
+
+                  const movement = entry.movement
+                  // Linhas antigas ainda podem ter kind='publicacao'; as novas
+                  // vão todas para o módulo.
                   const isPublicacao = movement.kind === 'publicacao'
                   const unread = isPublicacao && !movement.read_at
                   const docs = docsByMovement.get(movement.id) ?? []
@@ -957,12 +1099,41 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 />
               )}
               {tab === 'documentos' && (
-                <DocumentsTab
-                  legalProcessId={processo.id}
-                  crmItemIds={crmItemIds}
-                  lockedLegalProcessId={processo.id}
-                  itemLabel="processo"
-                />
+                <div className="space-y-8">
+                  <section>
+                    <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Do escritório
+                      <span className="ml-2 font-normal normal-case tracking-normal">
+                        enviados por alguém da equipe
+                      </span>
+                    </h3>
+                    <DocumentsTab
+                      legalProcessId={processo.id}
+                      crmItemIds={crmItemIds}
+                      lockedLegalProcessId={processo.id}
+                      itemLabel="processo"
+                    />
+                  </section>
+
+                  <section>
+                    <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Do tribunal
+                      <span className="ml-2 font-normal normal-case tracking-normal">
+                        vindos da integração, baixados sob demanda
+                      </span>
+                    </h3>
+                    <DocumentosPublicosTab
+                      cnj={processo.cnj_number}
+                      documents={processo.public_documents}
+                      syncedAt={processo.documents_synced_at}
+                      onSync={() =>
+                        processo.cnj_number &&
+                        syncProcess.mutate({ legalProcessId: processo.id, cnj: processo.cnj_number })
+                      }
+                      isSyncing={syncProcess.isPending}
+                    />
+                  </section>
+                </div>
               )}
               {tab === 'financeiro' && (
                 <FinancialEntriesTab
