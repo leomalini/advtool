@@ -17,6 +17,16 @@ export const inviteUserSchema = z.object({
     .max(40)
     .optional()
     .transform((v) => (v ? v : null)),
+  /** UF da inscrição, duas letras. Sem ela a consulta de publicações não
+   * consegue montar o parâmetro UF:NÚMERO e a pessoa fica de fora da busca. */
+  oab_state: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/, 'Use a sigla do estado, com duas letras')
+    .optional()
+    .or(z.literal(''))
+    .transform((v) => (v ? v : null)),
 })
 
 export type InviteUserInput = z.input<typeof inviteUserSchema>
@@ -26,9 +36,27 @@ export const updateUserSchema = z
   .object({
     role: appRoleSchema.optional(),
     is_active: z.boolean().optional(),
+    oab_number: z
+      .string()
+      .trim()
+      .max(40)
+      .nullable()
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v || null)),
+    oab_state: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/, 'Use a sigla do estado, com duas letras')
+      .nullable()
+      .optional()
+      .or(z.literal(''))
+      .transform((v) => (v === undefined ? undefined : v || null)),
   })
-  .refine((v) => v.role !== undefined || v.is_active !== undefined, {
+  .refine((v) => Object.values(v).some((field) => field !== undefined), {
     message: 'Nada a atualizar',
   })
 
-export type UpdateUserInput = z.infer<typeof updateUserSchema>
+/** Tipo de ENTRADA: quem chama a rota manda só o que quer mudar, e o
+ * `z.infer` (saída) transformaria cada campo opcional em chave obrigatória. */
+export type UpdateUserInput = z.input<typeof updateUserSchema>

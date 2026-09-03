@@ -14,6 +14,7 @@ export type Resource =
   | 'dashboard'
   | 'crm'
   | 'processos'
+  | 'publicacoes'
   | 'clientes'
   | 'agenda'
   | 'tarefas'

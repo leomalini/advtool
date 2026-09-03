@@ -36,6 +36,7 @@ export interface Task extends BaseEntity {
   /** Set when the task belongs to a processo — either created from the processo detail page
    * or carried over from a crm_item that is linked to one. */
   legal_process_id: string | null
+  publication_id: string | null
   due_date: string | null
   position: number
   created_by: string

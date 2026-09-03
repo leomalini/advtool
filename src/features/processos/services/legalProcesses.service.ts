@@ -29,7 +29,9 @@ const LEGAL_PROCESS_SELECT = `
   *,
   crm_items:crm_items!crm_items_legal_process_id_fkey(${CRM_ITEM_FIELDS}),
   movements:legal_process_movements(*),
-  parties:legal_process_parties(*, client:clients(id, type, name, company_name, trade_name))
+  parties:legal_process_parties(*, client:clients(id, type, name, company_name, trade_name)),
+  public_documents:legal_process_public_documents(*),
+  publications:publications(*)
 `
 
 /** A processo can be linked to items in several workflows — the "master" one
@@ -65,6 +67,9 @@ function toLegalProcessWithRelations(row: {
     crm_items: items,
     // Defensivo como crm_items: consumidores iteram sem checar.
     parties: (rest.parties as LegalProcessWithRelations['parties']) ?? [],
+    public_documents:
+      (rest.public_documents as LegalProcessWithRelations['public_documents']) ?? [],
+    publications: (rest.publications as LegalProcessWithRelations['publications']) ?? [],
   } as LegalProcessWithRelations
 }
 

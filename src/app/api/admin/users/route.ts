@@ -64,6 +64,7 @@ export async function GET() {
         role: profile.role as AppRole,
         is_active: profile.is_active,
         oab_number: profile.oab_number,
+        oab_state: profile.oab_state,
         created_at: profile.created_at,
         // Convite aceito == e-mail confirmado. É o mesmo sinal que o Supabase
         // usa, e vale tanto para convite quanto para conta criada à mão.
@@ -123,14 +124,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { email, full_name, role, oab_number } = parsed.data
+  const { email, full_name, role, oab_number, oab_state } = parsed.data
 
   try {
     const admin = createAdminClient()
     const origin = request.nextUrl.origin
 
     const redirectTo = `${origin}/api/auth/callback?next=/definir-senha`
-    const metadata = { full_name, oab_number }
+    const metadata = { full_name, oab_number, oab_state }
 
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
       data: metadata,
@@ -175,7 +176,7 @@ export async function POST(request: NextRequest) {
     // ativado. A service_role passa direto pelo trigger anti-escalada.
     const { error: profileError } = await admin
       .from('profiles')
-      .update({ full_name, role, oab_number, is_active: true })
+      .update({ full_name, role, oab_number, oab_state, is_active: true })
       .eq('id', usuario.id)
 
     if (profileError) {

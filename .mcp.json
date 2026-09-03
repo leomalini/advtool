@@ -3,7 +3,7 @@
     "BuscaProcessos": {
       "url": "https://docs.buscaprocessos.app.br/mcp",
       "headers": {
-        "x-api-key": "$BUSCA_PROCESSOS_API_KEY"
+        "x-api-key": "${BUSCA_PROCESSOS_API_KEY}"
       }
     },
     "claude_design": {
