@@ -357,11 +357,92 @@ export interface BpMonitoramentosListData {
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
 
+/**
+ * ⚠️ O CORPO DO WEBHOOK NÃO TEM A FORMA DOS ENDPOINTS REST.
+ *
+ * Tudo acima neste arquivo veio do OpenAPI, que descreve `GET /v1/...`. O
+ * webhook é outro contrato: o CNJ não está em `numeroCnj`, a movimentação não
+ * está em `movimentacao`, e a data vem em 'dd/MM/yyyy'. Modelar o webhook a
+ * partir do OpenAPI faz o handler ignorar todo evento real em silêncio — o
+ * endpoint responde 200 e nada é gravado.
+ *
+ * As interfaces abaixo vieram de payloads REAIS recebidos em produção.
+ */
+
+/** `movimentacao_nova` — ato num processo monitorado. */
+export interface BpWebhookMovimentacaoData {
+  event?: string
+  processo?: {
+    origem?: string | null
+    instancia?: string | null
+    /** O CNJ. NÃO se chama `numeroCnj` aqui. */
+    numero_unico?: string | null
+  } | null
+  event_data?: {
+    /** Id da movimentação na origem. O REST `/movimentacoes` não devolve um. */
+    id?: number | string | null
+    /** 'dd/MM/yyyy'. */
+    data?: string | null
+    conteudo?: string | null
+  } | null
+}
+
+/** Quem aparece na publicação do diário. É o que `publication_parties` espera. */
+export interface BpWebhookDiarioEnvolvido {
+  nome: string
+  /** 'Advogado', 'Requerente', 'Requerido'… texto livre da origem. */
+  envolvido_tipo?: string | null
+  /** '123456/SP'. */
+  oab?: string | null
+}
+
+/** `diario_movimentacao_nova` — publicação em diário oficial, do monitoramento
+ * por OAB/termo. É PUBLICAÇÃO, não movimentação de processo. */
+export interface BpWebhookDiarioData {
+  event?: string
+  /** Termos que casaram — a OAB ou o nome monitorado. */
+  monitoramento?: {
+    termo?: string | null
+    tipo?: string | null
+    descricao?: string | null
+    data_ultima_aparicao?: string | null
+  }[]
+  movimentacao?: {
+    /** Id estável na origem — vira o `external_id` da publicação. */
+    id?: number | string | null
+    secao?: string | null
+    /** Rótulo curto do ato ("Despacho de Teste") — vira o `title`. */
+    texto_categoria?: string | null
+    diario_oficial_id?: number | null
+    processo_id?: number | null
+    pagina?: number | null
+    /** 'Intimação', 'Despacho'… É o que marca a origem como diário. NÃO se
+     * chama `tipo_publicacao` aqui. */
+    tipo?: string | null
+    /** HTML, não texto puro. */
+    conteudo?: string | null
+    /** 'yyyy-MM-dd HH:mm:ss'. Data da edição do diário. */
+    data?: string | null
+    /** '26/05/2026 | Diário Oficial Exemplo'. */
+    diario_oficial?: string | null
+    estado?: string | null
+    envolvidos?: BpWebhookDiarioEnvolvido[]
+    link?: string | null
+    link_pdf?: string | null
+    processo?: {
+      /** O CNJ. */
+      numero_novo?: string | null
+      numero_antigo?: string | null
+    } | null
+  } | null
+}
+
 export interface BpWebhookPayload {
   id: string
   event:
-    | 'nova_movimentacao'
     | 'movimentacao_nova'
+    | 'diario_movimentacao_nova'
+    | 'nova_movimentacao'
     | 'novo_processo'
     | 'novo_processo_envolvido'
     | 'processo_encontrado'
@@ -372,4 +453,7 @@ export interface BpWebhookPayload {
   source: 'BUSCAPROCESSOS'
   created_at: string
   data: Record<string, unknown>
+  /** Cópia literal de `data`, como a origem recebeu do tribunal. Não é lida:
+   * o que guardamos para auditoria é o envelope inteiro em `webhook_events`. */
+  raw?: Record<string, unknown>
 }

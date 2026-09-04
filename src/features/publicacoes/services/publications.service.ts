@@ -30,6 +30,9 @@ export async function getPublications(
   let query = supabase
     .from('publications')
     .select(PUBLICATION_SELECT)
+    // A mesma publicação chega por até três portas (cadastro do processo,
+    // busca por OAB, webhook). A que entrou primeiro representa as demais.
+    .is('duplicate_of_id', null)
     // Mais recente primeiro; o sequencial desempata publicações do mesmo dia,
     // que é o caso comum — um diário inteiro entra com a mesma data.
     .order('publication_date', { ascending: false })
@@ -74,6 +77,7 @@ export async function getPublicationQueue(onlyUnread: boolean): Promise<string[]
   let query = supabase
     .from('publications')
     .select('id')
+    .is('duplicate_of_id', null)
     .order('publication_date', { ascending: false })
     .order('sequence_number', { ascending: false })
 
@@ -88,6 +92,7 @@ export async function countUnreadPublications(): Promise<number> {
   const { count, error } = await supabase
     .from('publications')
     .select('id', { count: 'exact', head: true })
+    .is('duplicate_of_id', null)
     .is('read_at', null)
 
   if (error) throw error

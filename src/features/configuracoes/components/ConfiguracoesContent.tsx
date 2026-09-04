@@ -21,6 +21,7 @@ import {
   Check,
   CalendarDays,
   Newspaper,
+  Webhook,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +32,7 @@ import { WorkflowsManager } from './WorkflowsManager'
 import { EventTypesManager } from './EventTypesManager'
 import { UsersManager } from './UsersManager'
 import { OabMonitoringManager } from './OabMonitoringManager'
+import { WebhooksManager } from './WebhooksManager'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -215,6 +217,7 @@ type TabValue =
   | 'workflows'
   | 'etiquetas'
   | 'tipos-evento'
+  | 'webhooks'
   | 'geral'
 
 const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
@@ -225,6 +228,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
   { value: 'tipos-evento', label: 'Tipos de Evento', icon: CalendarDays },
+  { value: 'webhooks', label: 'Webhooks', icon: Webhook },
 ]
 
 // ── Aba Áreas Jurídicas ────────────────────────────────────────
@@ -549,6 +553,9 @@ export function ConfiguracoesContent() {
           </TabsContent>
           <TabsContent value="tipos-evento">
             <EventTypesManager />
+          </TabsContent>
+          <TabsContent value="webhooks">
+            <WebhooksManager />
           </TabsContent>
           <TabsContent value="geral">
             <TabGeral />

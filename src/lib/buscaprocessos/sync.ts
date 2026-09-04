@@ -9,8 +9,9 @@ import {
   BpPendingError,
 } from './client'
 import { toLookupResult } from './mapCapa'
-import { excerptFrom } from './htmlToText'
-import { deadlineStartFrom, publicationDateFrom } from '@/lib/prazos'
+import { movementHash } from './hashes'
+import { movimentacaoToPublicationRow } from './mapPublicacao'
+import { ingestPublications } from '@/lib/publicacoes/ingest'
 import type { BpDocumentoPublico, BpMovimentacao } from './types'
 
 /**
@@ -207,17 +208,6 @@ async function syncCapa(
 
 // ── Movimentações ─────────────────────────────────────────────────────────────
 
-/** A API não devolve id de movimentação. Sem chave estável, sincronizar de novo
- * duplicaria o histórico — o hash de data + conteúdo faz esse papel. */
-async function movementHash(mov: BpMovimentacao): Promise<string> {
-  const raw = `${mov.data}\n${mov.conteudo ?? ''}`
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 32)
-}
-
 async function syncMovimentacoes(
   supabase: SupabaseClient,
   legalProcessId: string,
@@ -267,9 +257,10 @@ async function syncMovimentacoes(
 /**
  * Grava no módulo de Publicações as movimentações que são publicação de diário.
  *
- * A movimentação não tem id na API, então o `external_id` reaproveita o mesmo
- * hash de deduplicação usado na timeline, com prefixo para não colidir com o
- * id de uma intimação vinda de /v1/intimacoes.
+ * É por aqui que a publicação entra ao CADASTRAR um processo — e por isso ela
+ * passa pelo mesmo `ingestPublications` da busca por OAB e do webhook. Antes
+ * cada caminho gravava por conta própria com um `external_id` diferente, então
+ * a mesma publicação entrava uma vez por porta.
  */
 async function savePublicacoesFromMovimentacoes(
   supabase: SupabaseClient,
@@ -278,41 +269,10 @@ async function savePublicacoesFromMovimentacoes(
   movimentacoes: BpMovimentacao[],
 ): Promise<void> {
   const rows = await Promise.all(
-    movimentacoes.map(async (mov) => {
-      const conteudo = mov.conteudo ?? ''
-      const publicationDate = mov.data ? publicationDateFrom(mov.data) : null
-      return {
-        legal_process_id: legalProcessId,
-        cnj_number: cnj,
-        source: 'busca_processos',
-        external_id: `mov:${await movementHash(mov)}`,
-        court: mov.fonte?.sigla ?? null,
-        diario_sigla: mov.fonte?.sigla ?? null,
-        // `data` na movimentação é a DISPONIBILIZAÇÃO no diário, não a
-        // publicação. Daí saem as outras duas por dias úteis: publicação no
-        // primeiro dia útil seguinte (Lei 11.419/2006, art. 4º §3º) e início do
-        // prazo no primeiro dia útil seguinte a essa (art. 4º §4º).
-        availability_date: mov.data,
-        publication_date: publicationDate,
-        deadline_start_at: publicationDate ? deadlineStartFrom(publicationDate) : null,
-        // O tipo que a tela mostra ("APELAÇÃO CÍVEL") vem pronto aqui — é o
-        // único caminho em que a API informa esse campo.
-        publication_type: mov.tipo_publicacao ?? null,
-        title: mov.classificacao_predita?.nome ?? null,
-        excerpt: excerptFrom(conteudo),
-        // Movimentação vem em texto puro, sem marcação: não há HTML a guardar.
-        content_html: null,
-        content_text: conteudo,
-        raw_data: mov,
-      }
-    }),
+    movimentacoes.map((mov) => movimentacaoToPublicationRow(mov, { legalProcessId, cnj })),
   )
 
-  const { error } = await supabase
-    .from('publications')
-    .upsert(rows, { onConflict: 'source,external_id', ignoreDuplicates: true })
-
-  if (error) throw new Error(`Gravação das publicações falhou: ${error.message}`)
+  await ingestPublications(supabase, rows)
 }
 
 // ── Documentos públicos ───────────────────────────────────────────────────────

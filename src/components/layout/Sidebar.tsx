@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useClientesPendencies } from "@/features/clientes/hooks/useClientes";
 import { useLegalProcessesPendencies } from "@/features/processos/hooks/useLegalProcesses";
+import { useUnreadPublicationCount } from "@/features/publicacoes/hooks/usePublications";
 
 interface NavItem {
   href: string;
@@ -78,6 +79,10 @@ export function Sidebar() {
   // tarefa, que é a pendência mais cara da lista.
   const { data: clientPendencies = [] } = useClientesPendencies();
   const { data: processoPendencies = [] } = useLegalProcessesPendencies();
+
+  // A fila de publicações não lidas é prazo correndo: ela precisa ser visível
+  // sem abrir a tela, principalmente agora que a publicação chega sozinha.
+  const { data: unreadPublications = 0 } = useUnreadPublicationCount();
 
   const pendencyCount = clientPendencies.length + processoPendencies.length;
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? "AD";
@@ -187,7 +192,12 @@ export function Sidebar() {
                 </div>
               )}
               {group.items.map(({ href, label, icon: Icon }) =>
-                renderNavItem(href, label, Icon),
+                renderNavItem(
+                  href,
+                  label,
+                  Icon,
+                  href === "/publicacoes" ? unreadPublications : undefined,
+                ),
               )}
             </div>
           ))}

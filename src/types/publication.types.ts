@@ -22,6 +22,12 @@ export interface Publication {
   cnj_number: string | null
   source: PublicationSource
   external_id: string | null
+  /** Chave de deduplicação ENTRE fontes — ver src/lib/publicacoes/fingerprint.ts.
+   * Nula quando a publicação não tem conteúdo. */
+  content_fingerprint: string | null
+  /** Preenchida quando a mesma publicação já tinha entrado por outra fonte.
+   * Linha marcada não aparece na fila: a sobrevivente é quem a representa. */
+  duplicate_of_id: string | null
   court: string | null
   diario_name: string | null
   diario_sigla: string | null

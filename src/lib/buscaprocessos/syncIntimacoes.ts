@@ -1,9 +1,9 @@
 // Server-side only — usa a API key da BuscaProcessos.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getIntimacoes } from './client'
-import { htmlToText, excerptFrom } from './htmlToText'
-import { deadlineStartFrom } from '@/lib/prazos'
-import type { BpIntimacao, BpOabRef } from './types'
+import { intimacaoToPublicationRow } from './mapPublicacao'
+import { ingestPublications } from '@/lib/publicacoes/ingest'
+import type { BpOabRef } from './types'
 
 /**
  * Traz as publicações das OABs cadastradas e grava na tabela `publications`.
@@ -21,7 +21,10 @@ export interface IntimacoesSyncResult {
   oabs: string[]
   /** Publicações novas gravadas. */
   imported: number
-  /** Já existiam — reimportação não duplica nem apaga o que foi lido. */
+  /**
+   * Já existiam — inclusive as que tinham entrado por OUTRA fonte (cadastro do
+   * processo, webhook). Reimportação não duplica nem apaga o que foi lido.
+   */
   skipped: number
   /** OABs sem monitoramento ativo na BuscaProcessos: não retornam nada até
    * serem cadastradas lá. */
@@ -82,19 +85,22 @@ export async function syncIntimacoes(
   const cnjs = [...new Set(intimacoes.map((i) => i.processo?.numeroCnj).filter(Boolean))] as string[]
   const processByCnj = await mapProcessesByCnj(supabase, cnjs)
 
-  const rows = intimacoes.map((intimacao) => toRow(intimacao, processByCnj))
+  const rows = intimacoes.map((intimacao) =>
+    intimacaoToPublicationRow(
+      intimacao,
+      intimacao.processo?.numeroCnj
+        ? (processByCnj.get(intimacao.processo.numeroCnj) ?? null)
+        : null,
+    ),
+  )
 
-  // ignoreDuplicates: a publicação já importada não é reescrita — reescrever
-  // apagaria `read_at`, `handled_at` e o tipo/assunto digitados por alguém.
-  const { data: inserted, error } = await supabase
-    .from('publications')
-    .upsert(rows, { onConflict: 'source,external_id', ignoreDuplicates: true })
-    .select('id')
+  // Toda publicação entra por aqui, venha de onde vier: é o que impede a mesma
+  // intimação de aparecer de novo depois de já ter chegado pelo cadastro do
+  // processo ou pelo webhook. Ver src/lib/publicacoes/ingest.ts.
+  const ingest = await ingestPublications(supabase, rows)
 
-  if (error) throw new Error(`Gravação das publicações falhou: ${error.message}`)
-
-  result.imported = inserted?.length ?? 0
-  result.skipped = rows.length - result.imported
+  result.imported = ingest.inserted
+  result.skipped = rows.length - ingest.inserted
 
   return result
 }
@@ -124,33 +130,4 @@ async function mapProcessesByCnj(
     .in('cnj_number', cnjs)
 
   return new Map((data ?? []).map((row) => [row.cnj_number as string, row.id as string]))
-}
-
-function toRow(intimacao: BpIntimacao, processByCnj: Map<string, string>) {
-  const contentText = htmlToText(intimacao.conteudoCompletoHtml) || (intimacao.conteudo ?? '')
-  const cnj = intimacao.processo?.numeroCnj ?? null
-  const publicationDate = intimacao.dataPublicacao
-
-  return {
-    legal_process_id: cnj ? (processByCnj.get(cnj) ?? null) : null,
-    cnj_number: cnj,
-    source: 'busca_processos',
-    external_id: String(intimacao.id),
-    court: intimacao.diario?.sigla ?? null,
-    diario_name: intimacao.diario?.nome ?? null,
-    diario_sigla: intimacao.diario?.sigla ?? null,
-    oab_state: intimacao.oab?.estado ?? null,
-    oab_number: intimacao.oab?.numero ?? null,
-    publication_date: publicationDate,
-    // A API só informa a publicação. A disponibilização fica nula em vez de
-    // ser chutada para trás — é dado do diário, não nosso.
-    availability_date: null,
-    deadline_start_at: publicationDate ? deadlineStartFrom(publicationDate) : null,
-    title: intimacao.titulo ?? null,
-    excerpt: excerptFrom(contentText || (intimacao.conteudo ?? '')),
-    content_html: intimacao.conteudoCompletoHtml ?? null,
-    content_text: contentText,
-    external_url: intimacao.link ?? null,
-    raw_data: intimacao,
-  }
 }
