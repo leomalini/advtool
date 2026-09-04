@@ -8,6 +8,7 @@ import {
   updateIntimacaoMonitoramentoWebhook,
   BpApiError,
 } from '@/lib/buscaprocessos/client'
+import { webhookUrl } from '@/lib/buscaprocessos/webhookUrl'
 import type {
   BpOabRef,
   BpIntimacaoMonitoramentoCriado,
@@ -24,25 +25,6 @@ import type {
  * A base sai do ambiente, e não do corpo da requisição, porque quem usa a tela
  * não deve poder apontar o callback da conta para outro servidor.
  */
-const WEBHOOK_PATH = '/api/webhooks/buscaprocessos'
-
-/** URL que registramos na BuscaProcessos, ou null quando a base não foi
- * configurada — aí o monitoramento é criado sem entrega automática. */
-function webhookUrl(): string | null {
-  const base = process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, '')
-  if (!base) return null
-
-  // A API exige HTTPS no webhook — está na descrição do próprio endpoint. Um
-  // endereço em HTTP faz o cadastro voltar 422 sem dizer o porquê.
-  if (!/^https:\/\//i.test(base)) return null
-
-  // localhost não é alcançável pela BuscaProcessos: registrar isso criaria a
-  // aparência de entrega automática funcionando, com toda entrega falhando.
-  if (/^https:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(base)) return null
-
-  return `${base}${WEBHOOK_PATH}`
-}
-
 const oabSchema = z.object({
   oab_state: z
     .string()

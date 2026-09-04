@@ -1,44 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import { verifyWebhookSignature } from '@/lib/buscaprocessos/signature'
+import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
+import { recordWebhookEvent, diagnosticHeaders } from '@/lib/buscaprocessos/webhookLog'
 import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
 
-const WEBHOOK_SECRET = process.env.BUSCA_PROCESSOS_WEBHOOK_SECRET
-
-/** Timing-safe HMAC-SHA256 signature validation */
-async function validateSignature(body: string, signature: string | null): Promise<boolean> {
-  // If no secret is configured, skip validation (useful during development)
-  if (!WEBHOOK_SECRET) return true
-  if (!signature) return false
-
-  const hexSig = signature.startsWith('sha256=') ? signature.slice(7) : signature
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(WEBHOOK_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))
-  const expected = Array.from(new Uint8Array(mac))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-
-  // Timing-safe comparison
-  if (expected.length !== hexSig.length) return false
-  let diff = 0
-  for (let i = 0; i < expected.length; i++) {
-    diff |= expected.charCodeAt(i) ^ hexSig.charCodeAt(i)
-  }
-  return diff === 0
-}
-
+/**
+ * Recebimento dos webhooks da BuscaProcessos.
+ *
+ * A rota faz três coisas e mais nenhuma: confere a assinatura, delega para
+ * `handleBpWebhook` e registra o que aconteceu em `webhook_events`. A decisão
+ * sobre o conteúdo mora em `src/lib/buscaprocessos/webhook.ts`, porque a tela
+ * de Configurações precisa executar exatamente o mesmo caminho para simular
+ * uma entrega.
+ *
+ * `service_role`, e não o client de sessão: um webhook não tem sessão. Com o
+ * client de sessão a requisição chegava ao PostgREST como `anon`, a RLS barrava
+ * tudo, e o webhook nunca gravou nada. Aqui a autorização é o HMAC verificado
+ * acima, não um perfil.
+ */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const startedAt = Date.now()
   const rawBody = await req.text()
-  const signature = req.headers.get('x-buscaprocessos-signature')
+  const headers = diagnosticHeaders(req.headers)
 
-  const valid = await validateSignature(rawBody, signature)
-  if (!valid) {
+  const signature = await verifyWebhookSignature(
+    rawBody,
+    req.headers.get('x-buscaprocessos-signature'),
+  )
+  const signatureValid = signature.configured ? signature.valid : null
+
+  // Sem a chave não há como registrar nem gravar: o log também é `service_role`.
+  if (!hasServiceRoleKey()) {
+    console.error('[webhook] SUPABASE_SERVICE_ROLE_KEY ausente — entrega descartada.')
+    return NextResponse.json({ received: true, processed: false }, { status: 503 })
+  }
+
+  const supabase = createAdminClient()
+
+  if (!signature.valid) {
+    await recordWebhookEvent(supabase, {
+      status: 'invalid',
+      signatureValid,
+      reason: 'Assinatura inválida.',
+      headers,
+      durationMs: Date.now() - startedAt,
+    })
     return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
   }
 
@@ -46,89 +53,56 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     payload = JSON.parse(rawBody) as BpWebhookPayload
   } catch {
+    await recordWebhookEvent(supabase, {
+      status: 'invalid',
+      signatureValid,
+      reason: 'Corpo não é JSON válido.',
+      headers,
+      durationMs: Date.now() - startedAt,
+    })
     return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
   }
 
-  const event = req.headers.get('x-buscaprocessos-event') ?? payload.event
-
-  // Only persist movement events into case_movements
-  if (event !== 'nova_movimentacao' && event !== 'movimentacao_nova') {
-    return NextResponse.json({ received: true, processed: false })
-  }
-
-  if (!hasServiceRoleKey()) {
-    console.error('[webhook] SUPABASE_SERVICE_ROLE_KEY ausente — movimentação descartada.')
-    return NextResponse.json({ received: true, processed: false }, { status: 503 })
-  }
-
   try {
-    // service_role, e não o client de sessão: um webhook não tem sessão. Com o
-    // client de sessão a requisição chegava ao PostgREST como `anon`, então a
-    // RLS já barrava tudo — o `select` voltava vazio e saía por
-    // `case_not_found`, e o erro do `insert` era ignorado. O webhook nunca
-    // gravou nada. Aqui a autorização é o HMAC verificado acima, não um perfil.
-    const supabase = createAdminClient()
-    const data = payload.data
-
-    // A API devolve o mesmo campo em camelCase e snake_case conforme o
-    // endpoint (numeroCnj / numero_cnj), e o corpo do webhook é declarado no
-    // OpenAPI como objeto livre — aceitamos as três grafias.
-    const cnj = (data['numeroCnj'] ?? data['numero_cnj'] ?? data['numero']) as
-      | string
-      | undefined
-    if (!cnj) return NextResponse.json({ received: true, processed: false })
-
-    const { data: matchingProcess } = await supabase
-      .from('legal_processes')
-      .select('id')
-      .eq('cnj_number', cnj)
-      .maybeSingle()
-
-    if (!matchingProcess) {
-      return NextResponse.json({ received: true, processed: false, reason: 'case_not_found' })
-    }
-
-    const movimentoData = (data['movimentacao'] ?? data['movimento'] ?? data) as Record<
-      string,
-      unknown
-    >
-    const movDate = (movimentoData['data'] ?? payload.created_at) as string
-
-    // O texto da movimentação vem em `conteudo` (é o nome do campo em
-    // GET /processos/cnj/{cnj}/movimentacoes). `titulo` nunca existiu nessa
-    // API; ficava como fallback para nada e toda movimentação era gravada
-    // como "Nova movimentação".
-    const movDesc = String(
-      movimentoData['conteudo'] ??
-        movimentoData['descricao'] ??
-        movimentoData['titulo'] ??
-        'Nova movimentação',
-    )
-
-    // `classificacao_predita.nome` é o rótulo curto do ato ("Conclusão"),
-    // que é exatamente o papel da coluna `title`.
-    const classificacao = movimentoData['classificacao_predita'] as
-      | { nome?: string }
-      | null
-      | undefined
-
-    // `tipo_publicacao` só vem preenchido quando a origem é diário oficial —
-    // é o que separa publicação de movimentação de serventuário.
-    const isPublicacao = Boolean(movimentoData['tipo_publicacao'])
-
-    await supabase.from('legal_process_movements').insert({
-      legal_process_id: matchingProcess.id,
-      movement_date: movDate,
-      description: movDesc,
-      title: classificacao?.nome ?? null,
-      kind: isPublicacao ? 'publicacao' : 'movimentacao',
-      source: 'busca_processos',
-      raw_data: data,
+    const result = await handleBpWebhook(supabase, payload, {
+      eventOverride: req.headers.get('x-buscaprocessos-event'),
     })
 
-    return NextResponse.json({ received: true, processed: true })
-  } catch {
-    // Return 200 to prevent BuscaProcessos from retrying on permanent failures
+    await recordWebhookEvent(supabase, {
+      event: result.event,
+      externalId: payload.id ?? null,
+      signatureValid,
+      status: result.status,
+      destinations: result.destinations,
+      reason: result.reason,
+      payload,
+      headers,
+      durationMs: Date.now() - startedAt,
+    })
+
+    return NextResponse.json({
+      received: true,
+      processed: result.status === 'processed',
+      status: result.status,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Falha inesperada'
+    console.error('[webhook] falha ao processar entrega:', err)
+
+    await recordWebhookEvent(supabase, {
+      event: payload.event ?? null,
+      externalId: payload.id ?? null,
+      signatureValid,
+      status: 'error',
+      error: message,
+      payload,
+      headers,
+      durationMs: Date.now() - startedAt,
+    })
+
+    // 200 de propósito: a BuscaProcessos reentrega em erro, e reentregar o que
+    // falha por defeito nosso só multiplica o problema. O registro acima é o
+    // que torna a falha visível.
     return NextResponse.json({ received: true, processed: false })
   }
 }
