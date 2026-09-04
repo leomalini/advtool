@@ -25,6 +25,8 @@ export interface WebhookEndpointStatus {
   /** Para onde o modo HTTP dispara — aceita localhost. */
   localUrl: string | null
   secretConfigured: boolean
+  /** Token Bearer — a outra forma de autenticação que a conta oferece. */
+  tokenConfigured: boolean
   serviceRoleConfigured: boolean
   canSendHttp: boolean
 }

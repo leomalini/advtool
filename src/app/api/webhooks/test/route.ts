@@ -4,7 +4,7 @@ import { requireAdminApi } from '@/lib/auth/requireAdminApi'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
 import { recordWebhookEvent } from '@/lib/buscaprocessos/webhookLog'
-import { hasWebhookSecret, signWebhookBody } from '@/lib/buscaprocessos/signature'
+import { hasWebhookSecret, hasWebhookToken, signWebhookBody } from '@/lib/buscaprocessos/signature'
 import { webhookUrl, localWebhookUrl } from '@/lib/buscaprocessos/webhookUrl'
 import {
   buildWebhookPayload,
@@ -62,6 +62,7 @@ export async function GET(): Promise<NextResponse> {
     /** Para onde o modo `http` dispara — aceita localhost, ao contrário da acima. */
     localUrl: localWebhookUrl(),
     secretConfigured: hasWebhookSecret(),
+    tokenConfigured: hasWebhookToken(),
     serviceRoleConfigured: hasServiceRoleKey(),
     canSendHttp: Boolean(localWebhookUrl()),
   })
