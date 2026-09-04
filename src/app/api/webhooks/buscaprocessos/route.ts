@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
-import { verifyWebhookSignature } from '@/lib/buscaprocessos/signature'
+import { verifyWebhookAuth } from '@/lib/buscaprocessos/signature'
 import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
 import { recordWebhookEvent, diagnosticHeaders } from '@/lib/buscaprocessos/webhookLog'
 import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
@@ -24,11 +24,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const rawBody = await req.text()
   const headers = diagnosticHeaders(req.headers)
 
-  const signature = await verifyWebhookSignature(
-    rawBody,
-    req.headers.get('x-buscaprocessos-signature'),
-  )
-  const signatureValid = signature.configured ? signature.valid : null
+  const auth = await verifyWebhookAuth(rawBody, {
+    signature: req.headers.get('x-buscaprocessos-signature'),
+    authorization: req.headers.get('authorization'),
+  })
+  const signatureValid = auth.configured ? auth.valid : null
 
   // Sem a chave não há como registrar nem gravar: o log também é `service_role`.
   if (!hasServiceRoleKey()) {
@@ -38,12 +38,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const supabase = createAdminClient()
 
-  if (!signature.valid) {
+  if (!auth.valid) {
+    // O corpo e a assinatura recebida são registrados JUSTAMENTE aqui, e não
+    // no caminho feliz: sem eles, um 401 é indistinguível de outro — segredo
+    // errado, chave interpretada de outro jeito, corpo reserializado no meio
+    // do caminho. A assinatura é um MAC daquele corpo específico: não serve
+    // para forjar outra entrega, e é o que torna a recusa diagnosticável.
     await recordWebhookEvent(supabase, {
       status: 'invalid',
       signatureValid,
-      reason: 'Assinatura inválida.',
-      headers,
+      reason: 'Autenticação recusada.',
+      error: auth.detail,
+      payload: safeJson(rawBody),
+      headers: { ...headers, signature_received: auth.receivedSignature },
       durationMs: Date.now() - startedAt,
     })
     return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
@@ -76,7 +83,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       destinations: result.destinations,
       reason: result.reason,
       payload,
-      headers,
+      // `auth_method` diz COMO a entrega se autenticou. Serve para descobrir
+      // qual das interpretações da chave a origem usa de fato.
+      headers: { ...headers, auth_method: auth.method },
       durationMs: Date.now() - startedAt,
     })
 
@@ -104,5 +113,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // falha por defeito nosso só multiplica o problema. O registro acima é o
     // que torna a falha visível.
     return NextResponse.json({ received: true, processed: false })
+  }
+}
+
+/** Corpo recusado guardado como JSON quando dá, como texto quando não dá. */
+function safeJson(rawBody: string): unknown {
+  try {
+    return JSON.parse(rawBody)
+  } catch {
+    return { unparsed_body: rawBody.slice(0, 4000) }
   }
 }

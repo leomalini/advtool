@@ -163,6 +163,22 @@ function EndpointPanel() {
         <span
           className={cn(
             'inline-flex items-center gap-1.5',
+            data.tokenConfigured ? 'text-success' : 'text-muted-foreground',
+          )}
+        >
+          {data.tokenConfigured ? (
+            <ShieldCheck className="h-3.5 w-3.5" />
+          ) : (
+            <ShieldOff className="h-3.5 w-3.5" />
+          )}
+          {data.tokenConfigured
+            ? 'Token Bearer aceito como alternativa'
+            : 'Sem BUSCA_PROCESSOS_WEBHOOK_TOKEN'}
+        </span>
+
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5',
             data.serviceRoleConfigured ? 'text-success' : 'text-destructive',
           )}
         >
