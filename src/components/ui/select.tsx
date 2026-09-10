@@ -50,11 +50,18 @@ function SelectTrigger({
   )
 }
 
+/**
+ * `position="popper"` ancora a lista ao gatilho. Com o padrão anterior
+ * (`item-aligned`), o Radix posiciona a lista sobre o item selecionado e passa
+ * a depender de medir o gatilho — dentro dos nossos contêineres com scroll e
+ * transform essa medida saía errada e TODA lista abria no canto da tela.
+ * `align="start"` alinha pela borda esquerda, e não pelo centro.
+ */
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
-  align = "center",
+  position = "popper",
+  align = "start",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -75,8 +82,12 @@ function SelectContent({
         <SelectPrimitive.Viewport
           className={cn(
             "p-1",
+            // Sem `h-[--radix-select-trigger-height]` (que o shadcn traz): no
+            // modo popper aquilo fixa o viewport na altura do gatilho e a lista
+            // abre com uma linha só. A altura já é limitada pelo `max-h` do
+            // Content; aqui basta acompanhar a largura do gatilho.
             position === "popper" &&
-              "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1"
+              "w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1"
           )}
         >
           {children}
