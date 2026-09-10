@@ -14,6 +14,19 @@ export type ProcessStatus = 'ativo' | 'arquivado' | 'suspenso'
 /** Frequências aceitas por POST /v1/monitoramentos/processos. */
 export type MonitoringFrequency = 'DIARIA' | 'SEMANAL' | 'MENSAL'
 
+/** A ordem é a da tela: da mais frequente para a mais espaçada. */
+export const MONITORING_FREQUENCIES: readonly MonitoringFrequency[] = [
+  'DIARIA',
+  'SEMANAL',
+  'MENSAL',
+]
+
+export const MONITORING_FREQUENCY_LABELS: Record<MonitoringFrequency, string> = {
+  DIARIA: 'Diária',
+  SEMANAL: 'Semanal',
+  MENSAL: 'Mensal',
+}
+
 export const PROCESS_TYPE_LABELS: Record<ProcessType, string> = {
   judicial: 'Judicial',
   administrativo: 'Administrativo',
@@ -220,6 +233,8 @@ export interface LegalProcessMovementWithContext extends LegalProcessMovement {
   legal_process: {
     id: string
     cnj_number: string | null
+    /** Sigla do tribunal ('TJSP'), quando a capa informou. */
+    court: string | null
     crm_items: {
       id: string
       workflow_id: string

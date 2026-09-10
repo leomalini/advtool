@@ -4,25 +4,28 @@ import { Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRecentMovements } from '../hooks/useLegalProcesses'
 
-function formatDateTime(dateStr: string): string {
-  return new Date(dateStr).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+/**
+ * O DIA do ato, sem hora. `movement_date` é `timestamptz`, mas a API só informa
+ * a data — ver `formatMovementDate` em ProcessoDetailPage, mesmo motivo: montar
+ * um Date a partir do carimbo completo trazia uma hora inventada e o dia
+ * anterior ao que o tribunal registrou.
+ */
+function formatMovementDate(dateStr: string): string {
+  const [year, month, day] = dateStr.slice(0, 10).split('-')
+  return `${day}/${month}/${year}`
 }
 
+/** Nome do cliente, ou null quando a parte não é cliente cadastrado — o nulo
+ * é o que permite omitir a linha em vez de imprimir '(sem cliente)'. */
 function getClientName(client: {
   type: 'individual' | 'company'
   name: string | null
   company_name: string | null
   trade_name: string | null
-} | null): string {
-  if (!client) return '(sem cliente)'
-  if (client.type === 'individual') return client.name ?? '(sem nome)'
-  return client.trade_name ?? client.company_name ?? '(sem nome)'
+} | null): string | null {
+  if (!client) return null
+  if (client.type === 'individual') return client.name
+  return client.trade_name ?? client.company_name
 }
 
 interface MovimentacoesFeedProps {
@@ -61,6 +64,14 @@ export function MovimentacoesFeed({ onSelectProcess }: MovimentacoesFeedProps) {
               m.legal_process.crm_items.find((i) => i.workflow_id === 'wf-processos') ??
               m.legal_process.crm_items[0]
             const clientName = getClientName(masterItem?.client ?? null)
+            // O que identifica a movimentação é o processo: o CNJ primeiro, o
+            // título do card quando não há número. O cliente vira linha de
+            // apoio e some quando não existe — antes ele ocupava o destaque e
+            // um processo sem cliente aparecia como '(sem cliente)' em negrito.
+            const processoLabel =
+              m.legal_process.cnj_number ?? masterItem?.title?.trim() ?? null
+            const tribunal =
+              m.legal_process.court ?? (m.source === 'manual' ? 'Manual' : null)
             return (
               <button
                 key={m.id}
@@ -68,25 +79,32 @@ export function MovimentacoesFeed({ onSelectProcess }: MovimentacoesFeedProps) {
                 className="w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[13px] font-semibold text-foreground truncate">{clientName}</span>
                   <span
                     className={cn(
-                      'shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium',
-                      m.source === 'busca_processos'
-                        ? 'bg-info/15 text-info'
-                        : 'bg-muted text-muted-foreground'
+                      'truncate text-[13px] font-semibold text-foreground',
+                      m.legal_process.cnj_number && 'font-mono text-[12px]',
                     )}
                   >
-                    {m.source === 'busca_processos' ? 'BuscaProcessos' : 'Manual'}
+                    {processoLabel ?? 'Processo sem número'}
                   </span>
+                  {/* O tribunal diz de onde o ato veio; "BuscaProcessos" só
+                      dizia por qual integração ele entrou, que é a mesma para
+                      quase tudo e não ajuda a distinguir uma linha da outra.
+                      Lançamento manual continua marcado, porque aí a origem é
+                      a informação relevante. */}
+                  {tribunal && (
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {tribunal}
+                    </span>
+                  )}
                 </div>
-                {m.legal_process.cnj_number && (
-                  <p className="font-mono text-[10px] text-muted-foreground truncate">
-                    {m.legal_process.cnj_number}
-                  </p>
+                {clientName && (
+                  <p className="text-[10.5px] text-muted-foreground truncate">{clientName}</p>
                 )}
                 <p className="text-xs text-foreground/80 mt-1 line-clamp-2">{m.description}</p>
-                <p className="text-[10.5px] text-muted-foreground mt-1">{formatDateTime(m.movement_date)}</p>
+                <p className="text-[10.5px] text-muted-foreground mt-1">
+                  {formatMovementDate(m.movement_date)}
+                </p>
               </button>
             )
           })}

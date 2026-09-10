@@ -12,12 +12,22 @@ import {
   linkPartyToClient,
 } from '../services/legalProcesses.service'
 import { syncProcessoFromApi } from '../services/syncProcesso.service'
+import {
+  createProcessMonitoring,
+  deleteProcessMonitoring,
+  isPendingMonitoring,
+} from '../services/monitoramento.service'
 import { linkPublicationsToProcess } from '@/features/publicacoes/services/publications.service'
 import { legalProcessKeys } from './useLegalProcesses'
 import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
 import { useAuth } from '@/hooks/useAuth'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
-import type { LegalProcessPartyInput, LegalProcessWithRelations } from '@/types/legalProcess.types'
+import { MONITORING_FREQUENCY_LABELS } from '@/types/legalProcess.types'
+import type {
+  LegalProcessPartyInput,
+  LegalProcessWithRelations,
+  MonitoringFrequency,
+} from '@/types/legalProcess.types'
 
 export function useInvalidateLegalProcesses() {
   const queryClient = useQueryClient()
@@ -115,11 +125,67 @@ async function collectFromApi(
   }
 }
 
+/** Liga o monitoramento contínuo do processo na BuscaProcessos.
+ *
+ * Roda depois da coleta e fora do caminho de erro do cadastro: o monitoramento
+ * é cobrado por mês, mas falhar em criá-lo não desfaz um processo já gravado —
+ * vira aviso, e a tela de detalhes permite ligar depois.
+ */
+async function startMonitoring(
+  processo: LegalProcessWithRelations,
+  frequencia: MonitoringFrequency,
+): Promise<void> {
+  if (!processo.cnj_number) return
+
+  try {
+    const result = await createProcessMonitoring({
+      legalProcessId: processo.id,
+      cnj: processo.cnj_number,
+      frequencia,
+      tribunal: processo.court,
+    })
+
+    const label = MONITORING_FREQUENCY_LABELS[frequencia].toLowerCase()
+    if (isPendingMonitoring(result)) {
+      toast.info(`Monitoramento ${label}: ${result.message}`)
+    } else {
+      toast.success(`Monitoramento ${label} ativado.`)
+    }
+  } catch {
+    toast.warning('Processo cadastrado, mas o monitoramento não foi ativado. Tente pelos detalhes.')
+  }
+}
+
+/**
+ * Etapas do cadastro, na ordem em que acontecem.
+ *
+ * Existem porque cadastrar um processo não é um insert: depois dele vêm a
+ * coleta na BuscaProcessos (capa, movimentações, documentos e resumo por IA),
+ * o vínculo das publicações órfãs e, se pedido, o monitoramento. São segundos
+ * de espera em que um spinner sozinho parece travado.
+ */
+export const CREATE_PROCESS_STEPS = ['saving', 'collecting', 'linking', 'monitoring'] as const
+
+export type CreateProcessStep = (typeof CREATE_PROCESS_STEPS)[number]
+
+export const CREATE_PROCESS_STEP_LABELS: Record<CreateProcessStep, string> = {
+  saving: 'Gravando o processo',
+  collecting: 'Buscando dados no tribunal',
+  linking: 'Vinculando publicações',
+  monitoring: 'Ativando o monitoramento',
+}
+
 export interface CreateLegalProcessVars {
   input: LegalProcessInput
   /** `true` quando a tela já consultou a capa na BuscaProcessos para preencher
    * os campos — o bloco de capa é então só carimbado, sem nova consulta. */
   capaAlreadyFetched?: boolean
+  /** Ausente = o usuário escolheu não monitorar. Não é campo de
+   * `legal_processes` alimentado pelo formulário: o valor só chega à coluna
+   * pela resposta da BuscaProcessos. */
+  monitoringFrequency?: MonitoringFrequency | null
+  /** Chamado a cada etapa concluída, para a tela mostrar onde está. */
+  onStep?: (step: CreateProcessStep) => void
 }
 
 /** Cadastra o processo e o popula com capa, movimentações, documentos públicos
@@ -130,18 +196,32 @@ export function useCreateLegalProcess() {
   const { user } = useAuth()
 
   return useMutation({
-    mutationFn: async ({ input, capaAlreadyFetched = false }: CreateLegalProcessVars) => {
+    mutationFn: async ({
+      input,
+      capaAlreadyFetched = false,
+      monitoringFrequency,
+      onStep,
+    }: CreateLegalProcessVars) => {
+      onStep?.('saving')
       const processo = await createLegalProcess(input, user!.id)
+
+      onStep?.('collecting')
       await collectFromApi(processo, capaAlreadyFetched)
 
       // Publicações que chegaram antes do processo existir ficam órfãs; agora
       // que ele existe, passam a apontar para ele.
+      onStep?.('linking')
       if (processo.cnj_number) {
         try {
           await linkPublicationsToProcess(processo.cnj_number, processo.id)
         } catch {
           // Vínculo é conveniência, não parte do cadastro.
         }
+      }
+
+      if (monitoringFrequency) {
+        onStep?.('monitoring')
+        await startMonitoring(processo, monitoringFrequency)
       }
 
       return processo
@@ -186,6 +266,54 @@ export function useSyncProcesso() {
       }
     },
     onError: () => toast.error('Não foi possível atualizar os dados do processo.'),
+  })
+}
+
+/** Liga, troca ou desliga o monitoramento de um processo já cadastrado.
+ *
+ * Trocar a frequência é cancelar e recriar: a API não expõe atualização de
+ * monitoramento, e criar por cima deixaria dois monitores cobrando pelo mesmo
+ * processo. O cancelamento vem primeiro justamente por isso — se ele falhar, a
+ * criação nem é tentada.
+ */
+export function useSetProcessMonitoring(legalProcessId: string) {
+  const invalidate = useInvalidateLegalProcesses()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      cnj,
+      court,
+      currentMonitoringId,
+      frequencia,
+    }: {
+      cnj: string
+      court: string | null
+      currentMonitoringId: string | null
+      /** `null` desliga o monitoramento. */
+      frequencia: MonitoringFrequency | null
+    }) => {
+      if (currentMonitoringId) await deleteProcessMonitoring(currentMonitoringId)
+      if (!frequencia) return null
+
+      return createProcessMonitoring({ legalProcessId, cnj, frequencia, tribunal: court })
+    },
+    onSuccess: (result, { frequencia }) => {
+      queryClient.invalidateQueries({ queryKey: legalProcessKeys.detail(legalProcessId) })
+      invalidate()
+
+      if (!frequencia) {
+        toast.success('Monitoramento cancelado.')
+        return
+      }
+      const label = MONITORING_FREQUENCY_LABELS[frequencia].toLowerCase()
+      if (result && isPendingMonitoring(result)) {
+        toast.info(`Monitoramento ${label}: ${result.message}`)
+      } else {
+        toast.success(`Monitoramento ${label} ativado.`)
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
   })
 }
 

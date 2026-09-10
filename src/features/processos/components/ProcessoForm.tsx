@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, ArrowUpRight, Loader2, Search, FileText, SlidersHorizontal, Users } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Check, Loader2, Search, FileText, SlidersHorizontal, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,12 +26,21 @@ import { legalProcessSchema } from '@/schemas/legalProcess.schema'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
 import { CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
 import type { CrmTag } from '@/schemas/crmItem.schema'
-import type { LegalProcessWithRelations, LegalProcessPartyInput } from '@/types/legalProcess.types'
-import { PROCESS_TYPE_LABELS, PROCESS_STATUS_LABELS } from '@/types/legalProcess.types'
+import type {
+  LegalProcessWithRelations,
+  LegalProcessPartyInput,
+  MonitoringFrequency,
+} from '@/types/legalProcess.types'
+import {
+  PROCESS_TYPE_LABELS,
+  PROCESS_STATUS_LABELS,
+  MONITORING_FREQUENCIES,
+  MONITORING_FREQUENCY_LABELS,
+} from '@/types/legalProcess.types'
 import { CurrencyInput } from '@/components/shared/CurrencyInput'
 import { TagToggle } from '@/components/shared/TagToggle'
 import { PartiesEditor } from './PartiesEditor'
-import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { AREAS_JURIDICAS } from '@/data/mock'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
 import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { useProfiles } from '@/hooks/useProfiles'
@@ -40,6 +49,11 @@ import { formatCnjNumber } from '@/utils/cnj'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { findLegalProcessByCnj, searchLegalProcessesByCnjPrefix } from '../services/legalProcesses.service'
 import { lookupCnjViaApi } from '../services/cnjLookup'
+import {
+  CREATE_PROCESS_STEPS,
+  CREATE_PROCESS_STEP_LABELS,
+  type CreateProcessStep,
+} from '../hooks/useLegalProcessMutations'
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -127,16 +141,91 @@ function ColorDotTriggerValue({
  * escreveu — e o preenchimento automático reescreve o campo no formato da API.
  * Comparar a string formatada daria falso negativo. */
 function digitsOf(value: string): string {
-  return value.replace(/D/g, '')
+  return value.replace(/\D/g, '')
 }
 
 // ── Main form ─────────────────────────────────────────────────────────────────
+
+/** Campos que a consulta por CNJ preenche — e que, uma vez preenchidos, ficam
+ * travados para que o cadastro não divirja do que o tribunal informa. */
+type ApiFilledField =
+  | 'court'
+  | 'court_division'
+  | 'plaintiff'
+  | 'defendant'
+  | 'procedural_class'
+  | 'subject'
+  | 'case_value'
+  | 'filing_date'
+  | 'status'
 
 /** O que o formulário sabe e o gravador precisa, além dos campos. */
 export interface ProcessoFormSubmitMeta {
   /** A busca automática consultou a capa na BuscaProcessos e preencheu os
    * campos. Evita que a sincronização pague pela mesma consulta de novo. */
   capaFetched: boolean
+  /** Frequência escolhida para o monitoramento contínuo, ou `null` para não
+   * monitorar. Viaja aqui, e não em `LegalProcessInput`, porque não é campo
+   * que o formulário grava: quem preenche `monitoring_frequency` é a resposta
+   * da BuscaProcessos. Só é lida no cadastro — na edição vem `null`, já que a
+   * troca acontece na tela de detalhes. */
+  monitoringFrequency: MonitoringFrequency | null
+}
+
+/**
+ * Painel de progresso do cadastro.
+ *
+ * O cadastro encadeia quatro operações de rede e pode levar vários segundos —
+ * com só um spinner no botão, a tela parece parada. Aqui cada etapa mostra em
+ * qual delas está: concluída, em andamento ou por vir.
+ */
+function CreateProgress({
+  step,
+  withMonitoring,
+}: {
+  step: CreateProcessStep
+  withMonitoring: boolean
+}) {
+  const steps = CREATE_PROCESS_STEPS.filter((s) => s !== 'monitoring' || withMonitoring)
+  const currentIndex = steps.indexOf(step)
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+      <div className="w-[320px] rounded-xl border border-border bg-card p-5 shadow-lg">
+        <p className="mb-4 text-sm font-semibold">Cadastrando processo</p>
+        <ol className="space-y-3">
+          {steps.map((s, index) => {
+            const done = index < currentIndex
+            const active = index === currentIndex
+            return (
+              <li key={s} className="flex items-center gap-2.5">
+                {done ? (
+                  <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+                ) : active ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                ) : (
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-border" />
+                )}
+                <span
+                  className={cn(
+                    'text-xs',
+                    done && 'text-muted-foreground line-through',
+                    active && 'font-medium text-foreground',
+                    !done && !active && 'text-muted-foreground',
+                  )}
+                >
+                  {CREATE_PROCESS_STEP_LABELS[s]}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+        <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+          A consulta ao tribunal pode demorar alguns segundos. Não feche esta janela.
+        </p>
+      </div>
+    </div>
+  )
 }
 
 interface ProcessoFormProps {
@@ -145,6 +234,9 @@ interface ProcessoFormProps {
   defaultValues?: Partial<LegalProcessInput>
   editingProcess?: LegalProcessWithRelations | null
   isLoading?: boolean
+  /** Etapa atual do cadastro. Ausente = sem painel de progresso (edição, e as
+   * telas que ainda não acompanham o passo a passo). */
+  createStep?: CreateProcessStep | null
   onSubmit: (data: LegalProcessInput, meta: ProcessoFormSubmitMeta) => void
 }
 
@@ -153,6 +245,7 @@ export function ProcessoForm({
   onClose,
   editingProcess,
   isLoading = false,
+  createStep = null,
   onSubmit,
   defaultValues,
 }: ProcessoFormProps) {
@@ -167,6 +260,17 @@ export function ProcessoForm({
   const [cnjSuggestions, setCnjSuggestions] = useState<LegalProcessWithRelations[]>([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [duplicateProcess, setDuplicateProcess] = useState<LegalProcessWithRelations | null>(null)
+  /** Fora do react-hook-form de propósito: não é campo de `legalProcessSchema`
+   * — o monitoramento é criado na BuscaProcessos depois do insert. */
+  const [monitoringFrequency, setMonitoringFrequency] = useState<MonitoringFrequency | null>(null)
+  /** Campos preenchidos pela consulta por CNJ. Ficam travados enquanto
+   * `apiUnlocked` for falso. */
+  const [apiFilled, setApiFilled] = useState<Set<ApiFilledField>>(new Set())
+  /** Escape hatch: a capa do tribunal às vezes vem incompleta ou errada, e um
+   * cadastro que não pode ser corrigido é pior que um divergente. */
+  const [apiUnlocked, setApiUnlocked] = useState(false)
+
+  const isApiLocked = (field: ApiFilledField) => !apiUnlocked && apiFilled.has(field)
 
   const workflow = useWorkflow('wf-processos')
   const { data: profiles = [] } = useProfiles()
@@ -192,6 +296,9 @@ export function ProcessoForm({
 
   useEffect(() => {
     if (open) {
+      setMonitoringFrequency(null)
+      setApiFilled(new Set())
+      setApiUnlocked(false)
       if (editingProcess) {
         const item = editingProcess.crm_item
         lastFetchedCnjRef.current = editingProcess.cnj_number ?? null
@@ -281,6 +388,14 @@ export function ProcessoForm({
     const cnj = watchedCnjNumber?.trim() ?? ''
     const digits = cnj.replace(/\D/g, '')
 
+    // Trocou o CNJ: o que a capa anterior preencheu não vale mais, e manter os
+    // campos travados prenderia o cadastro novo aos dados do processo velho.
+    if (capaFetchedForRef.current && digits !== capaFetchedForRef.current) {
+      capaFetchedForRef.current = null
+      setApiFilled(new Set())
+      setApiUnlocked(false)
+    }
+
     if (digits.length !== 20) return
     if (cnj === lastFetchedCnjRef.current) return
 
@@ -328,16 +443,29 @@ export function ProcessoForm({
         const payload = outcome.data
         capaFetchedForRef.current = digitsOf(cnj)
 
+        // Só os campos que a API realmente preencheu entram na trava — o que
+        // ela deixou vazio continua editável.
+        const preenchidos = new Set<ApiFilledField>()
+        const fill = <K extends ApiFilledField>(field: K, value: unknown) => {
+          if (value == null || value === '') return
+          setValue(field, value as never)
+          preenchidos.add(field)
+        }
+
+        // O CNJ NÃO entra na trava: é o que a pessoa digitou, e travá-lo
+        // impediria de corrigir o número ou buscar outro processo sem fechar o
+        // formulário. A API só o reescreve no formato canônico.
         if (payload.cnj_number) setValue('cnj_number', payload.cnj_number)
-        if (payload.court) setValue('court', payload.court)
-        if (payload.court_division) setValue('court_division', payload.court_division)
-        if (payload.plaintiff) setValue('plaintiff', payload.plaintiff)
-        if (payload.defendant) setValue('defendant', payload.defendant)
-        if (payload.procedural_class) setValue('procedural_class', payload.procedural_class)
-        if (payload.subject) setValue('subject', payload.subject)
-        if (payload.case_value != null) setValue('case_value', payload.case_value)
-        if (payload.filing_date) setValue('filing_date', payload.filing_date)
-        if (payload.status) setValue('status', payload.status)
+        fill('court', payload.court)
+        fill('court_division', payload.court_division)
+        fill('plaintiff', payload.plaintiff)
+        fill('defendant', payload.defendant)
+        fill('procedural_class', payload.procedural_class)
+        fill('subject', payload.subject)
+        fill('case_value', payload.case_value)
+        fill('filing_date', payload.filing_date)
+        fill('status', payload.status)
+        setApiFilled(preenchidos)
         // A API é a fonte das partes: substitui a lista inteira em vez de
         // concatenar, senão uma segunda consulta duplicaria todo mundo.
         if (payload.parties?.length) setValue('parties', payload.parties)
@@ -367,15 +495,28 @@ export function ProcessoForm({
       Boolean(capaFetchedForRef.current) &&
       capaFetchedForRef.current === digitsOf(data.cnj_number ?? '')
 
-    onSubmit(data as LegalProcessInput, { capaFetched })
+    // Na edição o campo nem é exibido: trocar a frequência de um monitoramento
+    // que já existe é cancelar e recriar, e isso vive na tela de detalhes.
+    onSubmit(data as LegalProcessInput, {
+      capaFetched,
+      monitoringFrequency: isEditing ? null : monitoringFrequency,
+    })
   }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         showCloseButton={false}
+        // Sem `relative` aqui: a base do DialogContent é `fixed`, que o
+        // tailwind-merge trata no mesmo grupo de `position` — passar `relative`
+        // vencia a base e jogava metade do modal para fora da tela. `fixed` já
+        // é elemento posicionado, então o overlay `absolute inset-0` ancora
+        // nele do mesmo jeito.
         className="sm:max-w-5xl max-h-[90vh] overflow-hidden p-0 gap-0"
       >
+        {createStep && (
+          <CreateProgress step={createStep} withMonitoring={Boolean(monitoringFrequency)} />
+        )}
         <form
           onSubmit={handleSubmit(handleFormSubmit)}
           className="flex flex-col h-full max-h-[90vh]"
@@ -540,10 +681,50 @@ export function ProcessoForm({
                         tags={CRM_TAGS}
                         value={(field.value ?? []) as CrmTag[]}
                         onChange={field.onChange}
+                        allowCreate
                       />
                     )}
                   />
                 </div>
+
+                {/* Monitoramento — só no cadastro. Já existindo monitoramento,
+                    trocar a frequência exige cancelar e recriar, o que é feito
+                    na tela de detalhes. */}
+                {!isEditing && (
+                  <>
+                    <div className="h-px bg-muted" />
+                    <div>
+                      <SidebarLabel>Monitoramento</SidebarLabel>
+                      <Select
+                        value={monitoringFrequency ?? NONE_VALUE}
+                        onValueChange={(v) =>
+                          setMonitoringFrequency(
+                            v === NONE_VALUE ? null : (v as MonitoringFrequency),
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-full text-sm bg-card">
+                          <span className="truncate text-sm">
+                            {monitoringFrequency
+                              ? MONITORING_FREQUENCY_LABELS[monitoringFrequency]
+                              : 'Não monitorar'}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_VALUE}>Não monitorar</SelectItem>
+                          {MONITORING_FREQUENCIES.map((f) => (
+                            <SelectItem key={f} value={f}>
+                              {MONITORING_FREQUENCY_LABELS[f]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                        Acompanha novas movimentações deste processo no tribunal.
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </aside>
 
@@ -587,6 +768,35 @@ export function ProcessoForm({
                 {/* ── Processo Judicial ─────────────────────────────────── */}
                 <section>
                   <SectionDivider icon={Search}>Processo Judicial</SectionDivider>
+
+                  {/* Trava dos campos vindos da capa. O botão existe porque a
+                      capa às vezes vem incompleta ou errada — um cadastro que
+                      não pode ser corrigido é pior que um divergente. */}
+                  {apiFilled.size > 0 && (
+                    <div
+                      className={cn(
+                        'mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2',
+                        apiUnlocked
+                          ? 'border-warning/40 bg-warning/[0.07]'
+                          : 'border-info/40 bg-info/[0.07]',
+                      )}
+                    >
+                      <span className="text-xs text-foreground/80">
+                        {apiUnlocked
+                          ? 'Campos destravados — o que você alterar pode divergir do tribunal.'
+                          : `${apiFilled.size} campo(s) preenchido(s) pelo tribunal estão travados.`}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7"
+                        onClick={() => setApiUnlocked((v) => !v)}
+                      >
+                        {apiUnlocked ? 'Travar novamente' : 'Editar mesmo assim'}
+                      </Button>
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     {/* CNJ Number */}
@@ -698,6 +908,7 @@ export function ProcessoForm({
                           render={({ field }) => (
                             <Select
                               value={field.value ?? 'ativo'}
+                              disabled={isApiLocked('status')}
                               onValueChange={(v) => { if (v) field.onChange(v) }}
                             >
                               <SelectTrigger className="w-full text-sm">
@@ -722,12 +933,20 @@ export function ProcessoForm({
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <FieldLabel>Classe Processual</FieldLabel>
-                        <Input {...register('procedural_class')} placeholder="Ex: Procedimento Comum Cível" />
+                        <Input
+                          {...register('procedural_class')}
+                          disabled={isApiLocked('procedural_class')}
+                          placeholder="Ex: Procedimento Comum Cível"
+                        />
                         <FieldError message={errors.procedural_class?.message} />
                       </div>
                       <div>
                         <FieldLabel>Assunto</FieldLabel>
-                        <Input {...register('subject')} placeholder="Ex: Indenização por Dano Moral" />
+                        <Input
+                          {...register('subject')}
+                          disabled={isApiLocked('subject')}
+                          placeholder="Ex: Indenização por Dano Moral"
+                        />
                         <FieldError message={errors.subject?.message} />
                       </div>
                     </div>
@@ -743,6 +962,7 @@ export function ProcessoForm({
                             <CurrencyInput
                               value={field.value ?? undefined}
                               onChange={(v) => field.onChange(v ?? null)}
+                              disabled={isApiLocked('case_value')}
                               className="h-[38px] rounded-lg"
                             />
                           )}
@@ -751,7 +971,7 @@ export function ProcessoForm({
                       </div>
                       <div>
                         <FieldLabel>Ajuizamento</FieldLabel>
-                        <Input type="date" {...register('filing_date')} />
+                        <Input type="date" {...register('filing_date')} disabled={isApiLocked('filing_date')} />
                         <FieldError message={errors.filing_date?.message} />
                       </div>
                       <div>
@@ -764,11 +984,15 @@ export function ProcessoForm({
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <FieldLabel>Tribunal</FieldLabel>
-                        <Input {...register('court')} placeholder="Ex: TJSP" />
+                        <Input {...register('court')} disabled={isApiLocked('court')} placeholder="Ex: TJSP" />
                       </div>
                       <div className="col-span-2">
                         <FieldLabel>Juízo / Vara</FieldLabel>
-                        <Input {...register('court_division')} placeholder="Ex: 3ª Vara do Trabalho de São Paulo" />
+                        <Input
+                          {...register('court_division')}
+                          disabled={isApiLocked('court_division')}
+                          placeholder="Ex: 3ª Vara do Trabalho de São Paulo"
+                        />
                       </div>
                     </div>
 

@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { AREAS_JURIDICAS } from '@/data/mock'
 import type { AreaJuridica } from '@/data/mock'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
@@ -59,6 +59,7 @@ import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialE
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
 import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
 import { TaskForm } from '@/features/tarefas/components/TaskForm'
+import { tagAppearance } from '@/utils/tags'
 
 type Tab =
   | 'cadastro'
@@ -689,17 +690,17 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {tags.map((tag) => {
-                    const et = ETIQUETAS[tag]
+                    const et = tagAppearance(tag)
                     return (
                       <span
                         key={tag}
                         className={cn(
                           'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                          et?.color,
-                          et?.textColor
+                          et.color,
+                          et.textColor
                         )}
                       >
-                        {et?.label ?? tag}
+                        {et.label}
                       </span>
                     )
                   })}

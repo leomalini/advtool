@@ -23,11 +23,12 @@ import { cn } from '@/lib/utils'
 import { crmItemSchema, CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
 import type { CrmItemInput, CrmTag, CrmLegalArea } from '@/schemas/crmItem.schema'
 import type { CrmItemWithRelations } from '@/types/crmItem.types'
-import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { AREAS_JURIDICAS } from '@/data/mock'
 import { useWorkflows } from '../hooks/useWorkflows'
 import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { useProfiles } from '@/hooks/useProfiles'
 import { VincularProcessoField } from './VincularProcessoField'
+import { tagAppearance } from '@/utils/tags'
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -134,7 +135,7 @@ function TagToggle({
   return (
     <div className="flex flex-wrap gap-1.5">
       {tags.map((tag) => {
-        const et = ETIQUETAS[tag]
+        const et = tagAppearance(tag)
         const active = value.includes(tag)
         return (
           <button

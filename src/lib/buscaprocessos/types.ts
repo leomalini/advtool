@@ -139,6 +139,11 @@ export interface BpMovimentacao {
   /** Preenchido só quando a origem é diário oficial — é o que distingue uma
    * publicação de uma movimentação de serventuário. */
   tipo_publicacao?: string | null
+  /** Página do diário no site do tribunal (ex.: o CDJE do TJSP). Vem null nas
+   * movimentações de serventuário e preenchida junto com `tipo_publicacao` —
+   * ou seja, acompanha a publicação, não o processo: a API não devolve uma URL
+   * dos autos. */
+  link_publicacao_tribunal?: string | null
 }
 
 export interface BpMovimentacoesData {

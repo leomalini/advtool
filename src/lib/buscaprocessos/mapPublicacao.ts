@@ -85,6 +85,12 @@ export async function movimentacaoToPublicationRow(
     // Movimentação vem em texto puro, sem marcação: não há HTML a guardar.
     content_html: null,
     content_text: conteudo,
+    // A página do diário no tribunal. Chega junto com `tipo_publicacao` — só a
+    // publicação tem link, a movimentação de serventuário vem com null. Sem
+    // este mapeamento a publicação que entra pelo cadastro do processo ficava
+    // sem link nenhum, enquanto a mesma publicação vinda por OAB ou webhook
+    // tinha o dela.
+    external_url: mov.link_publicacao_tribunal ?? null,
     raw_data: mov,
   }
 }

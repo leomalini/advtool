@@ -566,7 +566,7 @@ export async function getRecentMovements(limit = 30): Promise<LegalProcessMoveme
     .select(`
       *,
       legal_process:legal_processes(
-        id, cnj_number,
+        id, cnj_number, court,
         crm_items:crm_items!crm_items_legal_process_id_fkey(id, workflow_id, title, client:clients(type, name, company_name, trade_name))
       )
     `)

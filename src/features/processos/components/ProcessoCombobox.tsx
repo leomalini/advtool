@@ -67,6 +67,7 @@ export function ProcessoCombobox({
     const created = await createProcesso.mutateAsync({
       input: data,
       capaAlreadyFetched: meta.capaFetched,
+      monitoringFrequency: meta.monitoringFrequency,
     })
     setCreateOpen(false)
     select(created.id)
