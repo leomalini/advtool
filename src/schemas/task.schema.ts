@@ -20,6 +20,8 @@ export const createTaskSchema = z.object({
   /** Publicação que originou a providência. */
   publication_id: optionalUuid,
   due_date: z.string().optional().nullable(),
+  /** HH:mm. Só tem sentido com `due_date` — o service descarta a hora sem data. */
+  due_time: z.string().optional().nullable(),
 })
 
 export const taskChecklistItemSchema = z.object({

@@ -38,6 +38,9 @@ export interface Task extends BaseEntity {
   legal_process_id: string | null
   publication_id: string | null
   due_date: string | null
+  /** Hora opcional (HH:mm:ss, sem fuso) — com ela a tarefa entra na grade de
+   * horas da Agenda; sem ela, fica na faixa "Dia todo". */
+  due_time: string | null
   position: number
   created_by: string
   assignee?: Profile | null

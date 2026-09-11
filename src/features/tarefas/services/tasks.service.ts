@@ -22,6 +22,33 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
   return out as T
 }
 
+/** Hora sem data não tem onde aparecer na Agenda nem o que significar: quando a
+ * data some, a hora vai junto. Só age se o patch mexe na data — um update só
+ * de status não pode apagar a hora. */
+function dropOrphanTime<T extends { due_date?: string | null; due_time?: string | null }>(input: T): T {
+  if (!('due_date' in input) || input.due_date) return input
+  return { ...input, due_time: null }
+}
+
+/**
+ * Tarefas com data dentro de `[fromDay, toDay]` (yyyy-MM-dd), para a Agenda.
+ *
+ * Comparação de `date` com string de data: sem instante, sem fuso — o dia
+ * gravado é o dia mostrado.
+ */
+export async function getTasksInRange(fromDay: string, toDay: string): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select(TASK_SELECT)
+    .gte('due_date', fromDay)
+    .lte('due_date', toDay)
+    .order('due_date')
+    .order('due_time', { nullsFirst: true })
+
+  if (error) throw error
+  return (data ?? []) as Task[]
+}
+
 /** Atividades criadas a partir de uma publicação. */
 export async function getTasksForPublication(publicationId: string): Promise<Task[]> {
   const { data, error } = await supabase
@@ -86,7 +113,7 @@ export async function createTask(
 
   const { data, error } = await supabase
     .from('tasks')
-    .insert({ ...nullifyEmpty(input), created_by: userId, position })
+    .insert({ ...dropOrphanTime(nullifyEmpty(input)), created_by: userId, position })
     .select(TASK_SELECT)
     .single()
 
@@ -121,7 +148,10 @@ export async function updateTask(input: UpdateTaskInput, userId?: string): Promi
     }
   }
 
-  const { error } = await supabase.from('tasks').update(nullifyEmpty(rest)).eq('id', id)
+  const { error } = await supabase
+    .from('tasks')
+    .update(dropOrphanTime(nullifyEmpty(rest)))
+    .eq('id', id)
   if (error) throw error
 
   if (justCompleted && userId) {

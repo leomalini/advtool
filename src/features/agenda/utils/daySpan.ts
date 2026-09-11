@@ -1,6 +1,7 @@
 import { addDays, addMinutes, format, max as maxDate, min as minDate, parseISO, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { CalendarEvent } from '@/types/event.types'
+import type { AgendaItem } from './agendaItem'
 
 /**
  * Quais dias um evento ocupa na grade.
@@ -16,6 +17,7 @@ import type { CalendarEvent } from '@/types/event.types'
  *     o `start_at` (o CHECK exige `end_at >= start_at`).
  */
 
+/** Vale para evento e para item da Agenda (evento ou tarefa já convertida). */
 type SpanSource = Pick<CalendarEvent, 'start_at' | 'end_at' | 'all_day'>
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -23,8 +25,8 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /** Duração assumida para evento sem término — a mesma que a grade de horas desenha. */
 export const DEFAULT_DURATION_MIN = 60
 
-export interface DaySegment<T extends SpanSource = CalendarEvent> {
-  event: T
+export interface DaySegment<T extends SpanSource = AgendaItem> {
+  item: T
   /** Chave yyyy-MM-dd do dia local deste pedaço. */
   dayKey: string
   isFirstDay: boolean
@@ -94,7 +96,7 @@ export function indexEventsByDay<T extends SpanSource>(
     for (let day = from; day <= to; day = addDays(day, 1)) {
       const dayKey = format(day, 'yyyy-MM-dd')
       const segment: DaySegment<T> = {
-        event,
+        item: event,
         dayKey,
         isFirstDay: day.getTime() === first.getTime(),
         isLastDay: day.getTime() === last.getTime(),
@@ -132,7 +134,7 @@ export function eventRangeLabel(event: SpanSource): string {
  * um dia só leva "Dia todo"; de vários dias, a própria barra já diz isso.
  */
 export function segmentMarker(segment: DaySegment): string | null {
-  const { event, isFirstDay, isLastDay } = segment
+  const { item: event, isFirstDay, isLastDay } = segment
   const multi = !(isFirstDay && isLastDay)
 
   if (event.all_day) return multi ? null : 'Dia todo'
@@ -143,23 +145,25 @@ export function segmentMarker(segment: DaySegment): string | null {
 
 /**
  * Ordem dentro de um dia: vários dias primeiro (os mais longos antes), depois
- * dia inteiro, depois por horário. Com a mesma ordem em todas as células, um
- * evento de vários dias tende a ficar na mesma altura ao longo da semana.
+ * dia inteiro — eventos antes de tarefas —, depois por horário. Com a mesma
+ * ordem em todas as células, um evento de vários dias tende a ficar na mesma
+ * altura ao longo da semana.
  */
-export function compareDaySegments<T extends SpanSource & { id: string }>(
+export function compareDaySegments<T extends SpanSource & { id: string; kind?: string }>(
   a: DaySegment<T>,
   b: DaySegment<T>
 ): number {
-  const aMulti = isMultiDay(a.event)
-  const bMulti = isMultiDay(b.event)
+  const aMulti = isMultiDay(a.item)
+  const bMulti = isMultiDay(b.item)
   if (aMulti !== bMulti) return aMulti ? -1 : 1
   if (aMulti && bMulti) {
-    const byStart = a.event.start_at.localeCompare(b.event.start_at)
+    const byStart = a.item.start_at.localeCompare(b.item.start_at)
     if (byStart !== 0) return byStart
-    const byEnd = b.event.end_at.localeCompare(a.event.end_at)
+    const byEnd = b.item.end_at.localeCompare(a.item.end_at)
     if (byEnd !== 0) return byEnd
-    return a.event.id.localeCompare(b.event.id)
+    return a.item.id.localeCompare(b.item.id)
   }
-  if (a.event.all_day !== b.event.all_day) return a.event.all_day ? -1 : 1
-  return a.event.start_at.localeCompare(b.event.start_at) || a.event.id.localeCompare(b.event.id)
+  if (a.item.all_day !== b.item.all_day) return a.item.all_day ? -1 : 1
+  if (a.item.all_day && a.item.kind !== b.item.kind) return a.item.kind === 'task' ? 1 : -1
+  return a.item.start_at.localeCompare(b.item.start_at) || a.item.id.localeCompare(b.item.id)
 }

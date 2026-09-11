@@ -45,6 +45,12 @@ import { useLegalProcesses } from "@/features/processos/hooks/useLegalProcesses"
 
 interface EventFormProps {
   defaultDate?: Date;
+  /** HH:mm de início — vem do clique num horário da grade. Antes o formulário
+   * só lia a data de `defaultDate` e abria sempre às 09:00. */
+  defaultTime?: string;
+  /** Substitui o título do cabeçalho — a Agenda põe ali as abas Evento |
+   * Tarefa. Precisa conter o `DialogTitle`. */
+  headerContent?: ReactNode;
   defaultValues?: Partial<EventFormInput>;
   onSubmit: (data: EventFormInput) => void;
   onCancel?: () => void;
@@ -96,6 +102,8 @@ const FLAG_CONFIG = [
 
 export function EventForm({
   defaultDate,
+  defaultTime,
+  headerContent,
   defaultValues,
   onSubmit,
   onCancel,
@@ -126,7 +134,7 @@ export function EventForm({
     defaultValues: {
       type: "meeting",
       start_date: today,
-      start_time: "09:00",
+      start_time: defaultTime ?? "09:00",
       show_in_agenda: true,
       all_day: false,
       inform_end: false,
@@ -197,7 +205,9 @@ export function EventForm({
         <div className="flex items-center justify-between">
           {/* DialogTitle, not a bare h2: Radix uses it as the dialog's
               accessible name and warns when DialogContent has none. */}
-          <DialogTitle className="text-sm font-semibold">{formTitle}</DialogTitle>
+          {headerContent ?? (
+            <DialogTitle className="text-sm font-semibold">{formTitle}</DialogTitle>
+          )}
           {onCancel && (
             <button
               type="button"

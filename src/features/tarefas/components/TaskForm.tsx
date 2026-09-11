@@ -41,6 +41,7 @@ export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLo
   const priority = watch('priority')
   const status = watch('status')
   const assignedTo = watch('assigned_to')
+  const dueDate = watch('due_date')
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -87,29 +88,36 @@ export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLo
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label>Responsável</Label>
-          <Select
-            value={toSelectValue(assignedTo)}
-            onValueChange={(v) => setValue('assigned_to', fromSelectValue(v))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecionar..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_VALUE}>Nenhum</SelectItem>
-              {profiles.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {getDisplayName(p.full_name)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
           <Label>Data Limite</Label>
           <Input type="date" {...register('due_date')} />
         </div>
+
+        {/* Hora opcional: com ela a tarefa entra na grade de horas da Agenda;
+            sem ela, fica na faixa "Dia todo". Sem data não há onde pô-la. */}
+        <div className="space-y-1.5">
+          <Label>Hora (opcional)</Label>
+          <Input type="time" {...register('due_time')} disabled={!dueDate} />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Responsável</Label>
+        <Select
+          value={toSelectValue(assignedTo)}
+          onValueChange={(v) => setValue('assigned_to', fromSelectValue(v))}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Selecionar..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE_VALUE}>Nenhum</SelectItem>
+            {profiles.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {getDisplayName(p.full_name)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Button type="submit" className="w-full" disabled={isLoading}>

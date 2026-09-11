@@ -63,6 +63,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
             >
               <Calendar className="h-3 w-3" />
               {formatDate(task.due_date)}
+              {task.due_time && ` ${task.due_time.slice(0, 5)}`}
             </span>
           )}
           {checklistTotal > 0 && (

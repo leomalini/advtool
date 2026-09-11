@@ -1,29 +1,121 @@
 'use client'
 
-import { format, isSameMonth, isToday } from 'date-fns'
+import { format, isSameMonth, isToday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import { resolveEventType } from '@/types/event.types'
-import type { CalendarEvent, EventTypeRecord } from '@/types/event.types'
+import type { EventTypeRecord } from '@/types/event.types'
 import {
   compareDaySegments,
   eventRangeLabel,
   segmentMarker,
   type DaySegment,
 } from '../utils/daySpan'
+import {
+  agendaItemWhenLabel,
+  type AgendaItem,
+  type EventAgendaItem,
+  type TaskAgendaItem,
+} from '../utils/agendaItem'
+import { AgendaTaskCheck } from './AgendaTaskCheck'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
-/** Quantos eventos cabem na célula antes do "+N mais". */
+/** Quantos itens cabem na célula antes do "+N mais". */
 const MAX_VISIBLE = 4
 
 interface MonthGridProps {
   days: Date[]
   currentDate: Date
-  getEventosForDay: (day: Date) => DaySegment[]
+  getItemsForDay: (day: Date) => DaySegment[]
   eventTypes: Map<string, EventTypeRecord>
   onDayClick: (day: Date) => void
-  onEventClick: (ev: CalendarEvent) => void
+  onItemClick: (item: AgendaItem) => void
+  /** Ausente sem permissão de alterar tarefas. */
+  onToggleTask?: (item: TaskAgendaItem) => void
+}
+
+function EventChip({
+  segment,
+  item,
+  eventTypes,
+  onItemClick,
+}: {
+  segment: DaySegment
+  item: EventAgendaItem
+  eventTypes: Map<string, EventTypeRecord>
+  onItemClick: (item: AgendaItem) => void
+}) {
+  const tipo = resolveEventType(eventTypes, item.event.type)
+  const marker = segmentMarker(segment)
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onItemClick(item)
+      }}
+      title={`${eventRangeLabel(item.event)} · ${tipo.label} · ${item.title}`}
+      className={cn(
+        'flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-left text-white hover:opacity-90 transition-opacity',
+        // Emendas retas até a borda: lido como uma barra só atravessando os
+        // dias, como no Google Agenda.
+        !segment.isFirstDay && '-ml-1 rounded-l-none pl-2',
+        !segment.isLastDay && '-mr-1 rounded-r-none'
+      )}
+      style={{ backgroundColor: tipo.color }}
+    >
+      {marker && <span className="text-[9px] font-semibold opacity-90 shrink-0">{marker}</span>}
+      <span className="text-[10px] leading-tight truncate">{item.title}</span>
+    </button>
+  )
+}
+
+/** Tarefa: contorno em vez de preenchimento, com o círculo de concluir — dá
+ * para distinguir de um evento sem ler. */
+function TaskChip({
+  item,
+  onItemClick,
+  onToggleTask,
+}: {
+  item: TaskAgendaItem
+  onItemClick: (item: AgendaItem) => void
+  onToggleTask?: (item: TaskAgendaItem) => void
+}) {
+  return (
+    // div, não button: o círculo de concluir é um botão próprio, e botão
+    // dentro de botão não é HTML válido.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation()
+        onItemClick(item)
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        e.stopPropagation()
+        onItemClick(item)
+      }}
+      title={`Tarefa · ${agendaItemWhenLabel(item)} · ${item.title}`}
+      className={cn(
+        'flex shrink-0 items-center gap-1 rounded border border-info/40 bg-info/10 px-1 py-0.5 text-left text-info hover:bg-info/15 transition-colors cursor-pointer',
+        item.done && 'opacity-60'
+      )}
+    >
+      <AgendaTaskCheck item={item} onToggle={onToggleTask} className="h-3 w-3" />
+      {!item.all_day && (
+        <span className="text-[9px] font-semibold shrink-0">
+          {format(parseISO(item.start_at), 'HH:mm')}
+        </span>
+      )}
+      <span className={cn('text-[10px] leading-tight truncate', item.done && 'line-through')}>
+        {item.title}
+      </span>
+    </div>
+  )
 }
 
 function DayCell({
@@ -32,14 +124,16 @@ function DayCell({
   currentDate,
   eventTypes,
   onDayClick,
-  onEventClick,
+  onItemClick,
+  onToggleTask,
 }: {
   day: Date
   segments: DaySegment[]
   currentDate: Date
   eventTypes: Map<string, EventTypeRecord>
   onDayClick: (day: Date) => void
-  onEventClick: (ev: CalendarEvent) => void
+  onItemClick: (item: AgendaItem) => void
+  onToggleTask?: (item: TaskAgendaItem) => void
 }) {
   const isCurrentMonth = isSameMonth(day, currentDate)
   const isTodayDay = isToday(day)
@@ -55,7 +149,7 @@ function DayCell({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Criar evento em ${format(day, "dd 'de' MMMM", { locale: ptBR })}`}
+      aria-label={`Criar em ${format(day, "dd 'de' MMMM", { locale: ptBR })}`}
       onClick={() => onDayClick(day)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onDayClick(day)
@@ -86,38 +180,24 @@ function DayCell({
           encostar na borda da célula, e o overflow-hidden só recorta o que
           passa do padding. */}
       <div className="flex-1 min-h-0 px-1 pb-1 pt-0.5 flex flex-col gap-0.5 overflow-hidden">
-        {visible.map((segment) => {
-          const ev = segment.event
-          const tipo = resolveEventType(eventTypes, ev.type)
-          const marker = segmentMarker(segment)
-          const continuesBefore = !segment.isFirstDay
-          const continuesAfter = !segment.isLastDay
-
-          return (
-            <button
-              key={ev.id}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEventClick(ev)
-              }}
-              title={`${eventRangeLabel(ev)} · ${tipo.label} · ${ev.title}`}
-              className={cn(
-                'flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-left text-white hover:opacity-90 transition-opacity',
-                // Emendas retas até a borda: lido como uma barra só
-                // atravessando os dias, como no Google Agenda.
-                continuesBefore && '-ml-1 rounded-l-none pl-2',
-                continuesAfter && '-mr-1 rounded-r-none'
-              )}
-              style={{ backgroundColor: tipo.color }}
-            >
-              {marker && (
-                <span className="text-[9px] font-semibold opacity-90 shrink-0">{marker}</span>
-              )}
-              <span className="text-[10px] leading-tight truncate">{ev.title}</span>
-            </button>
+        {visible.map((segment) =>
+          segment.item.kind === 'event' ? (
+            <EventChip
+              key={segment.item.id}
+              segment={segment}
+              item={segment.item}
+              eventTypes={eventTypes}
+              onItemClick={onItemClick}
+            />
+          ) : (
+            <TaskChip
+              key={segment.item.id}
+              item={segment.item}
+              onItemClick={onItemClick}
+              onToggleTask={onToggleTask}
+            />
           )
-        })}
+        )}
 
         {hidden > 0 && (
           <span className="text-[10px] text-muted-foreground pl-1 shrink-0">+{hidden} mais</span>
@@ -130,10 +210,11 @@ function DayCell({
 export function MonthGrid({
   days,
   currentDate,
-  getEventosForDay,
+  getItemsForDay,
   eventTypes,
   onDayClick,
-  onEventClick,
+  onItemClick,
+  onToggleTask,
 }: MonthGridProps) {
   return (
     <div className="rounded-xl border overflow-hidden">
@@ -153,11 +234,12 @@ export function MonthGrid({
           <DayCell
             key={day.toISOString()}
             day={day}
-            segments={getEventosForDay(day)}
+            segments={getItemsForDay(day)}
             currentDate={currentDate}
             eventTypes={eventTypes}
             onDayClick={onDayClick}
-            onEventClick={onEventClick}
+            onItemClick={onItemClick}
+            onToggleTask={onToggleTask}
           />
         ))}
       </div>

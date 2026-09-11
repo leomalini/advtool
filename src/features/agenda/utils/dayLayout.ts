@@ -1,5 +1,5 @@
 import { parseISO } from 'date-fns'
-import type { CalendarEvent } from '@/types/event.types'
+import type { AgendaItem } from './agendaItem'
 import { belongsToAllDayStrip, DEFAULT_DURATION_MIN, type DaySegment } from './daySpan'
 
 /**
@@ -34,7 +34,7 @@ function minutesOfDay(iso: string): number {
  * confundida com a de "vira o dia".
  */
 export function segmentMinutes(segment: DaySegment): { startMin: number; endMin: number } {
-  const { event, isFirstDay, isLastDay } = segment
+  const { item: event, isFirstDay, isLastDay } = segment
   const startMin = isFirstDay ? minutesOfDay(event.start_at) : 0
   if (!isLastDay) return { startMin, endMin: FULL_DAY_MIN }
 
@@ -58,7 +58,7 @@ export interface DayWindow {
 
 export interface PositionedEvent {
   segment: DaySegment
-  event: CalendarEvent
+  item: AgendaItem
   /** Minutos do dia que o bloco representa — o rótulo mostra estes. */
   startMin: number
   endMin: number
@@ -131,10 +131,10 @@ export function layoutDayEvents(
   options: { minHeightPct?: number } = {}
 ): DayLayout {
   const minHeightPct = options.minHeightPct ?? DEFAULT_MIN_HEIGHT_PCT
-  const allDay = segments.filter((s) => belongsToAllDayStrip(s.event))
+  const allDay = segments.filter((s) => belongsToAllDayStrip(s.item))
 
   const items = segments
-    .filter((s) => !belongsToAllDayStrip(s.event))
+    .filter((s) => !belongsToAllDayStrip(s.item))
     .map((segment) => {
       const { startMin, endMin } = segmentMinutes(segment)
       return { segment, start: startMin, end: endMin }
@@ -153,7 +153,7 @@ export function layoutDayEvents(
 
     return {
       segment,
-      event: segment.event,
+      item: segment.item,
       startMin: start,
       endMin: end,
       topPct: clampedTop,

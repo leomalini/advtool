@@ -136,6 +136,8 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                     priority: task.priority,
                     assigned_to: task.assigned_to ?? undefined,
                     due_date: task.due_date ?? undefined,
+                    // O banco devolve HH:mm:ss; o <input type="time"> quer HH:mm.
+                    due_time: task.due_time?.slice(0, 5) ?? undefined,
                   }}
                   onSubmit={handleUpdate}
                   isLoading={updateTask.isPending}
@@ -185,6 +187,7 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                     <span className={cn('flex items-center gap-1.5', isOverdue && 'text-destructive')}>
                       <Calendar className="h-3.5 w-3.5" />
                       {format(parseISO(task.due_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                      {task.due_time && ` às ${task.due_time.slice(0, 5)}`}
                     </span>
                   )}
                   {assigneeName && (
