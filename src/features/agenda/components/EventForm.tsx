@@ -7,13 +7,6 @@ import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2,
@@ -22,7 +15,6 @@ import {
   AlertCircle,
   Clock,
   Star,
-  RefreshCw,
   CalendarClock,
   History,
   MapPin,
@@ -32,7 +24,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { eventFormSchema, type EventFormInput } from "@/schemas/event.schema";
-import { RECURRENCE_TYPE_LABELS, resolveEventType } from "@/types/event.types";
+import { resolveEventType } from "@/types/event.types";
+import { RecurrenceFields } from "@/components/shared/RecurrenceFields";
 import { EventTypeSelect } from "./EventTypeSelect";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { Profile } from "@/types/common.types";
@@ -45,6 +38,12 @@ import { useLegalProcesses } from "@/features/processos/hooks/useLegalProcesses"
 
 interface EventFormProps {
   defaultDate?: Date;
+  /** HH:mm de início — vem do clique num horário da grade. Antes o formulário
+   * só lia a data de `defaultDate` e abria sempre às 09:00. */
+  defaultTime?: string;
+  /** Substitui o título do cabeçalho — a Agenda põe ali as abas Evento |
+   * Tarefa. Precisa conter o `DialogTitle`. */
+  headerContent?: ReactNode;
   defaultValues?: Partial<EventFormInput>;
   onSubmit: (data: EventFormInput) => void;
   onCancel?: () => void;
@@ -79,13 +78,6 @@ const FLAG_CONFIG = [
       "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800",
   },
   {
-    field: "is_recurring" as const,
-    label: "Recorrente",
-    icon: RefreshCw,
-    activeCls:
-      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-400 dark:border-violet-800",
-  },
-  {
     field: "is_retroactive" as const,
     label: "Retroativa",
     icon: History,
@@ -96,6 +88,8 @@ const FLAG_CONFIG = [
 
 export function EventForm({
   defaultDate,
+  defaultTime,
+  headerContent,
   defaultValues,
   onSubmit,
   onCancel,
@@ -117,23 +111,25 @@ export function EventForm({
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     control,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = useForm<EventFormInput>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
       type: "meeting",
       start_date: today,
-      start_time: "09:00",
+      start_time: defaultTime ?? "09:00",
       show_in_agenda: true,
       all_day: false,
       inform_end: false,
       is_important: false,
       is_urgent: false,
       is_future: false,
-      is_recurring: false,
       is_retroactive: false,
+      recurrence_type: "",
+      recurrence_ends: "until",
       assignee_ids: [],
       ...defaultValues,
     },
@@ -144,7 +140,6 @@ export function EventForm({
   const watchType = watch("type");
   const informEnd = watch("inform_end");
   const allDay = watch("all_day");
-  const isRecurring = watch("is_recurring");
   const isRetroactive = watch("is_retroactive");
   const assigneeIds = watch("assignee_ids");
   // A cor do tipo tinge o cabeçalho e o botão de salvar. Vem do cadastro, e
@@ -196,7 +191,9 @@ export function EventForm({
         <div className="flex items-center justify-between">
           {/* DialogTitle, not a bare h2: Radix uses it as the dialog's
               accessible name and warns when DialogContent has none. */}
-          <DialogTitle className="text-sm font-semibold">{formTitle}</DialogTitle>
+          {headerContent ?? (
+            <DialogTitle className="text-sm font-semibold">{formTitle}</DialogTitle>
+          )}
           {onCancel && (
             <button
               type="button"
@@ -348,16 +345,16 @@ export function EventForm({
                 </div>
               </div>
 
-              {/* Option toggles */}
+              {/* Option toggles. "Dia inteiro" e "Informar término" convivem:
+                  é assim que se agenda "Férias de 1 a 5". Antes ligar o
+                  término escondia e desligava o dia inteiro. */}
               <div className="flex flex-wrap gap-2 pt-0.5">
                 {[
                   {
                     field: "show_in_agenda" as const,
                     label: "Mostrar na agenda",
                   },
-                  ...(!informEnd
-                    ? [{ field: "all_day" as const, label: "Dia inteiro" }]
-                    : []),
+                  { field: "all_day" as const, label: "Dia inteiro" },
                   { field: "inform_end" as const, label: "Informar término" },
                 ].map(({ field, label }) => {
                   const active = watch(field);
@@ -366,8 +363,10 @@ export function EventForm({
                       key={field}
                       type="button"
                       onClick={() => {
-                        if (field === "inform_end" && !active)
-                          setValue("all_day", false);
+                        // Término começa no mesmo dia do início: o caso comum
+                        // é estender alguns dias, não digitar a data do zero.
+                        if (field === "inform_end" && !active && !getValues("end_date"))
+                          setValue("end_date", getValues("start_date"));
                         setValue(field, !active);
                       }}
                       className={cn(
@@ -387,23 +386,56 @@ export function EventForm({
               {/* End date/time (conditional) */}
               {informEnd && (
                 <div className="grid grid-cols-2 gap-4 pl-3 border-l-2 border-primary/20">
-                  <FormField label="Data de término">
+                  <FormField
+                    label={allDay ? "Último dia" : "Data de término"}
+                    error={errors.end_date?.message}
+                  >
                     <Input
                       type="date"
                       {...register("end_date")}
                       className="h-9 text-sm"
                     />
                   </FormField>
-                  <FormField label="Hora de término">
-                    <Input
-                      type="time"
-                      {...register("end_time")}
-                      className="h-9 text-sm"
-                    />
-                  </FormField>
+                  {/* Dia inteiro termina no fim do último dia — hora não se aplica. */}
+                  {!allDay && (
+                    <FormField label="Hora de término">
+                      <Input
+                        type="time"
+                        {...register("end_time")}
+                        className="h-9 text-sm"
+                      />
+                    </FormField>
+                  )}
                 </div>
               )}
             </div>
+          </FormSection>
+
+          {/* Repetir — cria a série inteira ao salvar (migration 52). */}
+          <FormSection label="Repetir">
+            <RecurrenceFields
+              value={{
+                recurrence_type: watch("recurrence_type"),
+                recurrence_ends: watch("recurrence_ends"),
+                recurrence_until: watch("recurrence_until"),
+                recurrence_count: watch("recurrence_count"),
+              }}
+              onChange={(patch) => {
+                // Revalida só depois da 1ª tentativa de salvar, como o resto do form.
+                const opts = { shouldValidate: isSubmitted };
+                if (patch.recurrence_type !== undefined) setValue("recurrence_type", patch.recurrence_type, opts);
+                if (patch.recurrence_ends !== undefined) setValue("recurrence_ends", patch.recurrence_ends, opts);
+                if (patch.recurrence_until !== undefined) setValue("recurrence_until", patch.recurrence_until, opts);
+                if (patch.recurrence_count !== undefined) setValue("recurrence_count", patch.recurrence_count, opts);
+              }}
+              startDate={watch("start_date")}
+              pluralNoun="eventos"
+              errors={{
+                recurrence_type: errors.recurrence_type?.message,
+                recurrence_until: errors.recurrence_until?.message,
+                recurrence_count: errors.recurrence_count?.message,
+              }}
+            />
           </FormSection>
 
           {/* Detalhes */}
@@ -481,37 +513,6 @@ export function EventForm({
                   );
                 })}
               </div>
-
-              {isRecurring && (
-                <div className="pl-3 border-l-2 border-violet-200 dark:border-violet-800 space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Periodicidade
-                  </Label>
-                  <Controller
-                    name="recurrence_type"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger className="h-9 text-sm">
-                          <SelectValue placeholder="Selecionar..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(RECURRENCE_TYPE_LABELS).map(
-                            ([v, l]) => (
-                              <SelectItem key={v} value={v}>
-                                {l}
-                              </SelectItem>
-                            ),
-                          )}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
-              )}
 
               {isRetroactive && (
                 <div className="pl-3 border-l-2 border-slate-200 dark:border-slate-700 space-y-1.5">

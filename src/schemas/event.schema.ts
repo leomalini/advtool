@@ -1,9 +1,9 @@
 import { z } from 'zod'
+import { recurrenceFormFields, recurrenceIssue } from './recurrence.schema'
 
 /** Slug de `event_types.id`. Deixou de ser enum na migration 32 — os tipos são
  * cadastrados pelo escritório, e a integridade é garantida pela FK, não aqui. */
 export const eventTypeSchema = z.string().min(1, 'Selecione um tipo')
-export const recurrenceTypeSchema = z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'])
 
 export const eventFormSchema = z.object({
   title: z.string().min(1, 'Título é obrigatório').max(200),
@@ -44,10 +44,33 @@ export const eventFormSchema = z.object({
   is_important: z.boolean(),
   is_urgent: z.boolean(),
   is_future: z.boolean(),
-  is_recurring: z.boolean(),
-  recurrence_type: recurrenceTypeSchema.optional(),
   is_retroactive: z.boolean(),
   retroactive_completed_at: z.string().optional(),
+
+  // Repetir — virou série de verdade na migration 52. A antiga flag
+  // "Recorrente" só gravava um rótulo; `is_recurring` agora é derivado.
+  ...recurrenceFormFields,
+}).superRefine((data, ctx) => {
+  const recurrence = recurrenceIssue(data, data.start_date)
+  if (recurrence) {
+    ctx.addIssue({ code: 'custom', message: recurrence.message, path: [recurrence.path] })
+  }
+
+  if (!data.inform_end || !data.end_date) return
+  // Dia inteiro compara só as datas: o término é o último dia, inclusivo.
+  // Strings yyyy-MM-dd / HH:mm ordenam como as datas que representam.
+  const endsBeforeStart = data.all_day
+    ? data.end_date < data.start_date
+    : `${data.end_date}T${data.end_time || '00:00'}` < `${data.start_date}T${data.start_time || '00:00'}`
+  if (endsBeforeStart) {
+    // Antes só o CHECK do banco pegava isso, e a tela mostrava um "Erro ao
+    // criar evento" sem dizer o motivo.
+    ctx.addIssue({
+      code: 'custom',
+      message: 'O término não pode ser antes do início',
+      path: ['end_date'],
+    })
+  }
 })
 
 export type EventFormInput = z.infer<typeof eventFormSchema>

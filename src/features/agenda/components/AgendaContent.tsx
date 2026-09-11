@@ -18,23 +18,30 @@ import {
   parseISO,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, AlertCircle, Circle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { usePermissions } from '@/hooks/usePermissions'
 import { resolveEventType } from '@/types/event.types'
-import type { CalendarEvent } from '@/types/event.types'
-import type { EventFormInput } from '@/schemas/event.schema'
+import type { CalendarEvent, EventTypeRecord } from '@/types/event.types'
+import { useTasksInRange } from '@/features/tarefas/hooks/useTasks'
+import { useToggleTaskDone } from '@/features/tarefas/hooks/useTaskMutations'
+import { TaskDetailModal } from '@/features/tarefas/components/TaskDetailModal'
 import { useEvents } from '../hooks/useEvents'
 import { useEventTypes, useEventTypeMap } from '../hooks/useEventTypes'
-import { useCreateEvent } from '../hooks/useEventMutations'
-import { EventForm } from './EventForm'
 import { EventDetailModal } from './EventDetailModal'
+import { AgendaCreateDialog, type AgendaCreateTarget } from './AgendaCreateDialog'
 import { MonthGrid } from './MonthGrid'
 import { TimeGrid } from './TimeGrid'
-import { localDayKey } from '../utils/datetime'
-import { Can } from '@/components/shared/Can'
+import { effectiveEnd, indexEventsByDay, type DaySegment } from '../utils/daySpan'
+import {
+  agendaItemWhenLabel,
+  eventToAgendaItem,
+  taskToAgendaItem,
+  type AgendaItem,
+  type TaskAgendaItem,
+} from '../utils/agendaItem'
 
 type CalendarView = 'month' | 'week' | 'day'
 
@@ -44,23 +51,35 @@ const VIEWS: { id: CalendarView; label: string }[] = [
   { id: 'day', label: 'Dia' },
 ]
 
-// ── Próximos Eventos (sidebar) ─────────────────────────────────
-
-interface ProximosEventosProps {
-  eventos: CalendarEvent[]
-  isLoading: boolean
-  onEventoClick: (ev: CalendarEvent) => void
+/** O que a grade mostra — as "agendas" que o Google deixa ligar e desligar. */
+interface AgendaVisibility {
+  events: boolean
+  tasks: boolean
+  doneTasks: boolean
 }
 
-function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosProps) {
-  const eventTypes = useEventTypeMap()
-  const hoje = new Date()
-  const em7dias = addDays(hoje, 7)
+// ── Próximos 7 dias (sidebar) ──────────────────────────────────
 
-  const proximos = eventos
-    .filter((ev) => {
-      const d = parseISO(ev.start_at)
-      return d >= hoje && d <= em7dias
+interface ProximosItensProps {
+  items: AgendaItem[]
+  isLoading: boolean
+  eventTypes: Map<string, EventTypeRecord>
+  onItemClick: (item: AgendaItem) => void
+}
+
+function ProximosItens({ items, isLoading, eventTypes, onItemClick }: ProximosItensProps) {
+  const hoje = new Date()
+  const inicioDeHoje = startOfDay(hoje)
+  const em7dias = endOfDay(addDays(hoje, 7))
+
+  const proximos = items
+    .filter((item) => {
+      if (parseISO(item.start_at) > em7dias) return false
+      // Tarefa pendente fica até ser concluída — passar da hora dela não a
+      // resolve. Evento sai quando termina: o filtro por início tirava da lista
+      // o de hoje assim que a hora passava, inclusive o de dia inteiro.
+      if (item.kind === 'task') return !item.done && parseISO(item.start_at) >= inicioDeHoje
+      return effectiveEnd(item) > hoje
     })
     .sort((a, b) => a.start_at.localeCompare(b.start_at))
 
@@ -80,29 +99,32 @@ function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosP
         </div>
       ) : proximos.length === 0 ? (
         <div className="px-4 py-6 text-center">
-          <p className="text-xs text-muted-foreground">Nenhum evento nos próximos 7 dias.</p>
+          <p className="text-xs text-muted-foreground">Nada nos próximos 7 dias.</p>
         </div>
       ) : (
         <div className="divide-y">
-          {proximos.map((ev) => (
+          {proximos.map((item) => (
             <button
-              key={ev.id}
+              key={item.id}
               type="button"
-              onClick={() => onEventoClick(ev)}
+              onClick={() => onItemClick(item)}
               className="w-full flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors text-left"
             >
-              <div
-                className="h-2 w-2 rounded-full mt-1.5 shrink-0"
-                style={{ backgroundColor: resolveEventType(eventTypes, ev.type).color }}
-              />
+              {item.kind === 'task' ? (
+                <Circle className="h-2.5 w-2.5 mt-1 shrink-0 text-info" aria-label="Tarefa" />
+              ) : (
+                <div
+                  className="h-2 w-2 rounded-full mt-1.5 shrink-0"
+                  style={{ backgroundColor: resolveEventType(eventTypes, item.event.type).color }}
+                />
+              )}
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{ev.title}</p>
+                <p className="text-xs font-medium truncate">{item.title}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {format(parseISO(ev.start_at), "dd 'de' MMM", { locale: ptBR })}
-                  {!ev.all_day && ` · ${format(parseISO(ev.start_at), 'HH:mm')}`}
+                  {agendaItemWhenLabel(item)}
                 </p>
               </div>
-              {ev.fatal_deadline && (
+              {item.kind === 'event' && item.event.fatal_deadline && (
                 <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
               )}
             </button>
@@ -113,14 +135,58 @@ function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosP
   )
 }
 
+// ── Filtros (legenda) ──────────────────────────────────────────
+
+function VisibilityToggle({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'px-2.5 py-0.5 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-40',
+        active
+          ? 'bg-primary/10 text-primary border-primary/20'
+          : 'text-muted-foreground border-border/60 hover:bg-muted/50'
+      )}
+    >
+      {active && '✓ '}
+      {children}
+    </button>
+  )
+}
+
 // ── Main Component ─────────────────────────────────────────────
 
 export function AgendaContent() {
+  const { can } = usePermissions()
+  const canViewTasks = can('tarefas', 'view')
+  const canToggleTasks = can('tarefas', 'update')
+  const canCreate = can('agenda', 'create') || can('tarefas', 'create')
+
   const [view, setView] = useState<CalendarView>('month')
   const [currentDate, setCurrentDate] = useState(() => new Date())
+  const [visibility, setVisibility] = useState<AgendaVisibility>({
+    events: true,
+    tasks: true,
+    doneTasks: true,
+  })
   const [selectedEvento, setSelectedEvento] = useState<CalendarEvent | null>(null)
-  const [novoEventoOpen, setNovoEventoOpen] = useState(false)
-  const [novoEventoData, setNovoEventoData] = useState<Date | undefined>(undefined)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createTarget, setCreateTarget] = useState<AgendaCreateTarget>({ withTime: false })
 
   // Dias visíveis, por visão. No mês a grade cobre semanas inteiras, incluindo
   // as bordas do mês vizinho.
@@ -143,31 +209,62 @@ export function AgendaContent() {
   // Instantes, não strings sem fuso: a coluna é timestamptz e uma borda ingênua
   // recortaria as primeiras e últimas horas do período.
   const hoje = new Date()
-  const rangeFrom = startOfDay(minDate([days[0], hoje])).toISOString()
-  const rangeTo = endOfDay(maxDate([days[days.length - 1], addDays(hoje, 7)])).toISOString()
+  const rangeStart = startOfDay(minDate([days[0], hoje]))
+  const rangeEnd = endOfDay(maxDate([days[days.length - 1], addDays(hoje, 7)]))
 
-  const { data: eventos = [], isLoading } = useEvents(rangeFrom, rangeTo)
+  const { data: eventos = [], isLoading: eventsLoading } = useEvents(
+    rangeStart.toISOString(),
+    rangeEnd.toISOString()
+  )
+  // Tarefa é `date` sem fuso: o período vai como dia, não como instante.
+  const { data: tarefas = [], isLoading: tasksLoading } = useTasksInRange(
+    format(rangeStart, 'yyyy-MM-dd'),
+    format(rangeEnd, 'yyyy-MM-dd'),
+    { enabled: canViewTasks }
+  )
   const { data: tipos = [] } = useEventTypes()
   const eventTypes = useEventTypeMap()
-  const createEvent = useCreateEvent()
+  const toggleTaskDone = useToggleTaskDone()
 
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const ev of eventos) {
-      // Dia local: `slice(0, 10)` daria o dia UTC, e um evento das 21h cairia
-      // na célula do dia seguinte.
-      const key = localDayKey(ev.start_at)
-      const list = map.get(key)
-      if (list) list.push(ev)
-      else map.set(key, [ev])
+  const showTasks = canViewTasks && visibility.tasks
+
+  const items = useMemo(() => {
+    const list: AgendaItem[] = []
+    if (visibility.events) list.push(...eventos.map(eventToAgendaItem))
+    if (showTasks) {
+      for (const tarefa of tarefas) {
+        const item = taskToAgendaItem(tarefa)
+        if (item && (visibility.doneTasks || !item.done)) list.push(item)
+      }
     }
-    return map
-  }, [eventos])
+    return list
+  }, [eventos, tarefas, visibility, showTasks])
 
-  const getEventosForDay = useCallback(
-    (day: Date): CalendarEvent[] => eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? [],
-    [eventsByDay]
+  // Cada item entra em TODOS os dias locais que cobre — antes só no de início,
+  // e "Férias de 1 a 5" sumia dos dias 2 a 5.
+  const itemsByDay = useMemo(
+    () => indexEventsByDay(items, days[0], days[days.length - 1]),
+    [items, days]
   )
+
+  const getItemsForDay = useCallback(
+    (day: Date): DaySegment[] => itemsByDay.get(format(day, 'yyyy-MM-dd')) ?? [],
+    [itemsByDay]
+  )
+
+  // O detalhe lê da lista viva: concluir ou editar ali reflete sem reabrir.
+  const selectedTask = selectedTaskId
+    ? (tarefas.find((t) => t.id === selectedTaskId) ?? null)
+    : null
+
+  function handleItemClick(item: AgendaItem) {
+    if (item.kind === 'event') setSelectedEvento(item.event)
+    else setSelectedTaskId(item.task.id)
+  }
+
+  function handleToggleTask(item: TaskAgendaItem) {
+    toggleTaskDone.mutate({ id: item.task.id, done: !item.done })
+  }
 
   /** Um passo para trás ou para frente, na unidade da visão atual. */
   function shift(direction: 1 | -1) {
@@ -185,27 +282,21 @@ export function AgendaContent() {
         ? `${format(days[0], "d 'de' MMM", { locale: ptBR })} – ${format(days[days.length - 1], "d 'de' MMM 'de' yyyy", { locale: ptBR })}`
         : format(currentDate, 'MMMM yyyy', { locale: ptBR })
 
+  function openCreate(target: AgendaCreateTarget) {
+    if (!canCreate) return
+    setCreateTarget(target)
+    setCreateOpen(true)
+  }
+
   function handleDayClick(day: Date) {
-    setNovoEventoData(day)
-    setNovoEventoOpen(true)
+    openCreate({ at: day, withTime: false })
   }
 
   /** Clique num intervalo da grade de horas: já abre o formulário naquele horário. */
   function handleSlotClick(day: Date, hour: number) {
     const at = new Date(day)
     at.setHours(hour, 0, 0, 0)
-    setNovoEventoData(at)
-    setNovoEventoOpen(true)
-  }
-
-  function handleNovoEventoButton() {
-    setNovoEventoData(undefined)
-    setNovoEventoOpen(true)
-  }
-
-  async function handleCreate(data: EventFormInput) {
-    await createEvent.mutateAsync(data)
-    setNovoEventoOpen(false)
+    openCreate({ at, withTime: true })
   }
 
   return (
@@ -247,16 +338,16 @@ export function AgendaContent() {
             ))}
           </div>
 
-          <Can resource="agenda" action="create">
-            <Button size="sm" onClick={handleNovoEventoButton}>
+          {canCreate && (
+            <Button size="sm" onClick={() => openCreate({ withTime: false })}>
               <Plus className="h-4 w-4 mr-1.5" />
-              Novo Evento
+              Novo
             </Button>
-          </Can>
+          )}
         </div>
       </div>
 
-      {/* Legenda */}
+      {/* Legenda + o que mostrar */}
       <div className="flex items-center gap-4 flex-wrap">
         {tipos.map((tipo) => (
           <div key={tipo.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -264,11 +355,38 @@ export function AgendaContent() {
             {tipo.label}
           </div>
         ))}
-        <span className="text-xs text-muted-foreground/50 ml-auto hidden sm:block">
-          {view === 'month'
-            ? 'Clique em um dia para criar um evento'
-            : 'Clique em um horário para criar um evento'}
-        </span>
+        {canViewTasks && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Circle className="h-2.5 w-2.5 text-info" />
+            Tarefa
+          </div>
+        )}
+
+        <div className="flex items-center gap-1.5 ml-auto">
+          <VisibilityToggle
+            active={visibility.events}
+            onClick={() => setVisibility((v) => ({ ...v, events: !v.events }))}
+          >
+            Eventos
+          </VisibilityToggle>
+          {canViewTasks && (
+            <>
+              <VisibilityToggle
+                active={visibility.tasks}
+                onClick={() => setVisibility((v) => ({ ...v, tasks: !v.tasks }))}
+              >
+                Tarefas
+              </VisibilityToggle>
+              <VisibilityToggle
+                active={visibility.doneTasks}
+                disabled={!visibility.tasks}
+                onClick={() => setVisibility((v) => ({ ...v, doneTasks: !v.doneTasks }))}
+              >
+                Concluídas
+              </VisibilityToggle>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Layout principal: calendário + sidebar */}
@@ -278,50 +396,47 @@ export function AgendaContent() {
           <MonthGrid
             days={days}
             currentDate={currentDate}
-            getEventosForDay={getEventosForDay}
+            getItemsForDay={getItemsForDay}
             eventTypes={eventTypes}
             onDayClick={handleDayClick}
-            onEventClick={setSelectedEvento}
+            onItemClick={handleItemClick}
+            onToggleTask={canToggleTasks ? handleToggleTask : undefined}
           />
         ) : (
           <TimeGrid
             days={days}
-            getEventosForDay={getEventosForDay}
+            getItemsForDay={getItemsForDay}
             eventTypes={eventTypes}
             onSlotClick={handleSlotClick}
-            onEventClick={setSelectedEvento}
+            onItemClick={handleItemClick}
+            onToggleTask={canToggleTasks ? handleToggleTask : undefined}
           />
         )}
 
         {/* Sidebar — próximos 7 dias */}
-        <ProximosEventos
-          eventos={eventos}
-          isLoading={isLoading}
-          onEventoClick={setSelectedEvento}
+        <ProximosItens
+          items={items}
+          isLoading={eventsLoading || (showTasks && tasksLoading)}
+          eventTypes={eventTypes}
+          onItemClick={handleItemClick}
         />
       </div>
 
-      {/* Modal de detalhe (inclui edição e exclusão) */}
+      {/* Modal de detalhe do evento (inclui edição e exclusão) */}
       <EventDetailModal
         event={selectedEvento}
         open={!!selectedEvento}
         onClose={() => setSelectedEvento(null)}
       />
 
-      {/* Modal de criação */}
-      <Dialog open={novoEventoOpen} onOpenChange={setNovoEventoOpen}>
-        <DialogContent
-          showCloseButton={false}
-          className="sm:max-w-[560px] p-0 gap-0 overflow-hidden"
-        >
-          <EventForm
-            defaultDate={novoEventoData}
-            onSubmit={handleCreate}
-            onCancel={() => setNovoEventoOpen(false)}
-            isLoading={createEvent.isPending}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* Detalhe da tarefa — o mesmo do quadro de Tarefas */}
+      <TaskDetailModal
+        task={selectedTask}
+        open={!!selectedTask}
+        onClose={() => setSelectedTaskId(null)}
+      />
+
+      <AgendaCreateDialog open={createOpen} onOpenChange={setCreateOpen} target={createTarget} />
     </div>
   )
 }

@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Pencil,
   Plus,
+  RefreshCw,
   Send,
   Trash2,
   User,
@@ -24,6 +25,15 @@ import { getInitials, getDisplayName, getAvatarTone } from '@/utils/profile'
 import { formatRelative } from '@/utils/date'
 import { TASK_STATUS_LABELS, type Task, type TaskStatus } from '@/types/task.types'
 import type { CreateTaskInput } from '@/schemas/task.schema'
+import { recurrenceFormValuesFrom } from '@/schemas/recurrence.schema'
+import { RECURRENCE_SHORT_LABELS, type SeriesScope } from '@/lib/recurrence'
+import { SeriesScopeDialog } from '@/components/shared/SeriesScopeDialog'
+
+const TASK_SCOPE_LABELS: Record<SeriesScope, string> = {
+  this: 'Esta tarefa',
+  following: 'Esta e as tarefas seguintes',
+  all: 'Todas as tarefas',
+}
 import { useTaskComments } from '../hooks/useTasks'
 import {
   useUpdateTask,
@@ -55,6 +65,9 @@ interface TaskDetailModalProps {
 export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Ocorrência de série: salvar e excluir passam antes pela pergunta do alcance.
+  const [pendingUpdate, setPendingUpdate] = useState<CreateTaskInput | null>(null)
+  const [askDeleteScope, setAskDeleteScope] = useState(false)
   const [commentDraft, setCommentDraft] = useState('')
   const [checklistDraft, setChecklistDraft] = useState('')
 
@@ -78,15 +91,32 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
     }
   }
 
-  async function handleUpdate(data: CreateTaskInput) {
-    await updateTask.mutateAsync({ id: task!.id, ...data })
+  const inSeries = !!task.recurrence_series_id
+
+  async function runUpdate(data: CreateTaskInput, scope: SeriesScope) {
+    await updateTask.mutateAsync({ id: task!.id, ...data, options: { current: task!, scope } })
+    setPendingUpdate(null)
     setEditing(false)
   }
 
-  async function handleDelete() {
-    await deleteTask.mutateAsync(task!.id)
+  async function handleUpdate(data: CreateTaskInput) {
+    if (inSeries) {
+      setPendingUpdate(data)
+      return
+    }
+    await runUpdate(data, 'this')
+  }
+
+  async function runDelete(scope: SeriesScope) {
+    await deleteTask.mutateAsync({ id: task!.id, options: { current: task!, scope } })
     setConfirmDelete(false)
+    setAskDeleteScope(false)
     onClose()
+  }
+
+  function handleDeleteClick() {
+    if (inSeries) setAskDeleteScope(true)
+    else setConfirmDelete(true)
   }
 
   function handleAddComment(e: React.FormEvent) {
@@ -136,6 +166,9 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                     priority: task.priority,
                     assigned_to: task.assigned_to ?? undefined,
                     due_date: task.due_date ?? undefined,
+                    // O banco devolve HH:mm:ss; o <input type="time"> quer HH:mm.
+                    due_time: task.due_time?.slice(0, 5) ?? undefined,
+                    ...recurrenceFormValuesFrom(task),
                   }}
                   onSubmit={handleUpdate}
                   isLoading={updateTask.isPending}
@@ -164,6 +197,12 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                     {TASK_STATUS_LABELS[task.status]}
                   </span>
                   <PriorityBadge priority={task.priority} />
+                  {task.recurrence_series_id && task.recurrence_type && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-chart-2/12 px-2 py-0.5 text-[10px] font-medium text-chart-2">
+                      <RefreshCw className="h-2.5 w-2.5" />
+                      {RECURRENCE_SHORT_LABELS[task.recurrence_type]}
+                    </span>
+                  )}
                   {isOverdue && (
                     <span className="inline-flex items-center rounded-full bg-destructive/12 px-2 py-0.5 text-[10px] font-medium text-destructive">
                       Atrasada
@@ -185,6 +224,7 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                     <span className={cn('flex items-center gap-1.5', isOverdue && 'text-destructive')}>
                       <Calendar className="h-3.5 w-3.5" />
                       {format(parseISO(task.due_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                      {task.due_time && ` às ${task.due_time.slice(0, 5)}`}
                     </span>
                   )}
                   {assigneeName && (
@@ -352,7 +392,7 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                 <Can resource="tarefas" action="delete" fallback={<span />}>
                   <button
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={handleDeleteClick}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -391,7 +431,33 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
         title="Excluir tarefa"
         description={`"${task.title}" será removida permanentemente, junto com seus comentários e itens de checklist.`}
         confirmLabel="Excluir"
-        onConfirm={handleDelete}
+        onConfirm={() => runDelete('this')}
+      />
+
+      <SeriesScopeDialog
+        open={!!pendingUpdate}
+        onOpenChange={(v) => !v && setPendingUpdate(null)}
+        action="edit"
+        labels={TASK_SCOPE_LABELS}
+        hints={{
+          this: 'A repetição não muda — só esta tarefa é alterada.',
+          following: 'Tarefas já concluídas não mudam.',
+          all: 'Tarefas já concluídas não mudam.',
+        }}
+        isLoading={updateTask.isPending}
+        onConfirm={(scope) => pendingUpdate && runUpdate(pendingUpdate, scope)}
+      />
+      <SeriesScopeDialog
+        open={askDeleteScope}
+        onOpenChange={setAskDeleteScope}
+        action="delete"
+        labels={TASK_SCOPE_LABELS}
+        hints={{
+          following: 'Das seguintes, só as pendentes — concluídas ficam como histórico.',
+          all: 'Das outras, só as pendentes — concluídas ficam como histórico.',
+        }}
+        isLoading={deleteTask.isPending}
+        onConfirm={runDelete}
       />
     </>
   )

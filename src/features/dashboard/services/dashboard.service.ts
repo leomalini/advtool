@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { DashboardStats } from '@/types/activity.types'
 import type { Activity } from '@/types/activity.types'
 import type { CalendarEvent } from '@/types/event.types'
-import { startOfWeek, endOfWeek, addDays, format } from 'date-fns'
+import { startOfWeek, endOfWeek, startOfDay, addDays, format } from 'date-fns'
 
 const supabase = createClient()
 
@@ -70,14 +70,23 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   }
 }
 
-/** Events from now onwards, for the "Próximos Eventos" card. Only events
- * flagged to show in the agenda — the same filter the calendar page uses. */
+/** Events that haven't ended yet, for the "Próximos Eventos" card. Only events
+ * flagged to show in the agenda — the same filter the calendar page uses.
+ *
+ * "Not ended", not "not started": filtering on `start_at >= now` dropped an
+ * event in progress, and today's all-day events as soon as their start passed.
+ * All-day `end_at` is midnight of the last day (inclusive), so those are kept
+ * through the whole of that day. */
 export async function getUpcomingEvents(limit = 6): Promise<CalendarEvent[]> {
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const todayStartIso = startOfDay(now).toISOString()
+
   const { data, error } = await supabase
     .from('events')
     .select('*, assignee:profiles!events_assigned_to_fkey(id, full_name, avatar_url, role, created_at), client:clients(id, type, name, company_name, trade_name)')
     .eq('show_in_agenda', true)
-    .gte('start_at', new Date().toISOString())
+    .or(`end_at.gte."${nowIso}",and(all_day.eq.true,end_at.gte."${todayStartIso}")`)
     .order('start_at')
     .limit(limit)
 

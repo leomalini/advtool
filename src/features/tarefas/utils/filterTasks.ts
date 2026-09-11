@@ -1,5 +1,5 @@
 import type { Task, TaskPriority } from '@/types/task.types'
-import { isBefore, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 
 export interface TaskFilters {
   search: string
@@ -34,11 +34,14 @@ export function countActiveTaskFilters(f: TaskFilters): number {
   return n
 }
 
+/** Atrasada a partir do dia SEGUINTE ao vencimento. Comparar o `due_date` (meia-
+ * noite local) com o instante atual marcava como atrasada, desde 00:00, a
+ * tarefa que vence hoje. Strings yyyy-MM-dd ordenam como as datas. */
 export function isTaskOverdue(task: Task): boolean {
   return (
     !!task.due_date &&
     task.status !== 'done' &&
-    isBefore(parseISO(task.due_date), new Date())
+    task.due_date < format(new Date(), 'yyyy-MM-dd')
   )
 }
 

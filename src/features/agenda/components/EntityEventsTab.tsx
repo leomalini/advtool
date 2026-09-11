@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Calendar, MapPin, Plus, AlertCircle } from 'lucide-react'
+import { Calendar, MapPin, Plus, AlertCircle, RefreshCw } from 'lucide-react'
+import { RECURRENCE_SHORT_LABELS } from '@/lib/recurrence'
+import { collapseEventSeries } from '../utils/eventSeries'
 import { format, parseISO, isBefore } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -122,21 +124,24 @@ export function EntityEventsTab({
     )
   }
 
+  // Uma linha por série, na próxima ocorrência — as demais ficam na Agenda.
+  const linhas = collapseEventSeries(eventos)
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-foreground/80">Agenda</h3>
-          {eventos.length > 0 && (
+          {linhas.length > 0 && (
             <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
-              {eventos.length}
+              {linhas.length}
             </span>
           )}
         </div>
         {novoButton}
       </div>
 
-      {eventos.length === 0 ? (
+      {linhas.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
           <Calendar className="w-7 h-7" />
           <p className="text-sm">Nenhum evento vinculado</p>
@@ -144,7 +149,7 @@ export function EntityEventsTab({
         </div>
       ) : (
         <div className="space-y-2">
-          {eventos.map((evento) => {
+          {linhas.map(({ event: evento, seriesSize }) => {
             const start = parseISO(evento.start_at)
             const isPast = isBefore(start, new Date())
             const tipo = resolveEventType(eventTypes, evento.type)
@@ -174,6 +179,13 @@ export function EntityEventsTab({
                     <p className="text-sm font-medium truncate">{evento.title}</p>
                     {evento.fatal_deadline && (
                       <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
+                    )}
+                    {evento.recurrence_series_id && evento.recurrence_type && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-chart-2/12 px-1.5 py-0.5 text-[10px] font-medium text-chart-2">
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        {RECURRENCE_SHORT_LABELS[evento.recurrence_type]}
+                        {seriesSize > 1 && ` · ${seriesSize} ocorrências`}
+                      </span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">

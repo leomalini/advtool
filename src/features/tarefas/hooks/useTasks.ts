@@ -1,7 +1,12 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { getTasks, getTaskComments, getTasksForEntity } from '../services/tasks.service'
+import {
+  getTasks,
+  getTaskComments,
+  getTasksForEntity,
+  getTasksInRange,
+} from '../services/tasks.service'
 
 /** Every key sits under the ['tasks'] prefix. `comments` used to be
  * ['task-comments', id] — outside the prefix, which meant the task invalidation
@@ -13,12 +18,24 @@ export const taskKeys = {
    * Ids are sorted by the caller so the key stays stable across fetches. */
   forEntity: (legalProcessId: string | null, crmItemIds: string[], clientId: string | null) =>
     ['tasks', 'entity', legalProcessId ?? '-', crmItemIds.join(','), clientId ?? '-'] as const,
+  /** Tarefas com data no período — as que a Agenda mostra. Sob o prefixo, então
+   * qualquer mutação de tarefa já atualiza a Agenda. */
+  range: (fromDay: string, toDay: string) => ['tasks', 'range', fromDay, toDay] as const,
 }
 
 export function useTasks() {
   return useQuery({
     queryKey: taskKeys.all,
     queryFn: getTasks,
+  })
+}
+
+/** Tarefas com data entre `fromDay` e `toDay` (yyyy-MM-dd), para a Agenda. */
+export function useTasksInRange(fromDay: string, toDay: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: taskKeys.range(fromDay, toDay),
+    queryFn: () => getTasksInRange(fromDay, toDay),
+    enabled: options.enabled ?? true,
   })
 }
 

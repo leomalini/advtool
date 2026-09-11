@@ -1,3 +1,4 @@
+import type { RecurrenceType } from '@/lib/recurrence'
 import type { BaseEntity, Profile } from './common.types'
 
 export type TaskStatus = 'todo' | 'in_progress' | 'waiting' | 'done'
@@ -38,6 +39,14 @@ export interface Task extends BaseEntity {
   legal_process_id: string | null
   publication_id: string | null
   due_date: string | null
+  /** Hora opcional (HH:mm:ss, sem fuso) — com ela a tarefa entra na grade de
+   * horas da Agenda; sem ela, fica na faixa "Dia todo". */
+  due_time: string | null
+  /** Série recorrente (migration 52) — cada ocorrência é uma tarefa própria. */
+  recurrence_type: RecurrenceType | null
+  recurrence_series_id: string | null
+  recurrence_until: string | null
+  recurrence_count: number | null
   position: number
   created_by: string
   assignee?: Profile | null

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { recurrenceFormFields, recurrenceIssue } from './recurrence.schema'
 
 export const taskStatusSchema = z.enum(['todo', 'in_progress', 'waiting', 'done'])
 export const taskPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent'])
@@ -20,6 +21,17 @@ export const createTaskSchema = z.object({
   /** Publicação que originou a providência. */
   publication_id: optionalUuid,
   due_date: z.string().optional().nullable(),
+  /** HH:mm. Só tem sentido com `due_date` — o service descarta a hora sem data. */
+  due_time: z.string().optional().nullable(),
+
+  // Repetir (migration 52). Campos de formulário: o service os converte na
+  // série e nas colunas `recurrence_*`, e os tira do payload.
+  ...recurrenceFormFields,
+}).superRefine((data, ctx) => {
+  const recurrence = recurrenceIssue(data, data.due_date)
+  if (recurrence) {
+    ctx.addIssue({ code: 'custom', message: recurrence.message, path: [recurrence.path] })
+  }
 })
 
 export const taskChecklistItemSchema = z.object({

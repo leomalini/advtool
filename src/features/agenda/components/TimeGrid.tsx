@@ -6,8 +6,17 @@ import { ptBR } from 'date-fns/locale'
 import { Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { resolveEventType } from '@/types/event.types'
-import type { CalendarEvent, EventTypeRecord } from '@/types/event.types'
-import { layoutDayEvents, resolveEndMinutes } from '../utils/dayLayout'
+import type { EventTypeRecord } from '@/types/event.types'
+import { layoutDayEvents, segmentMinutes, type PositionedEvent } from '../utils/dayLayout'
+import {
+  belongsToAllDayStrip,
+  compareDaySegments,
+  eventRangeLabel,
+  segmentMarker,
+  type DaySegment,
+} from '../utils/daySpan'
+import { agendaItemWhenLabel, type AgendaItem, type TaskAgendaItem } from '../utils/agendaItem'
+import { AgendaTaskCheck } from './AgendaTaskCheck'
 
 /** Minutos do dia → "HH:mm". 1440 é meia-noite do dia seguinte. */
 function formatMinutes(total: number): string {
@@ -37,11 +46,13 @@ const MIN_HEIGHT_PCT = (HOUR_HEIGHT / 4 / TOTAL_HEIGHT) * 100
 
 interface TimeGridProps {
   days: Date[]
-  getEventosForDay: (day: Date) => CalendarEvent[]
+  getItemsForDay: (day: Date) => DaySegment[]
   eventTypes: Map<string, EventTypeRecord>
-  /** Clique num espaço vazio cria evento naquele dia e hora. */
+  /** Clique num espaço vazio cria evento ou tarefa naquele dia e hora. */
   onSlotClick: (day: Date, hour: number) => void
-  onEventClick: (ev: CalendarEvent) => void
+  onItemClick: (item: AgendaItem) => void
+  /** Ausente sem permissão de alterar tarefas. */
+  onToggleTask?: (item: TaskAgendaItem) => void
 }
 
 /** Linha vermelha da hora atual, como no Google Calendar. */
@@ -70,25 +81,188 @@ function NowIndicator({ days }: { days: Date[] }) {
   )
 }
 
+/** Item na faixa "Dia todo": dia inteiro, eventos de 24h+ e tarefas sem hora. */
+function AllDayChip({
+  segment,
+  eventTypes,
+  onItemClick,
+  onToggleTask,
+}: {
+  segment: DaySegment
+  eventTypes: Map<string, EventTypeRecord>
+  onItemClick: (item: AgendaItem) => void
+  onToggleTask?: (item: TaskAgendaItem) => void
+}) {
+  const item = segment.item
+
+  if (item.kind === 'task') {
+    return (
+      // div: o círculo de concluir é um botão, e botão dentro de botão não vale.
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onItemClick(item)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          onItemClick(item)
+        }}
+        title={`Tarefa · ${agendaItemWhenLabel(item)} · ${item.title}`}
+        className={cn(
+          'flex min-w-0 items-center gap-1 rounded border border-info/40 bg-info/10 px-1.5 py-1 text-left text-info hover:bg-info/15 transition-colors cursor-pointer',
+          item.done && 'opacity-60'
+        )}
+      >
+        <AgendaTaskCheck item={item} onToggle={onToggleTask} className="h-3 w-3" />
+        <span className={cn('text-[11px] font-medium truncate', item.done && 'line-through')}>
+          {item.title}
+        </span>
+      </div>
+    )
+  }
+
+  const tipo = resolveEventType(eventTypes, item.event.type)
+  // Dia inteiro de um dia só já está na faixa "Dia todo" — repetir o rótulo
+  // seria ruído.
+  const marker = item.all_day ? null : segmentMarker(segment)
+
+  return (
+    <button
+      type="button"
+      onClick={() => onItemClick(item)}
+      title={`${eventRangeLabel(item.event)} · ${tipo.label} · ${item.title}`}
+      className={cn(
+        // Sem w-full: esticado pelo flex-col, a margem negativa alarga o botão
+        // em vez de só deslocá-lo.
+        'flex min-w-0 items-center gap-1 rounded px-1.5 py-1 text-left hover:brightness-95 transition-all',
+        // Emendas retas até a borda da coluna: uma barra só.
+        !segment.isFirstDay && '-ml-1 rounded-l-none',
+        !segment.isLastDay && '-mr-1 rounded-r-none'
+      )}
+      style={{ backgroundColor: `${tipo.color}22`, color: tipo.color }}
+    >
+      {segment.isFirstDay && <Sun className="h-2.5 w-2.5 shrink-0" />}
+      {marker && <span className="text-[9px] font-semibold shrink-0">{marker}</span>}
+      <span className="text-[11px] font-medium truncate">{item.title}</span>
+    </button>
+  )
+}
+
+/** Bloco posicionado na grade de horas. */
+function TimedBlock({
+  positioned,
+  eventTypes,
+  onItemClick,
+  onToggleTask,
+}: {
+  positioned: PositionedEvent
+  eventTypes: Map<string, EventTypeRecord>
+  onItemClick: (item: AgendaItem) => void
+  onToggleTask?: (item: TaskAgendaItem) => void
+}) {
+  const { segment, item, startMin, endMin, topPct, heightPct, leftPct, widthPct } = positioned
+  const heightPx = (heightPct / 100) * TOTAL_HEIGHT
+  const compact = heightPx < 34
+  const position = {
+    top: `${topPct}%`,
+    height: `${heightPct}%`,
+    left: `calc(${leftPct}% + 2px)`,
+    width: `calc(${widthPct}% - 4px)`,
+  }
+
+  if (item.kind === 'task') {
+    // Tarefa marca um momento: uma linha só, com o círculo de concluir.
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onItemClick(item)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          onItemClick(item)
+        }}
+        title={`Tarefa · ${agendaItemWhenLabel(item)} · ${item.title}`}
+        className={cn(
+          'absolute z-10 flex items-start gap-1 rounded border border-info/40 bg-card px-1.5 py-0.5 text-left text-info overflow-hidden shadow-sm hover:bg-info/10 transition-colors cursor-pointer',
+          item.done && 'opacity-60'
+        )}
+        style={position}
+      >
+        <AgendaTaskCheck item={item} onToggle={onToggleTask} className="h-3 w-3 mt-px" />
+        <span className="text-[9px] font-semibold shrink-0 mt-px">{formatMinutes(startMin)}</span>
+        <span
+          className={cn('text-[10px] font-medium leading-tight truncate', item.done && 'line-through')}
+        >
+          {item.title}
+        </span>
+      </div>
+    )
+  }
+
+  const tipo = resolveEventType(eventTypes, item.event.type)
+  // Pedaço de um evento que atravessa a meia-noite: o rótulo mostra o horário
+  // real dele, não o recorte da coluna.
+  const crossesMidnight = !(segment.isFirstDay && segment.isLastDay)
+  const startLabel = crossesMidnight
+    ? format(new Date(item.start_at), 'HH:mm')
+    : formatMinutes(startMin)
+  const rangeLabel = crossesMidnight
+    ? `${startLabel} – ${format(new Date(item.end_at), 'HH:mm')}`
+    : `${startLabel} – ${formatMinutes(endMin)}`
+
+  return (
+    <button
+      type="button"
+      onClick={() => onItemClick(item)}
+      title={`${eventRangeLabel(item.event)} · ${tipo.label} · ${item.title}`}
+      className={cn(
+        'absolute z-10 rounded px-1.5 text-left text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity',
+        // Abaixo de ~14px não sobra altura nem para o padding.
+        heightPx < 16 ? 'py-0 leading-none' : 'py-0.5'
+      )}
+      style={{ ...position, backgroundColor: tipo.color }}
+    >
+      {compact ? (
+        // Sem altura para duas linhas: hora e título na mesma.
+        <span className="flex items-baseline gap-1 min-w-0">
+          <span className="text-[9px] font-semibold opacity-90 shrink-0">{startLabel}</span>
+          <span className="text-[10px] leading-tight truncate">{item.title}</span>
+        </span>
+      ) : (
+        <>
+          <span className="block text-[11px] font-medium leading-tight truncate">
+            {item.title}
+          </span>
+          {/* O término exibido é o mesmo que o bloco desenha: sem término
+              informado, a hora implícita. */}
+          <span className="block text-[9px] opacity-90 leading-tight">{rangeLabel}</span>
+        </>
+      )}
+    </button>
+  )
+}
+
 export function TimeGrid({
   days,
-  getEventosForDay,
+  getItemsForDay,
   eventTypes,
   onSlotClick,
-  onEventClick,
+  onItemClick,
+  onToggleTask,
 }: TimeGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Abre na altura do primeiro evento do período — ou às 7h quando não há
+  // Abre na altura do primeiro item do período — ou às 7h quando não há
   // nenhum. Começar à meia-noite deixaria a tela vazia na maioria dos dias.
   useEffect(() => {
     const container = scrollRef.current
     if (!container) return
 
     const starts = days
-      .flatMap(getEventosForDay)
-      .filter((ev) => !ev.all_day)
-      .map((ev) => new Date(ev.start_at).getHours())
+      .flatMap(getItemsForDay)
+      .filter((segment) => !belongsToAllDayStrip(segment.item))
+      .map((segment) => Math.floor(segmentMinutes(segment).startMin / 60))
 
     const firstHour = starts.length > 0 ? Math.min(...starts) : 7
     container.scrollTop = Math.max(0, (firstHour - 1) * HOUR_HEIGHT)
@@ -97,7 +271,13 @@ export function TimeGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days[0]?.toISOString(), days.length])
 
-  const allDayByColumn = days.map((day) => getEventosForDay(day).filter((ev) => ev.all_day))
+  // Dia inteiro, eventos de 24h+ e tarefas sem hora — repetidos em cada dia
+  // que cobrem.
+  const allDayByColumn = days.map((day) =>
+    getItemsForDay(day)
+      .filter((segment) => belongsToAllDayStrip(segment.item))
+      .sort(compareDaySegments)
+  )
   const hasAllDay = allDayByColumn.some((list) => list.length > 0)
 
   return (
@@ -144,23 +324,19 @@ export function TimeGrid({
                 </span>
               </div>
               {allDayByColumn.map((list, i) => (
-                <div key={i} className="flex-1 min-w-0 p-1 space-y-1 border-r last:border-r-0">
-                  {list.map((ev) => {
-                    const tipo = resolveEventType(eventTypes, ev.type)
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onClick={() => onEventClick(ev)}
-                        title={`${tipo.label} · dia inteiro · ${ev.title}`}
-                        className="w-full flex items-center gap-1 rounded px-1.5 py-1 text-left hover:brightness-95 transition-all"
-                        style={{ backgroundColor: `${tipo.color}22`, color: tipo.color }}
-                      >
-                        <Sun className="h-2.5 w-2.5 shrink-0" />
-                        <span className="text-[11px] font-medium truncate">{ev.title}</span>
-                      </button>
-                    )
-                  })}
+                <div
+                  key={days[i].toISOString()}
+                  className="flex-1 min-w-0 p-1 flex flex-col gap-1 border-r last:border-r-0"
+                >
+                  {list.map((segment) => (
+                    <AllDayChip
+                      key={segment.item.id}
+                      segment={segment}
+                      eventTypes={eventTypes}
+                      onItemClick={onItemClick}
+                      onToggleTask={onToggleTask}
+                    />
+                  ))}
                 </div>
               ))}
             </div>
@@ -195,7 +371,7 @@ export function TimeGrid({
             </div>
 
             {days.map((day) => {
-              const { timed } = layoutDayEvents(getEventosForDay(day), FULL_DAY, {
+              const { timed } = layoutDayEvents(getItemsForDay(day), FULL_DAY, {
                 minHeightPct: MIN_HEIGHT_PCT,
               })
 
@@ -212,63 +388,22 @@ export function TimeGrid({
                     <button
                       key={h}
                       type="button"
-                      aria-label={`Criar evento em ${format(day, "dd 'de' MMMM", { locale: ptBR })} às ${h}h`}
+                      aria-label={`Criar em ${format(day, "dd 'de' MMMM", { locale: ptBR })} às ${h}h`}
                       onClick={() => onSlotClick(day, h)}
                       className="absolute inset-x-0 hover:bg-accent/30 transition-colors"
                       style={{ top: h * HOUR_HEIGHT, height: HOUR_HEIGHT }}
                     />
                   ))}
 
-                  {timed.map(({ event: ev, topPct, heightPct, leftPct, widthPct }) => {
-                    const tipo = resolveEventType(eventTypes, ev.type)
-                    const start = new Date(ev.start_at)
-                    const heightPx = (heightPct / 100) * TOTAL_HEIGHT
-                    const compact = heightPx < 34
-
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onClick={() => onEventClick(ev)}
-                        title={`${format(start, 'HH:mm')} · ${tipo.label} · ${ev.title}`}
-                        className={cn(
-                          'absolute z-10 rounded px-1.5 text-left text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity',
-                          // Abaixo de ~14px não sobra altura nem para o padding.
-                          heightPx < 16 ? 'py-0 leading-none' : 'py-0.5'
-                        )}
-                        style={{
-                          top: `${topPct}%`,
-                          height: `${heightPct}%`,
-                          left: `calc(${leftPct}% + 2px)`,
-                          width: `calc(${widthPct}% - 4px)`,
-                          backgroundColor: tipo.color,
-                        }}
-                      >
-                        {compact ? (
-                          // Sem altura para duas linhas: hora e título na mesma.
-                          <span className="flex items-baseline gap-1 min-w-0">
-                            <span className="text-[9px] font-semibold opacity-90 shrink-0">
-                              {format(start, 'HH:mm')}
-                            </span>
-                            <span className="text-[10px] leading-tight truncate">{ev.title}</span>
-                          </span>
-                        ) : (
-                          <>
-                            <span className="block text-[11px] font-medium leading-tight truncate">
-                              {ev.title}
-                            </span>
-                            {/* O término exibido é o mesmo que o bloco desenha:
-                                sem término informado, a hora implícita. */}
-                            <span className="block text-[9px] opacity-90 leading-tight">
-                              {format(start, 'HH:mm')} – {formatMinutes(
-                                resolveEndMinutes(ev, start.getHours() * 60 + start.getMinutes())
-                              )}
-                            </span>
-                          </>
-                        )}
-                      </button>
-                    )
-                  })}
+                  {timed.map((positioned) => (
+                    <TimedBlock
+                      key={positioned.item.id}
+                      positioned={positioned}
+                      eventTypes={eventTypes}
+                      onItemClick={onItemClick}
+                      onToggleTask={onToggleTask}
+                    />
+                  ))}
                 </div>
               )
             })}

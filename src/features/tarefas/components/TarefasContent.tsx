@@ -13,6 +13,7 @@ import { TaskBoard, TASK_STATUSES } from './TaskBoard'
 import { TaskDetailModal } from './TaskDetailModal'
 import { TarefaFilterBar } from './TarefaFilterBar'
 import { filterTasks, emptyTaskFilters, type TaskFilters } from '../utils/filterTasks'
+import { collapseRecurringTasks } from '../utils/seriesTasks'
 import type { Task, TaskStatus } from '@/types/task.types'
 import type { CreateTaskInput } from '@/schemas/task.schema'
 import { Can } from '@/components/shared/Can'
@@ -26,7 +27,12 @@ export function TarefasContent() {
   const { data: tasks, isLoading } = useTasks()
   const createTask = useCreateTask()
 
-  const filtered = useMemo(() => filterTasks(tasks ?? [], filters), [tasks, filters])
+  // De cada série recorrente, só as atrasadas e a próxima pendente — as
+  // futuras aparecem na Agenda (ver collapseRecurringTasks).
+  const filtered = useMemo(
+    () => filterTasks(collapseRecurringTasks(tasks ?? []), filters),
+    [tasks, filters]
+  )
 
   // The modal reads from the live list so edits show up without reopening —
   // holding the object from the click would freeze it.
