@@ -26,6 +26,9 @@ import { cn } from "@/lib/utils";
 import { eventFormSchema, type EventFormInput } from "@/schemas/event.schema";
 import { resolveEventType } from "@/types/event.types";
 import { RecurrenceFields } from "@/components/shared/RecurrenceFields";
+import { Can } from "@/components/shared/Can";
+import { MAX_FILE_SIZE } from "@/schemas/document.schema";
+import { formatFileSize } from "@/types/document.types";
 import { EventTypeSelect } from "./EventTypeSelect";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { Profile } from "@/types/common.types";
@@ -45,7 +48,8 @@ interface EventFormProps {
    * Tarefa. Precisa conter o `DialogTitle`. */
   headerContent?: ReactNode;
   defaultValues?: Partial<EventFormInput>;
-  onSubmit: (data: EventFormInput) => void;
+  /** `files`: anexos escolhidos no formulário, para subir depois de salvar. */
+  onSubmit: (data: EventFormInput, files: File[]) => void;
   onCancel?: () => void;
   isLoading?: boolean;
   /** Opened from inside a caso/processo: the link is already decided, so the
@@ -102,6 +106,28 @@ export function EventForm({
   const { data: profiles = [] } = useProfiles();
   const { data: processos = [] } = useLegalProcesses();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  /** Mesmo limite da aba Documentos — recusar aqui evita descobrir só depois
+   * de salvar que o arquivo não subiu. */
+  function handleFilesPicked(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const accepted: File[] = [];
+    const tooLarge: string[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) tooLarge.push(file.name);
+      else accepted.push(file);
+    }
+    setFileError(
+      tooLarge.length > 0
+        ? `Passa de ${formatFileSize(MAX_FILE_SIZE)} e ficou de fora: ${tooLarge.join(", ")}`
+        : null,
+    );
+    setPendingFiles((current) => [...current, ...accepted]);
+    // Permite escolher o mesmo arquivo de novo: sem isto o input não dispara change.
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   const today = defaultDate
     ? format(defaultDate, "yyyy-MM-dd")
@@ -178,7 +204,7 @@ export function EventForm({
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit((data) => onSubmit(data, pendingFiles))}
       className="flex flex-col max-h-[90vh]"
     >
       {/* ── Header ── */}
@@ -470,22 +496,56 @@ export function EventForm({
                   className="text-sm resize-none"
                 />
               </FormField>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-              >
-                <Paperclip className="h-3.5 w-3.5" />
-                Anexar arquivos
-                <span className="opacity-60">(disponível após salvar)</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-              />
+              {/* Anexos. O botão existia sem nada ligado a ele — escolher um
+                  arquivo não fazia coisa alguma. Os arquivos ficam aqui até o
+                  evento ser salvo e sobem logo depois (useCreateEvent/useUpdateEvent). */}
+              <Can resource="documentos" action="create">
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                    Anexar arquivos
+                    <span className="opacity-60">· até {formatFileSize(MAX_FILE_SIZE)} cada</span>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handleFilesPicked(e.target.files)}
+                  />
+                  {pendingFiles.length > 0 && (
+                    <ul className="space-y-1">
+                      {pendingFiles.map((file, index) => (
+                        <li
+                          key={`${file.name}-${file.size}-${file.lastModified}`}
+                          className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-xs"
+                        >
+                          <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="flex-1 truncate">{file.name}</span>
+                          <span className="shrink-0 text-muted-foreground">
+                            {formatFileSize(file.size)}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remover ${file.name}`}
+                            onClick={() =>
+                              setPendingFiles((files) => files.filter((_, i) => i !== index))
+                            }
+                            className="p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {fileError && <p className="text-[11px] text-destructive">{fileError}</p>}
+                </div>
+              </Can>
             </div>
           </FormSection>
 

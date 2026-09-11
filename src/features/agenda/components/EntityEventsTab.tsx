@@ -53,9 +53,10 @@ export function EntityEventsTab({
   const [createOpen, setCreateOpen] = useState(false)
   const [selected, setSelected] = useState<CalendarEvent | null>(null)
 
-  async function handleCreate(data: EventFormInput) {
+  async function handleCreate(data: EventFormInput, files: File[]) {
     await createEvent.mutateAsync({
       ...data,
+      files,
       // Written on top of the form values: the link is what this tab is for,
       // and the fields are hidden while locked.
       legal_process_id: lockedLegalProcessId ?? data.legal_process_id,

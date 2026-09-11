@@ -63,8 +63,8 @@ function CreateBody({ target, onClose }: { target: AgendaCreateTarget; onClose: 
   const day = target.at ?? new Date()
   const time = target.withTime && target.at ? format(target.at, 'HH:mm') : undefined
 
-  async function handleEvent(data: EventFormInput) {
-    await createEvent.mutateAsync(data)
+  async function handleEvent(data: EventFormInput, files: File[]) {
+    await createEvent.mutateAsync({ ...data, files })
     onClose()
   }
 
