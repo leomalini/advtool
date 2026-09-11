@@ -43,6 +43,9 @@ interface DocumentsTabProps {
   lockedClientId?: string | null
   lockedEventId?: string | null
   itemLabel?: string
+  /** Dentro de outro modal (detalhe do evento): área de envio de uma linha e
+   * estado vazio discreto, em vez do layout de aba inteira. */
+  compact?: boolean
 }
 
 /** Aba Documentos — compartilhada entre CasoModal, a página do processo e
@@ -57,6 +60,7 @@ export function DocumentsTab({
   lockedClientId,
   lockedEventId,
   itemLabel = 'item',
+  compact = false,
 }: DocumentsTabProps) {
   const { data: documents = [], isLoading, isError } = useDocumentsForEntity({
     legalProcessId,
@@ -122,7 +126,7 @@ export function DocumentsTab({
   }
 
   return (
-    <div className="space-y-5">
+    <div className={compact ? 'space-y-3' : 'space-y-5'}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-foreground/80">Documentos</h3>
@@ -166,7 +170,8 @@ export function DocumentsTab({
           if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
         }}
         className={cn(
-          'flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 cursor-pointer transition-colors',
+          'flex items-center justify-center rounded-xl border-2 border-dashed cursor-pointer transition-colors',
+          compact ? 'gap-2 p-3' : 'flex-col gap-2 p-6',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           isDragging
             ? 'border-primary bg-primary/5'
@@ -182,8 +187,20 @@ export function DocumentsTab({
         />
         {uploadDocument.isPending ? (
           <>
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2
+              className={cn('animate-spin text-muted-foreground', compact ? 'h-4 w-4' : 'h-6 w-6')}
+            />
             <p className="text-sm text-muted-foreground">Enviando...</p>
+          </>
+        ) : compact ? (
+          <>
+            <Upload className="h-4 w-4 text-muted-foreground" />
+            <p className="text-xs text-foreground/80">
+              Arraste ou <span className="text-primary">escolha arquivos</span>
+              <span className="text-muted-foreground">
+                {' '}· {DOCUMENT_CATEGORY_LABELS[category]} · até {formatFileSize(MAX_FILE_SIZE)}
+              </span>
+            </p>
           </>
         ) : (
           <>
@@ -204,11 +221,15 @@ export function DocumentsTab({
       {sizeError && <p className="text-xs text-destructive">{sizeError}</p>}
 
       {documents.length === 0 ? (
+        compact ? (
+          <p className="text-xs text-muted-foreground">Nenhum documento neste {itemLabel}.</p>
+        ) : (
         <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
           <FileText className="w-7 h-7" />
           <p className="text-sm">Nenhum documento</p>
           <p className="text-xs">Petições, contratos e procurações deste {itemLabel} ficam aqui</p>
         </div>
+        )
       ) : (
         <div className="space-y-2">
           {documents.map((doc) => (

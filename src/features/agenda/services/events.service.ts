@@ -12,6 +12,12 @@ import {
 import type { CalendarEvent } from '@/types/event.types'
 import type { EventFormInput, UpdateEventInput } from '@/schemas/event.schema'
 import { recurrenceFormValuesFrom, toRecurrenceRule } from '@/schemas/recurrence.schema'
+import {
+  deleteEventOnlyDocuments,
+  moveEventDocuments,
+  uploadDocument,
+} from '@/features/documentos/services/documents.service'
+import { chunk } from '@/utils/chunk'
 import { toInstant, toLocalDateInput, toLocalTimeInput, localDayKey } from '../utils/datetime'
 
 const supabase = createClient()
@@ -205,16 +211,6 @@ function occurrenceRows(
   }))
 }
 
-/** Filtros de URL (`in.(…)`) com centenas de uuids passam do limite do
- * gateway; séries grandes vão em lotes. */
-const ID_CHUNK = 100
-
-function chunks<T>(list: T[]): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < list.length; i += ID_CHUNK) out.push(list.slice(i, i + ID_CHUNK))
-  return out
-}
-
 function assigneeRows(eventIds: string[], assigneeIds: string[]) {
   return eventIds.flatMap((eventId) =>
     assigneeIds.map((profileId) => ({ event_id: eventId, profile_id: profileId }))
@@ -237,7 +233,7 @@ async function replaceAssignees(eventIds: string[], assigneeIds: string[]): Prom
     })
   if (upsertError) throw upsertError
 
-  for (const ids of chunks(eventIds)) {
+  for (const ids of chunk(eventIds)) {
     const { error: pruneError } = await supabase
       .from('event_assignees')
       .delete()
@@ -390,7 +386,7 @@ export async function createEvent(input: EventFormInput, userId: string): Promis
     ? await supabase.from('event_assignees').insert(assigneeRows(createdIds, input.assignee_ids))
     : { error: null }
   if (assigneesError) {
-    for (const ids of chunks(createdIds)) {
+    for (const ids of chunk(createdIds)) {
       await supabase.from('events').delete().in('id', ids)
     }
     throw assigneesError
@@ -465,6 +461,43 @@ async function syncNextDeadline(event: {
     .update({ next_deadline: deadline })
     .eq('id', crmItemId)
   if (error) console.error('[next_deadline] sync failed:', error.message)
+}
+
+/**
+ * Vínculos de um documento anexado a um evento: o próprio evento e, quando
+ * houver, o processo, o cliente e o card dele.
+ *
+ * Os vínculos extras fazem o arquivo da audiência aparecer também na aba
+ * Documentos do processo — e, principalmente, sobreviver se o evento for
+ * excluído: só o documento sem nenhum outro dono sai junto com o evento.
+ */
+export function eventDocumentLinks(
+  event: Pick<CalendarEvent, 'id' | 'legal_process_id' | 'client_id' | 'crm_item_id'>
+) {
+  return {
+    event_id: event.id,
+    legal_process_id: event.legal_process_id ?? '',
+    client_id: event.client_id ?? '',
+    crm_item_id: event.crm_item_id ?? '',
+  }
+}
+
+/**
+ * Sobe os arquivos escolhidos no formulário, depois de o evento existir.
+ * Um arquivo que falha não derruba os outros — devolve quantos falharam, e o
+ * evento continua salvo.
+ */
+export async function attachFilesToEvent(
+  event: Pick<CalendarEvent, 'id' | 'legal_process_id' | 'client_id' | 'crm_item_id'>,
+  files: File[],
+  userId: string
+): Promise<number> {
+  if (files.length === 0) return 0
+  const links = eventDocumentLinks(event)
+  const results = await Promise.allSettled(
+    files.map((file) => uploadDocument({ category: 'outros', ...links }, file, userId))
+  )
+  return results.filter((result) => result.status === 'rejected').length
 }
 
 export interface EventWriteOptions {
@@ -629,14 +662,24 @@ async function regenerateSeries(params: {
   const { id, form, rule, anchor, userId, oldSeriesId, from } = params
 
   if (oldSeriesId) {
-    let removal = supabase
+    let doomedQuery = supabase
       .from('events')
-      .delete()
+      .select('id')
       .eq('recurrence_series_id', oldSeriesId)
       .neq('id', id)
-    if (from) removal = removal.gte('start_at', from)
-    const { error: removalError } = await removal
-    if (removalError) throw removalError
+    if (from) doomedQuery = doomedQuery.gte('start_at', from)
+    const { data: doomed, error: doomedError } = await doomedQuery
+    if (doomedError) throw doomedError
+    const doomedIds = (doomed ?? []).map((row) => row.id as string)
+
+    // Os arquivos das ocorrências que vão ser refeitas passam para esta, que
+    // sobrevive — senão sairiam junto (ou travariam a exclusão pelo CHECK).
+    await moveEventDocuments(doomedIds, id)
+
+    for (const ids of chunk(doomedIds)) {
+      const { error: removalError } = await supabase.from('events').delete().in('id', ids)
+      if (removalError) throw removalError
+    }
 
     if (from) {
       await supabase
@@ -683,23 +726,34 @@ async function regenerateSeries(params: {
 /**
  * Exclui a ocorrência — ou, numa série, ela e as seguintes / a série inteira.
  *
- * ⚠️ Documento anexado só ao evento bloqueia a exclusão: `documents.event_id`
- * é `on delete set null` e o CHECK exige um vínculo (migration 23).
+ * Documentos anexados SÓ ao evento saem junto (linha e arquivo). Antes eles
+ * travavam a exclusão: `documents.event_id` é `on delete set null` e o CHECK da
+ * migration 23 exige ao menos um vínculo. Documento que também é do processo,
+ * do cliente ou do card continua lá, sem o vínculo com o evento.
  */
 export async function deleteEvent(id: string, options: EventWriteOptions = {}): Promise<void> {
   const { current, scope = 'this' } = options
   const seriesId = current?.recurrence_series_id
 
   if (!seriesId || scope === 'this') {
+    await deleteEventOnlyDocuments([id])
     const { error: deleteError } = await supabase.from('events').delete().eq('id', id)
     if (deleteError) throw deleteError
     return
   }
 
-  let removal = supabase.from('events').delete().eq('recurrence_series_id', seriesId)
-  if (scope === 'following') removal = removal.gte('start_at', current.start_at)
-  const { error: removalError } = await removal
-  if (removalError) throw removalError
+  let doomedQuery = supabase.from('events').select('id').eq('recurrence_series_id', seriesId)
+  if (scope === 'following') doomedQuery = doomedQuery.gte('start_at', current.start_at)
+  const { data: doomed, error: doomedError } = await doomedQuery
+  if (doomedError) throw doomedError
+  const doomedIds = (doomed ?? []).map((row) => row.id as string)
+
+  await deleteEventOnlyDocuments(doomedIds)
+
+  for (const ids of chunk(doomedIds)) {
+    const { error: removalError } = await supabase.from('events').delete().in('id', ids)
+    if (removalError) throw removalError
+  }
 
   if (scope === 'following') {
     // O que sobrou da série termina na véspera.

@@ -34,7 +34,9 @@ import { SeriesScopeDialog } from "@/components/shared/SeriesScopeDialog";
 import { eventRangeLabel } from "../utils/daySpan";
 import { useDeleteEvent, useUpdateEvent } from "../hooks/useEventMutations";
 import { EventForm } from "./EventForm";
-import { eventToFormValues } from "../services/events.service";
+import { eventDocumentLinks, eventToFormValues } from "../services/events.service";
+import { DocumentsTab } from "@/features/documentos/components/DocumentsTab";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import type { EventFormInput } from "@/schemas/event.schema";
 import { Can } from '@/components/shared/Can'
 
@@ -51,8 +53,9 @@ export function EventDetailModal({
 }: EventDetailModalProps) {
   const [editing, setEditing] = useState(false);
   // Ocorrência de série: salvar e excluir passam antes pela pergunta do alcance.
-  const [pendingUpdate, setPendingUpdate] = useState<EventFormInput | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{ data: EventFormInput; files: File[] } | null>(null);
   const [askDeleteScope, setAskDeleteScope] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const deleteEvent = useDeleteEvent();
   const updateEvent = useUpdateEvent();
   const eventTypes = useEventTypeMap();
@@ -64,34 +67,32 @@ export function EventDetailModal({
   async function runDelete(scope: SeriesScope) {
     await deleteEvent.mutateAsync({ id: event!.id, options: { current: event!, scope } });
     setAskDeleteScope(false);
+    setConfirmDelete(false);
     onClose();
   }
 
-  async function handleDelete() {
-    if (inSeries) {
-      setAskDeleteScope(true);
-      return;
-    }
-    if (!confirm("Tem certeza que deseja excluir este evento?")) return;
-    await runDelete("this");
+  function handleDelete() {
+    if (inSeries) setAskDeleteScope(true);
+    else setConfirmDelete(true);
   }
 
-  async function runUpdate(data: EventFormInput, scope: SeriesScope) {
+  async function runUpdate(data: EventFormInput, files: File[], scope: SeriesScope) {
     await updateEvent.mutateAsync({
       input: { id: event!.id, ...data },
       options: { current: event!, scope },
+      files,
     });
     setPendingUpdate(null);
     setEditing(false);
     onClose();
   }
 
-  async function handleUpdate(data: EventFormInput) {
+  async function handleUpdate(data: EventFormInput, files: File[]) {
     if (inSeries) {
-      setPendingUpdate(data);
+      setPendingUpdate({ data, files });
       return;
     }
-    await runUpdate(data, "this");
+    await runUpdate(data, files, "this");
   }
 
   function handleOpenChange(isOpen: boolean) {
@@ -309,6 +310,20 @@ export function EventDetailModal({
                   )}
                 </div>
               )}
+
+              {/* Documentos — o evento não tinha onde anexar nem ver arquivos.
+                  Lê só os deste evento; grava com os vínculos dele (processo,
+                  cliente, card), para o arquivo aparecer no processo também. */}
+              <Can resource="documentos" action="view">
+                <div className="pt-2 border-t">
+                  <DocumentsTab
+                    compact
+                    eventId={event.id}
+                    {...lockedDocumentLinks(event)}
+                    itemLabel="evento"
+                  />
+                </div>
+              </Can>
             </div>
 
             {/* Footer */}
@@ -347,21 +362,48 @@ export function EventDetailModal({
           all: "Mudar a repetição ou a data refaz a série inteira.",
         }}
         isLoading={updateEvent.isPending}
-        onConfirm={(scope) => pendingUpdate && runUpdate(pendingUpdate, scope)}
+        onConfirm={(scope) =>
+          pendingUpdate && runUpdate(pendingUpdate.data, pendingUpdate.files, scope)
+        }
       />
       <SeriesScopeDialog
         open={askDeleteScope}
         onOpenChange={setAskDeleteScope}
         action="delete"
         labels={EVENT_SCOPE_LABELS}
+        hints={{ all: DELETE_DOCUMENTS_NOTICE, following: DELETE_DOCUMENTS_NOTICE }}
         isLoading={deleteEvent.isPending}
         onConfirm={runDelete}
+      />
+      {/* No lugar do confirm() nativo, que não dizia o que acontece com os anexos. */}
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Excluir evento"
+        description={`"${event.title}" será removido. ${DELETE_DOCUMENTS_NOTICE}`}
+        isLoading={deleteEvent.isPending}
+        onConfirm={() => runDelete("this")}
       />
     </Dialog>
   );
 }
 
 // ── Helpers ─────────────────────────────────────────────────
+
+/** Vínculos de upload no formato de props da DocumentsTab. */
+function lockedDocumentLinks(event: CalendarEvent) {
+  const links = eventDocumentLinks(event);
+  return {
+    lockedEventId: links.event_id,
+    lockedLegalProcessId: links.legal_process_id || null,
+    lockedClientId: links.client_id || null,
+    lockedCrmItemId: links.crm_item_id || null,
+  };
+}
+
+/** Ver deleteEventOnlyDocuments: só sai o anexo que não tem outro dono. */
+const DELETE_DOCUMENTS_NOTICE =
+  "Documentos anexados só ao evento também são excluídos; os que também são do processo ou do cliente continuam lá.";
 
 const EVENT_SCOPE_LABELS: Record<SeriesScope, string> = {
   this: "Este evento",

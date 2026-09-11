@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
 import type { DocumentRecord, DocumentWithRelations } from '@/types/document.types'
 import type { DocumentUploadInput } from '@/schemas/document.schema'
+import { chunk } from '@/utils/chunk'
 
 const supabase = createClient()
 
@@ -142,6 +143,77 @@ export async function deleteDocument(id: string, filePath: string): Promise<void
   const { error: storageError } = await supabase.storage.from(BUCKET).remove([filePath])
   if (storageError) {
     console.error('[storage] remove failed:', storageError.message)
+  }
+}
+
+/** Há documento anexado só ao evento, e o perfil não pode excluí-lo. */
+export class AttachedDocumentsError extends Error {
+  constructor() {
+    super('Há documentos anexados só a este evento, e você não tem permissão para excluí-los.')
+    this.name = 'AttachedDocumentsError'
+  }
+}
+
+/**
+ * Exclui — linha e arquivo — os documentos que pertencem SÓ a estes eventos.
+ *
+ * Tem de rodar antes de excluir os eventos: `documents.event_id` é
+ * `on delete set null`, e um documento sem nenhum outro vínculo violaria o
+ * CHECK `chk_documents_has_parent` (migration 23) — o que fazia a exclusão do
+ * evento falhar inteira. Documento que também é do processo, do cliente ou do
+ * card fica: perde só o vínculo com o evento.
+ *
+ * A RLS de `documents` recusa em silêncio (0 linhas) quem não tem
+ * `documentos:delete`; conferir a contagem é o que transforma isso num erro
+ * que a tela consegue explicar, em vez do CHECK estourando depois.
+ */
+export async function deleteEventOnlyDocuments(eventIds: string[]): Promise<void> {
+  if (eventIds.length === 0) return
+
+  const owned: { id: string; file_path: string }[] = []
+  for (const ids of chunk(eventIds)) {
+    const { data, error } = await supabase
+      .from('documents')
+      .select('id, file_path')
+      .in('event_id', ids)
+      .is('client_id', null)
+      .is('crm_item_id', null)
+      .is('legal_process_id', null)
+    if (error) throw error
+    owned.push(...((data ?? []) as { id: string; file_path: string }[]))
+  }
+  if (owned.length === 0) return
+
+  let deleted = 0
+  for (const ids of chunk(owned.map((doc) => doc.id))) {
+    const { data, error } = await supabase.from('documents').delete().in('id', ids).select('id')
+    if (error) throw error
+    deleted += data?.length ?? 0
+  }
+  if (deleted < owned.length) throw new AttachedDocumentsError()
+
+  // Linhas já saíram; arquivo que falhar aqui fica órfão — mesmo critério de
+  // deleteDocument.
+  const { error: storageError } = await supabase.storage
+    .from(BUCKET)
+    .remove(owned.map((doc) => doc.file_path))
+  if (storageError) console.error('[storage] remove failed:', storageError.message)
+}
+
+/**
+ * Repassa para `toEventId` os documentos dos eventos em `fromEventIds`.
+ *
+ * Usado quando uma série é refeita: as ocorrências antigas saem, e os arquivos
+ * anexados a elas iriam junto. Ficam na ocorrência que foi editada — a única
+ * que sobrevive à troca.
+ */
+export async function moveEventDocuments(fromEventIds: string[], toEventId: string): Promise<void> {
+  for (const ids of chunk(fromEventIds)) {
+    const { error } = await supabase
+      .from('documents')
+      .update({ event_id: toEventId })
+      .in('event_id', ids)
+    if (error) throw error
   }
 }
 
