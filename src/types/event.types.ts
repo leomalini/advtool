@@ -1,3 +1,4 @@
+import type { RecurrenceType } from '@/lib/recurrence'
 import type { BaseEntity, Profile } from './common.types'
 
 /**
@@ -9,7 +10,7 @@ import type { BaseEntity, Profile } from './common.types'
  */
 export type EventType = string
 
-export type RecurrenceType = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
+export type { RecurrenceType }
 
 export interface EventTypeRecord {
   id: string
@@ -36,14 +37,6 @@ export function resolveEventType(
   return types?.get(id) ?? UNKNOWN_EVENT_TYPE
 }
 
-export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
-  daily: 'Diária',
-  weekly: 'Semanal',
-  biweekly: 'Quinzenal',
-  monthly: 'Mensal',
-  yearly: 'Anual',
-}
-
 export interface CalendarEvent extends BaseEntity {
   title: string
   description: string | null
@@ -66,8 +59,14 @@ export interface CalendarEvent extends BaseEntity {
   is_important: boolean
   is_urgent: boolean
   is_future: boolean
+  /** Derivado: `recurrence_series_id` preenchido. Linhas anteriores à
+   * migration 52 podem ter a flag sem série — era só rótulo. */
   is_recurring: boolean
   recurrence_type: RecurrenceType | null
+  /** Agrupa as ocorrências de uma série (migration 52). */
+  recurrence_series_id: string | null
+  recurrence_until: string | null
+  recurrence_count: number | null
   is_retroactive: boolean
   retroactive_completed_at: string | null
   // Joins

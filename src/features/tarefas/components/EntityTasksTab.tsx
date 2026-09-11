@@ -10,6 +10,7 @@ import { useCreateTask } from '../hooks/useTaskMutations'
 import { TaskForm } from './TaskForm'
 import { TaskBoard, TASK_STATUSES } from './TaskBoard'
 import { TaskDetailModal } from './TaskDetailModal'
+import { collapseRecurringTasks } from '../utils/seriesTasks'
 
 interface EntityTasksTabProps {
   legalProcessId?: string | null
@@ -94,7 +95,10 @@ export function EntityTasksTab({
     )
   }
 
-  const pendentes = tarefas.filter((t) => t.status !== 'done').length
+  // Mesma regra do quadro de Tarefas: de cada série, só a próxima pendente
+  // (e as atrasadas) — as futuras aparecem na Agenda.
+  const visiveis = collapseRecurringTasks(tarefas)
+  const pendentes = visiveis.filter((t) => t.status !== 'done').length
 
   return (
     <div className="space-y-4">
@@ -124,7 +128,7 @@ export function EntityTasksTab({
           <p className="text-xs">As tarefas deste {itemLabel} aparecem aqui</p>
         </div>
       ) : (
-        <TaskBoard tasks={tarefas} onAddTask={handleAddTask} onTaskClick={setSelectedTask} />
+        <TaskBoard tasks={visiveis} onAddTask={handleAddTask} onTaskClick={setSelectedTask} />
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

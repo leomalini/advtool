@@ -2,7 +2,12 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { createEvent, updateEvent, deleteEvent } from '../services/events.service'
+import {
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  type EventWriteOptions,
+} from '../services/events.service'
 import { eventKeys } from './useEvents'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
@@ -48,9 +53,11 @@ export function useCreateEvent() {
 
 export function useUpdateEvent() {
   const invalidate = useInvalidateEventSurfaces()
+  const { user } = useAuth()
 
   return useMutation({
-    mutationFn: (input: UpdateEventInput) => updateEvent(input),
+    mutationFn: ({ input, options }: { input: UpdateEventInput; options?: EventWriteOptions }) =>
+      updateEvent(input, user!.id, options),
     onSuccess: () => {
       invalidate()
       toast.success('Evento atualizado!')
@@ -63,7 +70,8 @@ export function useDeleteEvent() {
   const invalidate = useInvalidateEventSurfaces()
 
   return useMutation({
-    mutationFn: (id: string) => deleteEvent(id),
+    mutationFn: ({ id, options }: { id: string; options?: EventWriteOptions }) =>
+      deleteEvent(id, options),
     onSuccess: () => {
       invalidate()
       toast.success('Evento removido.')

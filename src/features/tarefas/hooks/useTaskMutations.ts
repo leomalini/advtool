@@ -10,6 +10,7 @@ import {
   addChecklistItem,
   toggleChecklistItem,
   deleteChecklistItem,
+  type TaskWriteOptions,
 } from '../services/tasks.service'
 import { taskKeys } from './useTasks'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
@@ -54,7 +55,9 @@ export function useUpdateTask() {
 
   return useMutation({
     // userId enables the task_done activity on the ≠done → done transition.
-    mutationFn: (input: UpdateTaskInput) => updateTask(input, user?.id),
+    // `options` só vem do detalhe, quando a tarefa é de uma série.
+    mutationFn: ({ options, ...input }: UpdateTaskInput & { options?: TaskWriteOptions }) =>
+      updateTask(input, user?.id, options),
     onSuccess: () => {
       invalidate()
     },
@@ -66,7 +69,9 @@ export function useDeleteTask() {
   const invalidate = useInvalidateTaskSurfaces()
 
   return useMutation({
-    mutationFn: (id: string) => deleteTask(id),
+    // Id sozinho para a tarefa avulsa; com `options` quando é de uma série.
+    mutationFn: (target: string | { id: string; options?: TaskWriteOptions }) =>
+      typeof target === 'string' ? deleteTask(target) : deleteTask(target.id, target.options),
     onSuccess: () => {
       invalidate()
       toast.success('Tarefa removida.')

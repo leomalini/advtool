@@ -28,7 +28,9 @@ import {
 import { resolveEventType } from "@/types/event.types";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { CalendarEvent } from "@/types/event.types";
-import { formatDateTime } from "@/utils/date";
+import { formatDate, formatDateTime } from "@/utils/date";
+import { RECURRENCE_SHORT_LABELS, type SeriesScope } from "@/lib/recurrence";
+import { SeriesScopeDialog } from "@/components/shared/SeriesScopeDialog";
 import { eventRangeLabel } from "../utils/daySpan";
 import { useDeleteEvent, useUpdateEvent } from "../hooks/useEventMutations";
 import { EventForm } from "./EventForm";
@@ -48,23 +50,48 @@ export function EventDetailModal({
   onClose,
 }: EventDetailModalProps) {
   const [editing, setEditing] = useState(false);
+  // Ocorrência de série: salvar e excluir passam antes pela pergunta do alcance.
+  const [pendingUpdate, setPendingUpdate] = useState<EventFormInput | null>(null);
+  const [askDeleteScope, setAskDeleteScope] = useState(false);
   const deleteEvent = useDeleteEvent();
   const updateEvent = useUpdateEvent();
   const eventTypes = useEventTypeMap();
   const { data: linkedProcesso } = useLegalProcess(event?.legal_process_id ?? "");
 
   if (!event) return null;
+  const inSeries = !!event.recurrence_series_id;
+
+  async function runDelete(scope: SeriesScope) {
+    await deleteEvent.mutateAsync({ id: event!.id, options: { current: event!, scope } });
+    setAskDeleteScope(false);
+    onClose();
+  }
 
   async function handleDelete() {
+    if (inSeries) {
+      setAskDeleteScope(true);
+      return;
+    }
     if (!confirm("Tem certeza que deseja excluir este evento?")) return;
-    await deleteEvent.mutateAsync(event!.id);
+    await runDelete("this");
+  }
+
+  async function runUpdate(data: EventFormInput, scope: SeriesScope) {
+    await updateEvent.mutateAsync({
+      input: { id: event!.id, ...data },
+      options: { current: event!, scope },
+    });
+    setPendingUpdate(null);
+    setEditing(false);
     onClose();
   }
 
   async function handleUpdate(data: EventFormInput) {
-    await updateEvent.mutateAsync({ id: event!.id, ...data });
-    setEditing(false);
-    onClose();
+    if (inSeries) {
+      setPendingUpdate(data);
+      return;
+    }
+    await runUpdate(data, "this");
   }
 
   function handleOpenChange(isOpen: boolean) {
@@ -268,7 +295,7 @@ export function EventDetailModal({
                       className="text-chart-2 border-chart-2/25 bg-chart-2/12 gap-1 text-[11px]"
                     >
                       <RefreshCw className="h-3 w-3" />
-                      Recorrente
+                      {seriesLabel(event)}
                     </Badge>
                   )}
                   {event.is_retroactive && (
@@ -309,11 +336,47 @@ export function EventDetailModal({
           </div>
         )}
       </DialogContent>
+
+      <SeriesScopeDialog
+        open={!!pendingUpdate}
+        onOpenChange={(v) => !v && setPendingUpdate(null)}
+        action="edit"
+        labels={EVENT_SCOPE_LABELS}
+        hints={{
+          this: "A repetição não muda — só este evento é alterado.",
+          all: "Mudar a repetição ou a data refaz a série inteira.",
+        }}
+        isLoading={updateEvent.isPending}
+        onConfirm={(scope) => pendingUpdate && runUpdate(pendingUpdate, scope)}
+      />
+      <SeriesScopeDialog
+        open={askDeleteScope}
+        onOpenChange={setAskDeleteScope}
+        action="delete"
+        labels={EVENT_SCOPE_LABELS}
+        isLoading={deleteEvent.isPending}
+        onConfirm={runDelete}
+      />
     </Dialog>
   );
 }
 
 // ── Helpers ─────────────────────────────────────────────────
+
+const EVENT_SCOPE_LABELS: Record<SeriesScope, string> = {
+  this: "Este evento",
+  following: "Este e os eventos seguintes",
+  all: "Todos os eventos",
+};
+
+/** "Semanal · até 15/12/2026" — ou só "Recorrente" na flag antiga, sem série. */
+function seriesLabel(event: CalendarEvent): string {
+  if (!event.recurrence_series_id || !event.recurrence_type) return "Recorrente";
+  const base = RECURRENCE_SHORT_LABELS[event.recurrence_type];
+  if (event.recurrence_until) return `${base} · até ${formatDate(event.recurrence_until)}`;
+  if (event.recurrence_count) return `${base} · ${event.recurrence_count}×`;
+  return base;
+}
 
 function InfoRow({
   icon,

@@ -7,13 +7,6 @@ import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2,
@@ -22,7 +15,6 @@ import {
   AlertCircle,
   Clock,
   Star,
-  RefreshCw,
   CalendarClock,
   History,
   MapPin,
@@ -32,7 +24,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { eventFormSchema, type EventFormInput } from "@/schemas/event.schema";
-import { RECURRENCE_TYPE_LABELS, resolveEventType } from "@/types/event.types";
+import { resolveEventType } from "@/types/event.types";
+import { RecurrenceFields } from "@/components/shared/RecurrenceFields";
 import { EventTypeSelect } from "./EventTypeSelect";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { Profile } from "@/types/common.types";
@@ -85,13 +78,6 @@ const FLAG_CONFIG = [
       "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800",
   },
   {
-    field: "is_recurring" as const,
-    label: "Recorrente",
-    icon: RefreshCw,
-    activeCls:
-      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-400 dark:border-violet-800",
-  },
-  {
     field: "is_retroactive" as const,
     label: "Retroativa",
     icon: History,
@@ -128,7 +114,7 @@ export function EventForm({
     getValues,
     watch,
     control,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = useForm<EventFormInput>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
@@ -141,8 +127,9 @@ export function EventForm({
       is_important: false,
       is_urgent: false,
       is_future: false,
-      is_recurring: false,
       is_retroactive: false,
+      recurrence_type: "",
+      recurrence_ends: "until",
       assignee_ids: [],
       ...defaultValues,
     },
@@ -153,7 +140,6 @@ export function EventForm({
   const watchType = watch("type");
   const informEnd = watch("inform_end");
   const allDay = watch("all_day");
-  const isRecurring = watch("is_recurring");
   const isRetroactive = watch("is_retroactive");
   const assigneeIds = watch("assignee_ids");
   // A cor do tipo tinge o cabeçalho e o botão de salvar. Vem do cadastro, e
@@ -425,6 +411,33 @@ export function EventForm({
             </div>
           </FormSection>
 
+          {/* Repetir — cria a série inteira ao salvar (migration 52). */}
+          <FormSection label="Repetir">
+            <RecurrenceFields
+              value={{
+                recurrence_type: watch("recurrence_type"),
+                recurrence_ends: watch("recurrence_ends"),
+                recurrence_until: watch("recurrence_until"),
+                recurrence_count: watch("recurrence_count"),
+              }}
+              onChange={(patch) => {
+                // Revalida só depois da 1ª tentativa de salvar, como o resto do form.
+                const opts = { shouldValidate: isSubmitted };
+                if (patch.recurrence_type !== undefined) setValue("recurrence_type", patch.recurrence_type, opts);
+                if (patch.recurrence_ends !== undefined) setValue("recurrence_ends", patch.recurrence_ends, opts);
+                if (patch.recurrence_until !== undefined) setValue("recurrence_until", patch.recurrence_until, opts);
+                if (patch.recurrence_count !== undefined) setValue("recurrence_count", patch.recurrence_count, opts);
+              }}
+              startDate={watch("start_date")}
+              pluralNoun="eventos"
+              errors={{
+                recurrence_type: errors.recurrence_type?.message,
+                recurrence_until: errors.recurrence_until?.message,
+                recurrence_count: errors.recurrence_count?.message,
+              }}
+            />
+          </FormSection>
+
           {/* Detalhes */}
           <FormSection label="Detalhes">
             <div className="space-y-4">
@@ -500,37 +513,6 @@ export function EventForm({
                   );
                 })}
               </div>
-
-              {isRecurring && (
-                <div className="pl-3 border-l-2 border-violet-200 dark:border-violet-800 space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Periodicidade
-                  </Label>
-                  <Controller
-                    name="recurrence_type"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger className="h-9 text-sm">
-                          <SelectValue placeholder="Selecionar..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(RECURRENCE_TYPE_LABELS).map(
-                            ([v, l]) => (
-                              <SelectItem key={v} value={v}>
-                                {l}
-                              </SelectItem>
-                            ),
-                          )}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
-              )}
 
               {isRetroactive && (
                 <div className="pl-3 border-l-2 border-slate-200 dark:border-slate-700 space-y-1.5">

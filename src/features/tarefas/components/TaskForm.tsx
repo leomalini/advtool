@@ -13,6 +13,7 @@ import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskStatus, type TaskPri
 import { NONE_VALUE, toSelectValue, fromSelectValue } from '@/utils/select'
 import { useProfiles } from '@/hooks/useProfiles'
 import { getDisplayName } from '@/utils/profile'
+import { RecurrenceFields } from '@/components/shared/RecurrenceFields'
 
 interface TaskFormProps {
   defaultStatus?: TaskStatus
@@ -28,12 +29,14 @@ export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLo
     handleSubmit,
     setValue,
     watch,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = useForm<CreateTaskInput>({
     resolver: zodResolver(createTaskSchema),
     defaultValues: {
       status: defaultStatus,
       priority: 'medium',
+      recurrence_type: '',
+      recurrence_ends: 'until',
       ...defaultValues,
     },
   })
@@ -98,6 +101,34 @@ export function TaskForm({ defaultStatus = 'todo', defaultValues, onSubmit, isLo
           <Label>Hora (opcional)</Label>
           <Input type="time" {...register('due_time')} disabled={!dueDate} />
         </div>
+      </div>
+
+      {/* Repetir — uma tarefa por ocorrência, criadas ao salvar (migration 52). */}
+      <div className="space-y-1.5">
+        <Label>Repetir</Label>
+        <RecurrenceFields
+          value={{
+            recurrence_type: watch('recurrence_type'),
+            recurrence_ends: watch('recurrence_ends'),
+            recurrence_until: watch('recurrence_until'),
+            recurrence_count: watch('recurrence_count'),
+          }}
+          onChange={(patch) => {
+            // Revalida só depois da 1ª tentativa de salvar, como o resto do form.
+            const opts = { shouldValidate: isSubmitted }
+            if (patch.recurrence_type !== undefined) setValue('recurrence_type', patch.recurrence_type, opts)
+            if (patch.recurrence_ends !== undefined) setValue('recurrence_ends', patch.recurrence_ends, opts)
+            if (patch.recurrence_until !== undefined) setValue('recurrence_until', patch.recurrence_until, opts)
+            if (patch.recurrence_count !== undefined) setValue('recurrence_count', patch.recurrence_count, opts)
+          }}
+          startDate={dueDate}
+          pluralNoun="tarefas"
+          errors={{
+            recurrence_type: errors.recurrence_type?.message,
+            recurrence_until: errors.recurrence_until?.message,
+            recurrence_count: errors.recurrence_count?.message,
+          }}
+        />
       </div>
 
       <div className="space-y-1.5">
