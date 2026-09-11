@@ -11,12 +11,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
+import { AREAS_JURIDICAS } from '@/data/mock'
 import { CRM_LEGAL_AREAS, CRM_TAGS } from '@/schemas/crmItem.schema'
 import type { CrmLegalArea, CrmTag } from '@/schemas/crmItem.schema'
 import { useProfiles } from '@/hooks/useProfiles'
 import { ProfileOption, ProfileOptionCompact } from '@/components/shared/ProfileOption'
 import { hasActiveFilters, countActiveFilters, type CrmFilters } from '../utils/filterCases'
+import { tagLabel } from '@/utils/tags'
 
 const ALL = '__all__'
 
@@ -117,14 +118,14 @@ export function CrmFilterBar({ filters, onChange, resultCount }: CrmFilterBarPro
       >
         <SelectTrigger className="h-9 w-[150px] text-sm">
           <SelectValue>
-            {filters.tag ? ETIQUETAS[filters.tag]?.label : 'Todas etiquetas'}
+            {filters.tag ? tagLabel(filters.tag) : 'Todas etiquetas'}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Todas etiquetas</SelectItem>
           {CRM_TAGS.map((t) => (
             <SelectItem key={t} value={t}>
-              {ETIQUETAS[t].label}
+              {tagLabel(t)}
             </SelectItem>
           ))}
         </SelectContent>

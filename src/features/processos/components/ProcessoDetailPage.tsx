@@ -21,9 +21,9 @@ import {
   Landmark,
   Link2,
   Loader2,
-  MapPin,
   Pencil,
   Plus,
+  Radar,
   RefreshCw,
   Scale,
   Search,
@@ -38,6 +38,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '@/components/ui/select'
+import { NONE_VALUE } from '@/utils/select'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
 import { ResumoIaCard } from './ResumoIaCard'
 import { DocumentosPublicosTab } from './DocumentosPublicosTab'
@@ -49,19 +56,22 @@ import {
   useMarkMovement,
   useLinkPartyToClient,
   useSyncProcesso,
+  useSetProcessMonitoring,
 } from '../hooks/useLegalProcessMutations'
 import { getCrmItemClientName } from '@/types/crmItem.types'
-import { ETIQUETAS } from '@/data/mock'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import {
   PROCESS_TYPE_LABELS,
   PROCESS_STATUS_LABELS,
+  MONITORING_FREQUENCIES,
+  MONITORING_FREQUENCY_LABELS,
   groupPartiesByPolo,
   type DisplayParty,
   type PartyClient,
   type LegalProcessMovement,
   type LegalProcessWithRelations,
   type LegalProcessPublicDocument,
+  type MonitoringFrequency,
 } from '@/types/legalProcess.types'
 import type { Publication } from '@/types/publication.types'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
@@ -85,6 +95,7 @@ import type { CreateClientInput } from '@/schemas/cliente.schema'
 import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useOpenDocument } from '@/features/documentos/hooks/useDocumentMutations'
 import { formatFileSize, getFileExtension } from '@/types/document.types'
+import { tagAppearance } from '@/utils/tags'
 
 const PAGE_SIZE = 20
 
@@ -139,6 +150,20 @@ function formatCurrency(value: number | null): string {
 function formatDateOnly(value: string | null): string {
   if (!value) return '—'
   return format(parseISO(value), 'dd/MM/yyyy', { locale: ptBR })
+}
+
+/**
+ * Data de uma movimentação — o dia do ato no tribunal, sem hora.
+ *
+ * `movement_date` é `timestamptz` (migration 9), mas a API só informa o DIA
+ * (`mov.data` = '2026-04-17'). O Postgres grava isso como meia-noite UTC, e
+ * renderizar em America/Sao_Paulo devolvia '16/04/2026 21:00' — uma hora que
+ * ninguém informou e, pior, o dia anterior ao que o tribunal registrou.
+ *
+ * Ler só a parte da data do carimbo devolve o dia como veio da origem.
+ */
+function formatMovementDate(value: string): string {
+  return format(parseISO(value.slice(0, 10)), 'dd/MM/yyyy', { locale: ptBR })
 }
 
 /** Nome de exibição do cliente vinculado a uma parte. Mesma regra do
@@ -338,6 +363,77 @@ function MovementDocumentCard({
   )
 }
 
+/**
+ * Faixa do monitoramento contínuo na BuscaProcessos.
+ *
+ * Mostra a frequência escolhida no cadastro e permite trocá-la ou desligá-la —
+ * é o único caminho depois do cadastro, e sem ele um processo antigo ficaria
+ * sem forma de ser monitorado.
+ *
+ * `monitoring_status` NÃO é exibido: é o `status` devolvido pela API, texto
+ * livre do lado deles (o 'PENDENTE' que aparecia aqui é código deles, não
+ * nosso). Sem conhecer o conjunto de valores possíveis não há como traduzi-lo
+ * em rótulo honesto, e mostrar o código cru só levanta a pergunta. A coluna
+ * segue gravada para diagnóstico.
+ */
+function MonitoringStrip({
+  processo,
+  onChange,
+  isPending,
+}: {
+  processo: LegalProcessWithRelations
+  onChange: (frequencia: MonitoringFrequency | null) => void
+  isPending: boolean
+}) {
+  const frequency = processo.monitoring_frequency
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border px-4 py-2.5">
+      <Radar
+        className={cn('h-3.5 w-3.5 shrink-0', frequency ? 'text-success' : 'text-muted-foreground')}
+      />
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Monitoramento
+      </span>
+
+      {/* Sem CNJ não há o que monitorar: a API identifica o processo por ele. */}
+      {processo.cnj_number ? (
+        <Select
+          value={frequency ?? NONE_VALUE}
+          disabled={isPending}
+          onValueChange={(v) => onChange(v === NONE_VALUE ? null : (v as MonitoringFrequency))}
+        >
+          <SelectTrigger size="sm" className="w-[150px] text-xs">
+            <span className="truncate">
+              {frequency ? MONITORING_FREQUENCY_LABELS[frequency] : 'Não monitorado'}
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE_VALUE}>Não monitorado</SelectItem>
+            {MONITORING_FREQUENCIES.map((f) => (
+              <SelectItem key={f} value={f}>
+                {MONITORING_FREQUENCY_LABELS[f]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <span className="text-sm text-muted-foreground">Requer número CNJ</span>
+      )}
+
+      {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+
+      <span className="text-xs text-muted-foreground">
+        {frequency
+          ? processo.monitoring_synced_at
+            ? `Ativo desde ${formatDateOnly(processo.monitoring_synced_at.slice(0, 10))}`
+            : 'Ativo'
+          : 'Novas movimentações do tribunal chegam automaticamente quando ativo.'}
+      </span>
+    </div>
+  )
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function ProcessoDetailPage({ processoId }: { processoId: string }) {
@@ -368,6 +464,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
 
   const updateProcess = useUpdateLegalProcess(processoId, item?.id ?? '')
   const syncProcess = useSyncProcesso()
+  const setMonitoring = useSetProcessMonitoring(processoId)
   const markMovement = useMarkMovement()
   const createTask = useCreateTask()
   const openDocument = useOpenDocument()
@@ -421,6 +518,26 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     [sortedMovements],
   )
 
+  /** Link deste processo no site do tribunal.
+   *
+   * A BuscaProcessos NÃO devolve uma URL do processo: `link_publicacao_tribunal`
+   * vem por movimentação, e só nas que são publicação de diário (as de
+   * serventuário chegam com null). O link mais recente é, portanto, a página do
+   * diário onde o processo apareceu por último — é o que existe de real, e o
+   * rótulo não promete os autos. */
+  const tribunalLink = useMemo(() => {
+    const withUrl = publicacoes.filter((publicacao) => publicacao.external_url)
+    if (withUrl.length === 0) return null
+
+    const latest = withUrl.reduce((mostRecent, candidate) =>
+      candidate.publication_date > mostRecent.publication_date ? candidate : mostRecent,
+    )
+    return {
+      url: latest.external_url as string,
+      hint: `Diário de ${formatDateOnly(latest.publication_date)}, onde apareceu por último`,
+    }
+  }, [publicacoes])
+
   /** "Tudo" mistura as duas origens, então a lista precisa carregar o tipo de
    * cada item — publicação e movimentação moram em tabelas diferentes e não
    * têm campos em comum além da data. */
@@ -461,7 +578,10 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     // ela outra aparência conforme a aba, o que lia como outra tela.
     const base: TimelineEntry[] =
       timelineFilter === 'movimentacoes'
-        ? timelineEntries.filter((entry) => entry.type === 'movement')
+        ? // Documento público é ato do processo, não publicação de diário:
+          // "Expedição de documento" é uma movimentação como qualquer outra e
+          // some da aba se for tratada como categoria à parte.
+          timelineEntries.filter((entry) => entry.type !== 'publication')
         : timelineFilter === 'publicacoes'
           ? timelineEntries.filter((entry) => entry.type === 'publication')
           : timelineEntries
@@ -571,11 +691,19 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const naoLidas = publicacoes.filter((publicacao) => !publicacao.read_at).length
 
   const timelineTabs: { id: TimelineFilter; label: string; count: number }[] = [
-    // "Tudo" é o total real, não a soma das outras duas — publicações e
-    // movimentações já são partições do mesmo conjunto.
-    { id: 'tudo', label: 'Tudo', count: sortedMovements.length },
+    // O total da própria lista que a aba mostra — que inclui os documentos
+    // públicos, além de publicações e movimentações. Antes vinha de
+    // `sortedMovements`, que só conta `legal_process_movements`: desde que a
+    // migration 44 tirou as publicações dali, esse número deixava de fora tudo
+    // que não fosse movimentação.
+    { id: 'tudo', label: 'Tudo', count: timelineEntries.length },
     { id: 'publicacoes', label: 'Publicações', count: publicacoes.length },
-    { id: 'movimentacoes', label: 'Movimentações', count: movimentacoes.length },
+    {
+      id: 'movimentacoes',
+      label: 'Movimentações',
+      // Inclui os documentos públicos, que a aba também lista.
+      count: movimentacoes.length + documentosPublicos.length,
+    },
   ]
 
   return (
@@ -652,6 +780,19 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 >
                   {PROCESS_STATUS_LABELS[processo.status]}
                 </span>
+                {tribunalLink && (
+                  <Button size="sm" variant="outline" asChild>
+                    <a
+                      href={tribunalLink.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={tribunalLink.hint}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                      Ver no tribunal
+                    </a>
+                  </Button>
+                )}
                 {/* Recoleta na BuscaProcessos. Sem CNJ não há o que consultar. */}
                 {processo.cnj_number && (
                   <Button
@@ -699,11 +840,6 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 value={processo.filing_date ? formatDateOnly(processo.filing_date) : null}
               />
               <InfoStripItem
-                icon={<MapPin className="h-3 w-3" />}
-                label="Comarca"
-                value={processo.comarca}
-              />
-              <InfoStripItem
                 icon={<Gavel className="h-3 w-3" />}
                 label="Juízo"
                 value={processo.court_division}
@@ -715,6 +851,20 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
               />
             </div>
 
+            {/* ── Monitoramento ── */}
+            <MonitoringStrip
+              processo={processo}
+              isPending={setMonitoring.isPending}
+              onChange={(frequencia) =>
+                setMonitoring.mutate({
+                  cnj: processo.cnj_number as string,
+                  court: processo.court,
+                  currentMonitoringId: processo.monitoring_id,
+                  frequencia,
+                })
+              }
+            />
+
             {/* ── Etiquetas ── */}
             <div className="flex items-center gap-2 border-t border-border px-4 py-2.5">
               <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -723,17 +873,17 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {tags.map((tag) => {
-                    const et = ETIQUETAS[tag]
+                    const et = tagAppearance(tag)
                     return (
                       <span
                         key={tag}
                         className={cn(
                           'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                          et?.color,
-                          et?.textColor
+                          et.color,
+                          et.textColor
                         )}
                       >
-                        {et?.label ?? tag}
+                        {et.label}
                       </span>
                     )
                   })}
@@ -966,10 +1116,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                     >
                       <div className="flex w-[92px] shrink-0 flex-col">
                         <p className="text-xs font-medium">
-                          {format(parseISO(movement.movement_date), 'dd/MM/yyyy')}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {format(parseISO(movement.movement_date), 'HH:mm')}h
+                          {formatMovementDate(movement.movement_date)}
                         </p>
                         <span
                           className={cn(

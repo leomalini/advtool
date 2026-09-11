@@ -6,7 +6,10 @@ import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
 import { useLegalProcesses } from '../hooks/useLegalProcesses'
-import { useCreateLegalProcess } from '../hooks/useLegalProcessMutations'
+import {
+  useCreateLegalProcess,
+  type CreateProcessStep,
+} from '../hooks/useLegalProcessMutations'
 import { ProcessoTableView } from './ProcessoTableView'
 import { ProcessoForm, type ProcessoFormSubmitMeta } from './ProcessoForm'
 import { MovimentacoesFeed } from './MovimentacoesFeed'
@@ -52,10 +55,23 @@ export function ProcessosContent() {
   }
 
   const createProcess = useCreateLegalProcess()
+  /** Etapa em curso do cadastro — alimenta o painel de progresso do modal. */
+  const [createStep, setCreateStep] = useState<CreateProcessStep | null>(null)
 
   async function handleCreateSubmit(data: LegalProcessInput, meta: ProcessoFormSubmitMeta) {
-    await createProcess.mutateAsync({ input: data, capaAlreadyFetched: meta.capaFetched })
-    closeCreate()
+    try {
+      await createProcess.mutateAsync({
+        input: data,
+        capaAlreadyFetched: meta.capaFetched,
+        monitoringFrequency: meta.monitoringFrequency,
+        onStep: setCreateStep,
+      })
+      closeCreate()
+    } finally {
+      // No `finally` para que uma falha não deixe o painel de progresso preso
+      // por cima do formulário.
+      setCreateStep(null)
+    }
   }
 
   if (!workflow) return null
@@ -123,6 +139,7 @@ export function ProcessosContent() {
         }}
         onSubmit={handleCreateSubmit}
         isLoading={createProcess.isPending}
+        createStep={createStep}
       />
     </div>
   )

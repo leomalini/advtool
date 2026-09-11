@@ -257,12 +257,17 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
       if (colKey === 'cliente') {
         return (
           <div className="min-w-0 pr-2">
-            <div className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground truncate">
+            <div
+              className={cn(
+                'truncate font-semibold text-foreground',
+                processo.cnj_number ? 'font-mono text-[12px]' : 'text-[13px]',
+              )}
+            >
+              {processo.cnj_number ?? 'Sem CNJ cadastrado'}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-muted-foreground truncate">
               <TriangleAlert className="w-3 h-3 shrink-0" />
               Sem caso vinculado
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
-              {processo.cnj_number ?? 'Sem CNJ cadastrado'}
             </div>
           </div>
         )
@@ -272,14 +277,31 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
 
     switch (colKey) {
       case 'cliente': {
+        // O processo identifica a linha: CNJ, ou o título do card quando não
+        // há número. O cliente desce para a linha de apoio e é omitido quando
+        // não existe — antes o destaque era dele, e um processo sem cliente
+        // aparecia como '(sem cliente)' em negrito.
+        const clienteVinculado = item.client ? getCrmItemClientName(item) : null
+        const titulo = item.title?.trim() || null
+        // Sem CNJ o título sobe para o destaque; nesse caso ele não se repete
+        // embaixo.
+        const apoio = [processo.cnj_number ? titulo : null, clienteVinculado]
+          .filter(Boolean)
+          .join(' · ')
+
         return (
           <div className="min-w-0 pr-2">
-            <div className="text-[13px] font-semibold text-foreground truncate">
-              {getCrmItemClientName(item)}
+            <div
+              className={cn(
+                'truncate font-semibold text-foreground',
+                processo.cnj_number ? 'font-mono text-[12px]' : 'text-[13px]',
+              )}
+            >
+              {processo.cnj_number ?? titulo ?? 'Sem CNJ cadastrado'}
             </div>
-            <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">
-              {processo.cnj_number ?? 'Sem CNJ cadastrado'}
-            </div>
+            {apoio && (
+              <div className="text-[10.5px] text-muted-foreground mt-0.5 truncate">{apoio}</div>
+            )}
           </div>
         )
       }

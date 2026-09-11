@@ -10,6 +10,7 @@ interface CurrencyInputProps {
   placeholder?: string
   className?: string
   id?: string
+  disabled?: boolean
 }
 
 /**
@@ -27,6 +28,7 @@ export function CurrencyInput({
   placeholder = '0,00',
   className,
   id,
+  disabled = false,
 }: CurrencyInputProps) {
   const display =
     value === undefined || Number.isNaN(value)
@@ -54,6 +56,7 @@ export function CurrencyInput({
       value={display}
       onChange={(e) => handleChange(e.target.value)}
       placeholder={placeholder}
+      disabled={disabled}
       className={cn('text-right tabular-nums', className)}
     />
   )

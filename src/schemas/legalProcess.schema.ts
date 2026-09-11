@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CRM_LEGAL_AREAS, CRM_TAGS } from './crmItem.schema'
+import { CRM_LEGAL_AREAS, crmTagSchema } from './crmItem.schema'
 
 /** Uma parte do processo.
  *
@@ -33,7 +33,7 @@ export const legalProcessSchema = z.object({
   legal_area: z.enum(CRM_LEGAL_AREAS).optional().nullable(),
   column_id: z.string().min(1, 'Selecione uma etapa'),
   assigned_to: z.string().uuid().optional().nullable(),
-  tags: z.array(z.enum(CRM_TAGS)),
+  tags: z.array(crmTagSchema),
   next_deadline: z.string().min(1, 'Informe o próximo prazo'),
   next_task_summary: z.string().max(300).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
