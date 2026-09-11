@@ -1,5 +1,6 @@
 import { parseISO } from 'date-fns'
 import type { CalendarEvent } from '@/types/event.types'
+import { belongsToAllDayStrip, DEFAULT_DURATION_MIN, type DaySegment } from './daySpan'
 
 /**
  * Posicionamento dos eventos num eixo de tempo vertical.
@@ -7,6 +8,9 @@ import type { CalendarEvent } from '@/types/event.types'
  * Usado pelas visões de semana e dia, onde a grade tem uma linha por hora e um
  * evento de 30 minutos ocupa metade da altura de um de uma hora. A visão de mês
  * **não** usa isto: lá os eventos são linhas, sem relação com a duração.
+ *
+ * Trabalha sobre os pedaços de um dia (`DaySegment`), não sobre o evento
+ * inteiro: uma diligência das 22h às 2h vira 22h–24h num dia e 0h–2h no outro.
  */
 
 /** Altura mínima de um bloco, em % da área — só para que um evento de 10
@@ -14,26 +18,34 @@ import type { CalendarEvent } from '@/types/event.types'
  * durações curtas e quebraria a proporção entre elas. */
 const DEFAULT_MIN_HEIGHT_PCT = 4
 
-/**
- * Duração assumida para evento sem término informado.
- *
- * O formulário só grava `end_at` quando "informar término" está marcado; nos
- * demais casos o service repete o `start_at` para respeitar o CHECK
- * `end_at >= start_at`. Sem esta regra, esses eventos apareciam esticados até a
- * meia-noite — a marca de "sem término" era confundida com a de "vira o dia".
- */
-const DEFAULT_DURATION_MIN = 60
+const FULL_DAY_MIN = 24 * 60
 
-/** Fim efetivo do evento, em minutos do dia. Exportada para a grade poder
- * exibir o mesmo horário de término que desenha. */
-export function resolveEndMinutes(event: CalendarEvent, startMin: number): number {
-  const hasEnd = !!event.end_at && event.end_at !== event.start_at
-  if (!hasEnd) return Math.min(24 * 60, startMin + DEFAULT_DURATION_MIN)
+function minutesOfDay(iso: string): number {
+  const d = parseISO(iso)
+  return d.getHours() * 60 + d.getMinutes()
+}
+
+/**
+ * Início e fim do pedaço, em minutos do dia.
+ *
+ * Sem término informado o service repete o `start_at` (para respeitar o CHECK
+ * `end_at >= start_at`); aí vale a duração padrão. Sem essa regra esses eventos
+ * apareciam esticados até a meia-noite — a marca de "sem término" era
+ * confundida com a de "vira o dia".
+ */
+export function segmentMinutes(segment: DaySegment): { startMin: number; endMin: number } {
+  const { event, isFirstDay, isLastDay } = segment
+  const startMin = isFirstDay ? minutesOfDay(event.start_at) : 0
+  if (!isLastDay) return { startMin, endMin: FULL_DAY_MIN }
+
+  const hasEnd = parseISO(event.end_at).getTime() !== parseISO(event.start_at).getTime()
+  if (!hasEnd) return { startMin, endMin: Math.min(FULL_DAY_MIN, startMin + DEFAULT_DURATION_MIN) }
 
   const endMin = minutesOfDay(event.end_at)
-  // Menor que o início com término informado = atravessa a meia-noite. A coluna
-  // representa um dia, então corta ali em vez de invadir o dia seguinte.
-  return endMin > startMin ? endMin : 24 * 60
+  // No próprio dia de início, fim "antes" do início só acontece quando o
+  // término cai à meia-noite seguinte: o bloco vai até o fim da coluna.
+  if (isFirstDay) return { startMin, endMin: endMin > startMin ? endMin : FULL_DAY_MIN }
+  return { startMin, endMin: endMin === 0 ? FULL_DAY_MIN : endMin }
 }
 
 export interface DayWindow {
@@ -45,7 +57,11 @@ export interface DayWindow {
 }
 
 export interface PositionedEvent {
+  segment: DaySegment
   event: CalendarEvent
+  /** Minutos do dia que o bloco representa — o rótulo mostra estes. */
+  startMin: number
+  endMin: number
   /** Percentuais relativos à altura/largura da área de eventos. */
   topPct: number
   heightPct: number
@@ -54,15 +70,16 @@ export interface PositionedEvent {
 }
 
 export interface DayLayout {
-  /** Eventos com horário, posicionados no eixo. */
+  /** Pedaços com horário, posicionados no eixo. */
   timed: PositionedEvent[]
-  /** Eventos de dia inteiro — ficam fora do eixo, numa faixa própria. */
-  allDay: CalendarEvent[]
+  /** Dia inteiro e eventos de 24h+ — ficam fora do eixo, numa faixa própria. */
+  allDay: DaySegment[]
 }
 
-function minutesOfDay(iso: string): number {
-  const d = parseISO(iso)
-  return d.getHours() * 60 + d.getMinutes()
+interface LaneItem {
+  segment: DaySegment
+  start: number
+  end: number
 }
 
 /**
@@ -70,13 +87,11 @@ function minutesOfDay(iso: string): number {
  * em faixas lado a lado. Fora de um grupo, o evento usa a largura inteira —
  * por isso o agrupamento, em vez de uma contagem global de faixas.
  */
-function assignLanes(
-  items: { event: CalendarEvent; start: number; end: number }[]
-): { event: CalendarEvent; start: number; end: number; lane: number; lanes: number }[] {
+function assignLanes(items: LaneItem[]): (LaneItem & { lane: number; lanes: number })[] {
   const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end)
-  const result: { event: CalendarEvent; start: number; end: number; lane: number; lanes: number }[] = []
+  const result: (LaneItem & { lane: number; lanes: number })[] = []
 
-  let cluster: typeof sorted = []
+  let cluster: LaneItem[] = []
   let clusterEnd = -Infinity
 
   function flush() {
@@ -111,21 +126,21 @@ function assignLanes(
 }
 
 export function layoutDayEvents(
-  events: CalendarEvent[],
+  segments: DaySegment[],
   window: DayWindow,
   options: { minHeightPct?: number } = {}
 ): DayLayout {
   const minHeightPct = options.minHeightPct ?? DEFAULT_MIN_HEIGHT_PCT
-  const allDay = events.filter((ev) => ev.all_day)
+  const allDay = segments.filter((s) => belongsToAllDayStrip(s.event))
 
-  const items = events
-    .filter((ev) => !ev.all_day)
-    .map((ev) => {
-      const start = minutesOfDay(ev.start_at)
-      return { event: ev, start, end: resolveEndMinutes(ev, start) }
+  const items = segments
+    .filter((s) => !belongsToAllDayStrip(s.event))
+    .map((segment) => {
+      const { startMin, endMin } = segmentMinutes(segment)
+      return { segment, start: startMin, end: endMin }
     })
 
-  const timed = assignLanes(items).map(({ event, start, end, lane, lanes }) => {
+  const timed = assignLanes(items).map(({ segment, start, end, lane, lanes }) => {
     const topPct = ((start - window.startMin) / window.spanMin) * 100
     const rawHeight = ((end - start) / window.spanMin) * 100
 
@@ -137,7 +152,10 @@ export function layoutDayEvents(
     const widthPct = 100 / lanes
 
     return {
-      event,
+      segment,
+      event: segment.event,
+      startMin: start,
+      endMin: end,
       topPct: clampedTop,
       heightPct,
       leftPct: lane * widthPct,

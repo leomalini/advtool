@@ -33,7 +33,12 @@ import { EventForm } from './EventForm'
 import { EventDetailModal } from './EventDetailModal'
 import { MonthGrid } from './MonthGrid'
 import { TimeGrid } from './TimeGrid'
-import { localDayKey } from '../utils/datetime'
+import {
+  effectiveEnd,
+  eventRangeLabel,
+  indexEventsByDay,
+  type DaySegment,
+} from '../utils/daySpan'
 import { Can } from '@/components/shared/Can'
 
 type CalendarView = 'month' | 'week' | 'day'
@@ -55,13 +60,13 @@ interface ProximosEventosProps {
 function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosProps) {
   const eventTypes = useEventTypeMap()
   const hoje = new Date()
-  const em7dias = addDays(hoje, 7)
+  const em7dias = endOfDay(addDays(hoje, 7))
 
+  // "Ainda não terminou", não "ainda não começou": o filtro por início tirava
+  // da lista o evento de hoje assim que a hora dele passava — inclusive o de
+  // dia inteiro — e nunca mostrava o que está em andamento.
   const proximos = eventos
-    .filter((ev) => {
-      const d = parseISO(ev.start_at)
-      return d >= hoje && d <= em7dias
-    })
+    .filter((ev) => effectiveEnd(ev) > hoje && parseISO(ev.start_at) <= em7dias)
     .sort((a, b) => a.start_at.localeCompare(b.start_at))
 
   return (
@@ -98,8 +103,7 @@ function ProximosEventos({ eventos, isLoading, onEventoClick }: ProximosEventosP
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{ev.title}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {format(parseISO(ev.start_at), "dd 'de' MMM", { locale: ptBR })}
-                  {!ev.all_day && ` · ${format(parseISO(ev.start_at), 'HH:mm')}`}
+                  {eventRangeLabel(ev)}
                 </p>
               </div>
               {ev.fatal_deadline && (
@@ -151,21 +155,15 @@ export function AgendaContent() {
   const eventTypes = useEventTypeMap()
   const createEvent = useCreateEvent()
 
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const ev of eventos) {
-      // Dia local: `slice(0, 10)` daria o dia UTC, e um evento das 21h cairia
-      // na célula do dia seguinte.
-      const key = localDayKey(ev.start_at)
-      const list = map.get(key)
-      if (list) list.push(ev)
-      else map.set(key, [ev])
-    }
-    return map
-  }, [eventos])
+  // Cada evento entra em TODOS os dias locais que cobre — antes só no de início,
+  // e "Férias de 1 a 5" sumia dos dias 2 a 5.
+  const eventsByDay = useMemo(
+    () => indexEventsByDay(eventos, days[0], days[days.length - 1]),
+    [eventos, days]
+  )
 
   const getEventosForDay = useCallback(
-    (day: Date): CalendarEvent[] => eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? [],
+    (day: Date): DaySegment[] => eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? [],
     [eventsByDay]
   )
 

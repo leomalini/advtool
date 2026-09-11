@@ -11,13 +11,25 @@ const supabase = createClient()
 // Postgres a lia como UTC, deslocando todo horário em 3 horas.
 const toTimestamp = toInstant
 
+/**
+ * Instante de uma ponta do evento.
+ *
+ * Dia inteiro é gravado à meia-noite local, e o término é a meia-noite do
+ * ÚLTIMO dia (inclusivo) — é essa a convenção que `utils/daySpan.ts` lê para
+ * saber quais dias o evento cobre. Antes o service usava a hora que estivesse
+ * no campo desabilitado, e um evento de dia inteiro podia nascer às 09:00.
+ */
+function edgeInstant(allDay: boolean, date: string, time?: string): string {
+  return allDay ? toTimestamp(date) : toTimestamp(date, time)
+}
+
 // Mapeia EventFormInput → payload do banco
 function toDbPayload(input: EventFormInput, userId: string) {
-  const startAt = toTimestamp(input.start_date, input.start_time)
+  const startAt = edgeInstant(input.all_day, input.start_date, input.start_time)
 
   let endAt = startAt
   if (input.inform_end && input.end_date) {
-    endAt = toTimestamp(input.end_date, input.end_time)
+    endAt = edgeInstant(input.all_day, input.end_date, input.end_time)
   }
 
   const fatalDeadline =
@@ -90,16 +102,17 @@ function toDbPatch(input: Partial<EventFormInput>) {
   set('is_recurring', 'is_recurring')
   set('is_retroactive', 'is_retroactive')
 
+  const allDay = input.all_day === true
   const movesStart = input.start_date !== undefined
   if (movesStart) {
-    patch.start_at = toTimestamp(input.start_date!, input.start_time)
+    patch.start_at = edgeInstant(allDay, input.start_date!, input.start_time)
   }
 
   // The events table enforces `end_at >= start_at`. So whenever the start moves
   // and no explicit end is given, end has to follow it — leaving a stale end
   // behind would violate the constraint at runtime.
   if (input.inform_end && input.end_date) {
-    patch.end_at = toTimestamp(input.end_date, input.end_time)
+    patch.end_at = edgeInstant(allDay, input.end_date, input.end_time)
   } else if (movesStart) {
     patch.end_at = patch.start_at
   }
@@ -181,14 +194,24 @@ const EVENT_SELECT = `
   assignees:event_assignees(profile:profiles(id, full_name, avatar_url, role, created_at))
 `
 
+/**
+ * Eventos da Agenda que tocam o período `[from, to]`.
+ *
+ * Sobreposição, não "começa dentro": filtrar só `start_at` deixava de fora o
+ * evento de vários dias que começou antes do período e ainda está em curso.
+ *
+ * Só os marcados para aparecer na agenda — o `show_in_agenda` do formulário
+ * era gravado e ignorado aqui, enquanto o dashboard já o respeitava.
+ */
 export async function getEvents(from?: string, to?: string): Promise<CalendarEvent[]> {
   let query = supabase
     .from('events')
     .select(EVENT_SELECT)
+    .eq('show_in_agenda', true)
     .order('start_at')
 
-  if (from) query = query.gte('start_at', from)
   if (to) query = query.lte('start_at', to)
+  if (from) query = query.gte('end_at', from)
 
   const { data, error } = await query
   if (error) throw error
@@ -239,14 +262,20 @@ export async function createEvent(input: EventFormInput, userId: string): Promis
 
   if (error) throw error
 
-  // Insere todos os responsáveis na junction table
+  // Insere todos os responsáveis na junction table. O erro era ignorado e o
+  // evento ficava sem ninguém; agora desfaz o evento, para o "Erro ao criar"
+  // da tela corresponder ao que ficou no banco.
   if (input.assignee_ids.length > 0) {
-    await supabase.from('event_assignees').insert(
+    const { error: assigneesError } = await supabase.from('event_assignees').insert(
       input.assignee_ids.map(profileId => ({
         event_id: data.id,
         profile_id: profileId,
       }))
     )
+    if (assigneesError) {
+      await supabase.from('events').delete().eq('id', data.id)
+      throw assigneesError
+    }
   }
 
   await recordActivity({
@@ -330,15 +359,25 @@ export async function updateEvent(input: UpdateEventInput): Promise<void> {
     .single()
   if (error) throw error
 
-  // Atualiza responsáveis: remove todos e reinsere
+  // Atualiza responsáveis: primeiro garante os novos, só depois tira os que
+  // saíram. A versão anterior apagava todos antes de reinserir — se o insert
+  // falhasse, o evento ficava sem responsável nenhum.
   if (rest.assignee_ids && rest.assignee_ids.length > 0) {
-    await supabase.from('event_assignees').delete().eq('event_id', id)
-    await supabase.from('event_assignees').insert(
+    const { error: upsertError } = await supabase.from('event_assignees').upsert(
       rest.assignee_ids.map(profileId => ({
         event_id: id,
         profile_id: profileId,
-      }))
+      })),
+      { onConflict: 'event_id,profile_id', ignoreDuplicates: true }
     )
+    if (upsertError) throw upsertError
+
+    const { error: pruneError } = await supabase
+      .from('event_assignees')
+      .delete()
+      .eq('event_id', id)
+      .not('profile_id', 'in', `(${rest.assignee_ids.join(',')})`)
+    if (pruneError) throw pruneError
   }
 
   // Moving a deadline earlier should reach the card's summary too.

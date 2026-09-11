@@ -7,7 +7,14 @@ import { Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { resolveEventType } from '@/types/event.types'
 import type { CalendarEvent, EventTypeRecord } from '@/types/event.types'
-import { layoutDayEvents, resolveEndMinutes } from '../utils/dayLayout'
+import { layoutDayEvents, segmentMinutes } from '../utils/dayLayout'
+import {
+  belongsToAllDayStrip,
+  compareDaySegments,
+  eventRangeLabel,
+  segmentMarker,
+  type DaySegment,
+} from '../utils/daySpan'
 
 /** Minutos do dia → "HH:mm". 1440 é meia-noite do dia seguinte. */
 function formatMinutes(total: number): string {
@@ -37,7 +44,7 @@ const MIN_HEIGHT_PCT = (HOUR_HEIGHT / 4 / TOTAL_HEIGHT) * 100
 
 interface TimeGridProps {
   days: Date[]
-  getEventosForDay: (day: Date) => CalendarEvent[]
+  getEventosForDay: (day: Date) => DaySegment[]
   eventTypes: Map<string, EventTypeRecord>
   /** Clique num espaço vazio cria evento naquele dia e hora. */
   onSlotClick: (day: Date, hour: number) => void
@@ -87,8 +94,8 @@ export function TimeGrid({
 
     const starts = days
       .flatMap(getEventosForDay)
-      .filter((ev) => !ev.all_day)
-      .map((ev) => new Date(ev.start_at).getHours())
+      .filter((segment) => !belongsToAllDayStrip(segment.event))
+      .map((segment) => Math.floor(segmentMinutes(segment).startMin / 60))
 
     const firstHour = starts.length > 0 ? Math.min(...starts) : 7
     container.scrollTop = Math.max(0, (firstHour - 1) * HOUR_HEIGHT)
@@ -97,7 +104,12 @@ export function TimeGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days[0]?.toISOString(), days.length])
 
-  const allDayByColumn = days.map((day) => getEventosForDay(day).filter((ev) => ev.all_day))
+  // Dia inteiro e eventos de 24h+ — repetidos em cada dia que cobrem.
+  const allDayByColumn = days.map((day) =>
+    getEventosForDay(day)
+      .filter((segment) => belongsToAllDayStrip(segment.event))
+      .sort(compareDaySegments)
+  )
   const hasAllDay = allDayByColumn.some((list) => list.length > 0)
 
   return (
@@ -144,19 +156,36 @@ export function TimeGrid({
                 </span>
               </div>
               {allDayByColumn.map((list, i) => (
-                <div key={i} className="flex-1 min-w-0 p-1 space-y-1 border-r last:border-r-0">
-                  {list.map((ev) => {
+                <div
+                  key={days[i].toISOString()}
+                  className="flex-1 min-w-0 p-1 flex flex-col gap-1 border-r last:border-r-0"
+                >
+                  {list.map((segment) => {
+                    const ev = segment.event
                     const tipo = resolveEventType(eventTypes, ev.type)
+                    // Dia inteiro de um dia só já está na faixa "Dia todo" —
+                    // repetir o rótulo seria ruído.
+                    const marker = ev.all_day ? null : segmentMarker(segment)
                     return (
                       <button
                         key={ev.id}
                         type="button"
                         onClick={() => onEventClick(ev)}
-                        title={`${tipo.label} · dia inteiro · ${ev.title}`}
-                        className="w-full flex items-center gap-1 rounded px-1.5 py-1 text-left hover:brightness-95 transition-all"
+                        title={`${eventRangeLabel(ev)} · ${tipo.label} · ${ev.title}`}
+                        className={cn(
+                          // Sem w-full: esticado pelo flex-col, a margem negativa
+                          // alarga o botão em vez de só deslocá-lo.
+                          'flex min-w-0 items-center gap-1 rounded px-1.5 py-1 text-left hover:brightness-95 transition-all',
+                          // Emendas retas até a borda da coluna: uma barra só.
+                          !segment.isFirstDay && '-ml-1 rounded-l-none',
+                          !segment.isLastDay && '-mr-1 rounded-r-none'
+                        )}
                         style={{ backgroundColor: `${tipo.color}22`, color: tipo.color }}
                       >
-                        <Sun className="h-2.5 w-2.5 shrink-0" />
+                        {segment.isFirstDay && <Sun className="h-2.5 w-2.5 shrink-0" />}
+                        {marker && (
+                          <span className="text-[9px] font-semibold shrink-0">{marker}</span>
+                        )}
                         <span className="text-[11px] font-medium truncate">{ev.title}</span>
                       </button>
                     )
@@ -219,18 +248,23 @@ export function TimeGrid({
                     />
                   ))}
 
-                  {timed.map(({ event: ev, topPct, heightPct, leftPct, widthPct }) => {
+                  {timed.map(({ segment, event: ev, startMin, endMin, topPct, heightPct, leftPct, widthPct }) => {
                     const tipo = resolveEventType(eventTypes, ev.type)
-                    const start = new Date(ev.start_at)
                     const heightPx = (heightPct / 100) * TOTAL_HEIGHT
                     const compact = heightPx < 34
+                    // Pedaço de um evento que atravessa a meia-noite: o rótulo
+                    // mostra o horário real dele, não o recorte da coluna.
+                    const crossesMidnight = !(segment.isFirstDay && segment.isLastDay)
+                    const rangeLabel = crossesMidnight
+                      ? `${format(new Date(ev.start_at), 'HH:mm')} – ${format(new Date(ev.end_at), 'HH:mm')}`
+                      : `${formatMinutes(startMin)} – ${formatMinutes(endMin)}`
 
                     return (
                       <button
                         key={ev.id}
                         type="button"
                         onClick={() => onEventClick(ev)}
-                        title={`${format(start, 'HH:mm')} · ${tipo.label} · ${ev.title}`}
+                        title={`${eventRangeLabel(ev)} · ${tipo.label} · ${ev.title}`}
                         className={cn(
                           'absolute z-10 rounded px-1.5 text-left text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity',
                           // Abaixo de ~14px não sobra altura nem para o padding.
@@ -248,7 +282,9 @@ export function TimeGrid({
                           // Sem altura para duas linhas: hora e título na mesma.
                           <span className="flex items-baseline gap-1 min-w-0">
                             <span className="text-[9px] font-semibold opacity-90 shrink-0">
-                              {format(start, 'HH:mm')}
+                              {crossesMidnight
+                                ? format(new Date(ev.start_at), 'HH:mm')
+                                : formatMinutes(startMin)}
                             </span>
                             <span className="text-[10px] leading-tight truncate">{ev.title}</span>
                           </span>
@@ -260,9 +296,7 @@ export function TimeGrid({
                             {/* O término exibido é o mesmo que o bloco desenha:
                                 sem término informado, a hora implícita. */}
                             <span className="block text-[9px] opacity-90 leading-tight">
-                              {format(start, 'HH:mm')} – {formatMinutes(
-                                resolveEndMinutes(ev, start.getHours() * 60 + start.getMinutes())
-                              )}
+                              {rangeLabel}
                             </span>
                           </>
                         )}

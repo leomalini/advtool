@@ -48,7 +48,23 @@ export const eventFormSchema = z.object({
   recurrence_type: recurrenceTypeSchema.optional(),
   is_retroactive: z.boolean(),
   retroactive_completed_at: z.string().optional(),
-})
+}).refine(
+  (data) => {
+    if (!data.inform_end || !data.end_date) return true
+    // Dia inteiro compara só as datas: o término é o último dia, inclusivo.
+    // Strings yyyy-MM-dd / HH:mm ordenam como as datas que representam.
+    if (data.all_day) return data.end_date >= data.start_date
+    const start = `${data.start_date}T${data.start_time || '00:00'}`
+    const end = `${data.end_date}T${data.end_time || '00:00'}`
+    return end >= start
+  },
+  {
+    // Antes só o CHECK do banco pegava isso, e a tela mostrava um "Erro ao
+    // criar evento" sem dizer o motivo.
+    message: 'O término não pode ser antes do início',
+    path: ['end_date'],
+  }
+)
 
 export type EventFormInput = z.infer<typeof eventFormSchema>
 

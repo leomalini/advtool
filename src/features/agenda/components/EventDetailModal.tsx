@@ -29,6 +29,7 @@ import { resolveEventType } from "@/types/event.types";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { CalendarEvent } from "@/types/event.types";
 import { formatDateTime } from "@/utils/date";
+import { eventRangeLabel } from "../utils/daySpan";
 import { useDeleteEvent, useUpdateEvent } from "../hooks/useEventMutations";
 import { EventForm } from "./EventForm";
 import { eventToFormValues } from "../services/events.service";
@@ -133,12 +134,9 @@ export function EventDetailModal({
               {/* Date summary */}
               <div className="flex items-center gap-1.5 mt-2.5 text-[12px] text-muted-foreground">
                 <Clock className="h-3.5 w-3.5" />
-                <span>{formatDateTime(event.start_at)}</span>
-                {event.start_at !== event.end_at && (
-                  <span className="opacity-60">
-                    → {formatDateTime(event.end_at)}
-                  </span>
-                )}
+                {/* Mesma leitura da grade: dia inteiro sem hora, vários dias
+                    com as duas pontas. */}
+                <span>{eventRangeLabel(event)}</span>
                 {event.all_day && (
                   <span className="ml-1 text-[10px] bg-muted px-1.5 py-0.5 rounded">
                     dia inteiro

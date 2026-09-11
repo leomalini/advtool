@@ -117,6 +117,7 @@ export function EventForm({
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     control,
     formState: { errors },
@@ -348,16 +349,16 @@ export function EventForm({
                 </div>
               </div>
 
-              {/* Option toggles */}
+              {/* Option toggles. "Dia inteiro" e "Informar término" convivem:
+                  é assim que se agenda "Férias de 1 a 5". Antes ligar o
+                  término escondia e desligava o dia inteiro. */}
               <div className="flex flex-wrap gap-2 pt-0.5">
                 {[
                   {
                     field: "show_in_agenda" as const,
                     label: "Mostrar na agenda",
                   },
-                  ...(!informEnd
-                    ? [{ field: "all_day" as const, label: "Dia inteiro" }]
-                    : []),
+                  { field: "all_day" as const, label: "Dia inteiro" },
                   { field: "inform_end" as const, label: "Informar término" },
                 ].map(({ field, label }) => {
                   const active = watch(field);
@@ -366,8 +367,10 @@ export function EventForm({
                       key={field}
                       type="button"
                       onClick={() => {
-                        if (field === "inform_end" && !active)
-                          setValue("all_day", false);
+                        // Término começa no mesmo dia do início: o caso comum
+                        // é estender alguns dias, não digitar a data do zero.
+                        if (field === "inform_end" && !active && !getValues("end_date"))
+                          setValue("end_date", getValues("start_date"));
                         setValue(field, !active);
                       }}
                       className={cn(
@@ -387,20 +390,26 @@ export function EventForm({
               {/* End date/time (conditional) */}
               {informEnd && (
                 <div className="grid grid-cols-2 gap-4 pl-3 border-l-2 border-primary/20">
-                  <FormField label="Data de término">
+                  <FormField
+                    label={allDay ? "Último dia" : "Data de término"}
+                    error={errors.end_date?.message}
+                  >
                     <Input
                       type="date"
                       {...register("end_date")}
                       className="h-9 text-sm"
                     />
                   </FormField>
-                  <FormField label="Hora de término">
-                    <Input
-                      type="time"
-                      {...register("end_time")}
-                      className="h-9 text-sm"
-                    />
-                  </FormField>
+                  {/* Dia inteiro termina no fim do último dia — hora não se aplica. */}
+                  {!allDay && (
+                    <FormField label="Hora de término">
+                      <Input
+                        type="time"
+                        {...register("end_time")}
+                        className="h-9 text-sm"
+                      />
+                    </FormField>
+                  )}
                 </div>
               )}
             </div>

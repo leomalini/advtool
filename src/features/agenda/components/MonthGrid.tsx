@@ -5,6 +5,12 @@ import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import { resolveEventType } from '@/types/event.types'
 import type { CalendarEvent, EventTypeRecord } from '@/types/event.types'
+import {
+  compareDaySegments,
+  eventRangeLabel,
+  segmentMarker,
+  type DaySegment,
+} from '../utils/daySpan'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
@@ -14,7 +20,7 @@ const MAX_VISIBLE = 4
 interface MonthGridProps {
   days: Date[]
   currentDate: Date
-  getEventosForDay: (day: Date) => CalendarEvent[]
+  getEventosForDay: (day: Date) => DaySegment[]
   eventTypes: Map<string, EventTypeRecord>
   onDayClick: (day: Date) => void
   onEventClick: (ev: CalendarEvent) => void
@@ -22,14 +28,14 @@ interface MonthGridProps {
 
 function DayCell({
   day,
-  eventos,
+  segments,
   currentDate,
   eventTypes,
   onDayClick,
   onEventClick,
 }: {
   day: Date
-  eventos: CalendarEvent[]
+  segments: DaySegment[]
   currentDate: Date
   eventTypes: Map<string, EventTypeRecord>
   onDayClick: (day: Date) => void
@@ -38,12 +44,9 @@ function DayCell({
   const isCurrentMonth = isSameMonth(day, currentDate)
   const isTodayDay = isToday(day)
 
-  // Dia todo primeiro, depois os demais em ordem de relógio: é a leitura
-  // natural do dia, e o de dia inteiro é o que enquadra todos os outros.
-  const ordered = [
-    ...eventos.filter((ev) => ev.all_day),
-    ...eventos.filter((ev) => !ev.all_day).sort((a, b) => a.start_at.localeCompare(b.start_at)),
-  ]
+  // Vários dias primeiro, depois dia inteiro, depois por horário: a mesma
+  // ordem em todas as células mantém a barra de vários dias na mesma altura.
+  const ordered = [...segments].sort(compareDaySegments)
 
   const visible = ordered.slice(0, MAX_VISIBLE)
   const hidden = ordered.length - visible.length
@@ -77,15 +80,18 @@ function DayCell({
         >
           {format(day, 'd')}
         </div>
-
       </div>
 
-      {/* Linhas de evento — o de dia todo é apenas o primeiro da lista, com
-          "Dia todo" ocupando o lugar do horário. */}
-      <div className="flex-1 min-h-0 m-1 mt-0.5 flex flex-col gap-0.5 overflow-hidden">
-        {visible.map((ev) => {
+      {/* Padding, não margem: a barra de vários dias usa margem negativa para
+          encostar na borda da célula, e o overflow-hidden só recorta o que
+          passa do padding. */}
+      <div className="flex-1 min-h-0 px-1 pb-1 pt-0.5 flex flex-col gap-0.5 overflow-hidden">
+        {visible.map((segment) => {
+          const ev = segment.event
           const tipo = resolveEventType(eventTypes, ev.type)
-          const marker = ev.all_day ? 'Dia todo' : format(new Date(ev.start_at), 'HH:mm')
+          const marker = segmentMarker(segment)
+          const continuesBefore = !segment.isFirstDay
+          const continuesAfter = !segment.isLastDay
 
           return (
             <button
@@ -95,11 +101,19 @@ function DayCell({
                 e.stopPropagation()
                 onEventClick(ev)
               }}
-              title={`${marker} · ${tipo.label} · ${ev.title}`}
-              className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-left text-white hover:opacity-90 transition-opacity"
+              title={`${eventRangeLabel(ev)} · ${tipo.label} · ${ev.title}`}
+              className={cn(
+                'flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-left text-white hover:opacity-90 transition-opacity',
+                // Emendas retas até a borda: lido como uma barra só
+                // atravessando os dias, como no Google Agenda.
+                continuesBefore && '-ml-1 rounded-l-none pl-2',
+                continuesAfter && '-mr-1 rounded-r-none'
+              )}
               style={{ backgroundColor: tipo.color }}
             >
-              <span className="text-[9px] font-semibold opacity-90 shrink-0">{marker}</span>
+              {marker && (
+                <span className="text-[9px] font-semibold opacity-90 shrink-0">{marker}</span>
+              )}
               <span className="text-[10px] leading-tight truncate">{ev.title}</span>
             </button>
           )
@@ -135,11 +149,11 @@ export function MonthGrid({
       </div>
 
       <div className="grid grid-cols-7">
-        {days.map((day, i) => (
+        {days.map((day) => (
           <DayCell
-            key={i}
+            key={day.toISOString()}
             day={day}
-            eventos={getEventosForDay(day)}
+            segments={getEventosForDay(day)}
             currentDate={currentDate}
             eventTypes={eventTypes}
             onDayClick={onDayClick}

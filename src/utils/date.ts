@@ -1,8 +1,18 @@
-import { format, formatDistanceToNow, isToday, isTomorrow, isYesterday } from 'date-fns'
+import { format, formatDistanceToNow, isToday, isTomorrow, isYesterday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
+/** Coluna `date` (yyyy-MM-dd) não tem fuso: `new Date('2026-09-10')` a lê como
+ * meia-noite UTC, que no Brasil ainda é o dia 9 — a data limite da tarefa
+ * aparecia um dia antes. `parseISO` lê a data-só como meia-noite local. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
+function toDate(date: string | Date): Date {
+  if (typeof date === 'string' && DATE_ONLY.test(date)) return parseISO(date)
+  return new Date(date)
+}
+
 export function formatDate(date: string | Date): string {
-  return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR })
+  return format(toDate(date), 'dd/MM/yyyy', { locale: ptBR })
 }
 
 export function formatDateTime(date: string | Date): string {
