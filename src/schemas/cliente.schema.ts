@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { crmTagSchema } from './crmItem.schema'
 
 export const LEGAL_AREAS = [
   'trabalhista',
@@ -110,7 +111,7 @@ export const createIndividualClientSchema = qualificationSchema
   .extend({
     addresses: addressListSchema,
     type: z.literal('individual'),
-    tags: z.array(z.string()).optional(),
+    tags: z.array(crmTagSchema).optional(),
     name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres').max(150),
     cpf: z.string().regex(CPF_REGEX, 'CPF inválido (formato: 000.000.000-00)'),
     // Lista, e não valor único: um mesmo cliente tem processos em várias áreas,
@@ -127,7 +128,7 @@ export const createCompanyClientSchema = z
   .object({
     addresses: addressListSchema,
     type: z.literal('company'),
-    tags: z.array(z.string()).optional(),
+    tags: z.array(crmTagSchema).optional(),
     company_name: z.string().min(2, 'Razão Social deve ter ao menos 2 caracteres').max(200),
     trade_name: z.string().max(200).optional(),
     cnpj: z.string().regex(CNPJ_REGEX, 'CNPJ inválido (formato: 00.000.000/0001-00)'),

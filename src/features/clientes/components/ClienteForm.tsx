@@ -852,10 +852,14 @@ function PFForm({
         {/* ── Etiquetas ─────────────────────────────────────────── */}
         <section>
           <SectionDivider icon={Tag}>Etiquetas</SectionDivider>
+          {/* `allowCreate` como no cadastro de processo: a lista de fábrica
+              não cobre o vocabulário de cada escritório, e obrigar a sair do
+              formulário para criar uma etiqueta é o que faz ninguém usar. */}
           <TagToggle
             tags={CRM_TAGS}
             value={(form.watch('tags') ?? []) as CrmTag[]}
             onChange={(tags) => form.setValue('tags', tags)}
+            allowCreate
           />
         </section>
 
@@ -1070,10 +1074,14 @@ function PJForm({
         {/* ── Etiquetas ─────────────────────────────────────────── */}
         <section>
           <SectionDivider icon={Tag}>Etiquetas</SectionDivider>
+          {/* `allowCreate` como no cadastro de processo: a lista de fábrica
+              não cobre o vocabulário de cada escritório, e obrigar a sair do
+              formulário para criar uma etiqueta é o que faz ninguém usar. */}
           <TagToggle
             tags={CRM_TAGS}
             value={(form.watch('tags') ?? []) as CrmTag[]}
             onChange={(tags) => form.setValue('tags', tags)}
+            allowCreate
           />
         </section>
 
