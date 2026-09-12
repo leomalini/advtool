@@ -67,6 +67,23 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
   return out as T
 }
 
+/** Endereço em que ninguém digitou nada não vira linha.
+ *
+ * O formulário abre com um cartão em branco para o caso comum de haver um
+ * endereço só; salvar sem preencher criaria um registro fantasma, que a tela
+ * de pendências contaria como "tem endereço". */
+function hasAddressContent(address: AddressInput): boolean {
+  return [
+    address.street,
+    address.number,
+    address.complement,
+    address.neighborhood,
+    address.city,
+    address.state,
+    address.zip,
+  ].some((value) => typeof value === 'string' && value.trim() !== '')
+}
+
 /** Grava as filhas do cliente (contatos e endereços).
  *
  * O erro sobe: um endereço recusado pela RLS não pode sumir em silêncio, senão
@@ -83,10 +100,19 @@ async function insertChildren(
     if (error) throw error
   }
 
-  if (addresses && addresses.length > 0) {
-    const { error } = await supabase
-      .from('client_addresses')
-      .insert(addresses.map((a) => ({ ...nullifyEmpty(a), client_id: clientId })))
+  const filled = (addresses ?? []).filter(hasAddressContent)
+  if (filled.length > 0) {
+    // O principal pode ter sido justamente o cartão em branco descartado
+    // acima. Sem isto o cliente ficaria com endereços e nenhum marcado, e a
+    // qualificação teria de adivinhar qual usar.
+    const hasPrimary = filled.some((a) => a.is_primary)
+    const { error } = await supabase.from('client_addresses').insert(
+      filled.map((a, i) => ({
+        ...nullifyEmpty(a),
+        is_primary: hasPrimary ? a.is_primary : i === 0,
+        client_id: clientId,
+      }))
+    )
     if (error) throw error
   }
 }

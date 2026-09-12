@@ -2,7 +2,13 @@
 
 import { useState } from 'react'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { useForm, useFieldArray, useWatch, type Control } from 'react-hook-form'
+import {
+  useForm,
+  useFieldArray,
+  useWatch,
+  type Control,
+  type UseFieldArrayReturn,
+} from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Loader2,
@@ -325,7 +331,14 @@ function emptyAddress(kind: AddressKind, isPrimary: boolean): AddressInput {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AddressArray = UseFieldArrayReturn<any, 'addresses', 'id'>
+
 interface AddressFieldsProps {
+  /** O array vive no formulário, não aqui: a busca por CNPJ precisa criar o
+   * primeiro endereço, e `setValue` num nome de field array não avisa o
+   * `useFieldArray` — a linha nova não apareceria. */
+  array: AddressArray
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   control: Control<any>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,9 +354,10 @@ interface AddressFieldsProps {
 }
 
 /** Lista de endereços do cliente — um residencial, um de correspondência, o
- * que for. Espelha o `ContactFields`: mesma mecânica de `useFieldArray`, e
- * substitui as duas seções de endereço que eram copiadas entre PF e PJ. */
+ * que for. Espelha o `ContactFields` e substitui as duas seções de endereço
+ * que eram copiadas linha a linha entre PF e PJ. */
 function AddressFields({
+  array,
   control,
   register,
   setValue,
@@ -351,7 +365,7 @@ function AddressFields({
   complementPlaceholder,
   defaultKind,
 }: AddressFieldsProps) {
-  const { fields, append, replace } = useFieldArray({ control, name: 'addresses' })
+  const { fields, append, replace } = array
   const addresses = (useWatch({ control, name: 'addresses' }) ?? []) as AddressInput[]
 
   /** Erro da lista inteira (nenhum principal marcado), não de um campo. */
@@ -623,7 +637,13 @@ function PFForm({
       rg: defaultValues?.rg ?? '',
       rg_issuer: defaultValues?.rg_issuer ?? '',
       tags: defaultValues?.tags ?? [],
-      addresses: toAddressInputs(defaultValues?.addresses),
+      // Sem endereço nenhum, abre com um cartão em branco: era assim antes da
+      // migration 54, e exigir um clique em "Adicionar endereço" para o caso
+      // mais comum só acrescenta um passo. Cartão que ficar vazio não é
+      // gravado — ver `hasAddressContent` no serviço.
+      addresses: defaultValues?.addresses?.length
+        ? toAddressInputs(defaultValues.addresses)
+        : [emptyAddress(defaultValues?.type === 'company' ? 'comercial' : 'residencial', true)],
       notes: defaultValues?.notes ?? '',
       contacts: defaultValues?.contacts?.map((c) => ({
         type: c.type,
@@ -633,6 +653,9 @@ function PFForm({
       })) ?? [],
     },
   })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addressArray = useFieldArray({ control: form.control as any, name: 'addresses' })
 
   async function handleCpfSearch() {
     const cpf = form.getValues('cpf')?.replace(/\D/g, '') ?? ''
@@ -839,6 +862,7 @@ function PFForm({
           <SectionDivider icon={MapPin}>Endereços</SectionDivider>
           {/* eslint-disable @typescript-eslint/no-explicit-any */}
           <AddressFields
+            array={addressArray}
             control={form.control as any}
             register={form.register as any}
             setValue={form.setValue as any}
@@ -908,7 +932,13 @@ function PJForm({
       email: defaultValues?.email ?? '',
       legal_areas: defaultValues?.legal_areas ?? [],
       tags: defaultValues?.tags ?? [],
-      addresses: toAddressInputs(defaultValues?.addresses),
+      // Sem endereço nenhum, abre com um cartão em branco: era assim antes da
+      // migration 54, e exigir um clique em "Adicionar endereço" para o caso
+      // mais comum só acrescenta um passo. Cartão que ficar vazio não é
+      // gravado — ver `hasAddressContent` no serviço.
+      addresses: defaultValues?.addresses?.length
+        ? toAddressInputs(defaultValues.addresses)
+        : [emptyAddress(defaultValues?.type === 'company' ? 'comercial' : 'residencial', true)],
       notes: defaultValues?.notes ?? '',
       contacts: defaultValues?.contacts?.map((c) => ({
         type: c.type,
@@ -918,6 +948,9 @@ function PJForm({
       })) ?? [],
     },
   })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addressArray = useFieldArray({ control: form.control as any, name: 'addresses' })
 
   async function handleCnpjSearch() {
     const cnpj = form.getValues('cnpj')?.replace(/\D/g, '') ?? ''
@@ -943,7 +976,10 @@ function PJForm({
       // ainda está vazia — mesmo efeito observável de antes da migration 54.
       const current = (form.getValues('addresses') ?? []) as AddressInput[]
       const [first = emptyAddress('comercial', true), ...rest] = current
-      form.setValue('addresses', [
+      // `replace` do field array, e não `setValue`: quando a lista está vazia
+      // esta chamada CRIA uma linha, e `setValue` num nome de field array não
+      // avisa o `useFieldArray` — o endereço entraria no estado sem aparecer.
+      addressArray.replace([
         {
           ...first,
           street: data.address_street || first.street,
@@ -1061,6 +1097,7 @@ function PJForm({
           <SectionDivider icon={MapPin}>Endereços</SectionDivider>
           {/* eslint-disable @typescript-eslint/no-explicit-any */}
           <AddressFields
+            array={addressArray}
             control={form.control as any}
             register={form.register as any}
             setValue={form.setValue as any}
