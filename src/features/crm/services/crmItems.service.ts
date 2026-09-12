@@ -11,7 +11,7 @@ const supabase = createClient()
 
 const CRM_ITEM_SELECT = `
   *,
-  client:clients(id, type, name, company_name, trade_name, phone, email, legal_area),
+  client:clients(id, type, name, company_name, trade_name, phone, email),
   assigned_profile:profiles!crm_items_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
   legal_process:legal_processes(id, cnj_number, court)
 `

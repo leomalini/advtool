@@ -104,7 +104,7 @@ export async function deleteClientRecord(id: string): Promise<void> {
 export async function getClientsPendencies(): Promise<ClientPendency[]> {
   const { data, error } = await supabase
     .from('clients')
-    .select('id, type, name, company_name, trade_name, cpf, cnpj, phone, email, legal_area')
+    .select('id, type, name, company_name, trade_name, cpf, cnpj, phone, email, legal_areas')
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -121,7 +121,7 @@ export async function getClientsPendencies(): Promise<ClientPendency[]> {
     if (!c.phone && !c.email) missing.push('Contato (telefone ou email)')
     if (!c.phone) missing.push('Telefone')
     if (!c.email) missing.push('E-mail')
-    if (!c.legal_area) missing.push('Área jurídica')
+    if (!c.legal_areas?.length) missing.push('Área jurídica')
 
     if (missing.length > 0) {
       pendencies.push({

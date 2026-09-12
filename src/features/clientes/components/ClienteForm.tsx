@@ -31,7 +31,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { NONE_VALUE, toSelectValue, fromSelectValue } from '@/utils/select'
 import { cn } from '@/lib/utils'
@@ -45,7 +44,12 @@ import {
 } from '@/schemas/cliente.schema'
 import { CRM_TAGS, type CrmTag } from '@/schemas/crmItem.schema'
 import { TagToggle } from '@/components/shared/TagToggle'
-import type { ClientWithRelations, ClientSex, MaritalStatus } from '@/types/cliente.types'
+import type {
+  ClientWithRelations,
+  ClientSex,
+  LegalArea,
+  MaritalStatus,
+} from '@/types/cliente.types'
 import {
   getClientDisplayName,
   SEX_LABELS,
@@ -151,33 +155,45 @@ function TypeToggle({ value, onChange }: { value: ClientType; onChange: (t: Clie
   )
 }
 
-// ── Área Jurídica select (shared between PF/PJ) ──────────────────────────────
+// ── Áreas Jurídicas (shared between PF/PJ) ───────────────────────────────────
 
-function LegalAreaSelect({
+/** Seletor de áreas em chips, no lugar do select de valor único que existia
+ * até a migration 53. A alternância é a mesma do `TagToggle`: clicar liga e
+ * desliga. Nenhuma área selecionada é um estado válido — "não definida". */
+function LegalAreasToggle({
   value,
   onChange,
 }: {
-  value: (typeof LEGAL_AREAS)[number] | null | undefined
-  onChange: (v: (typeof LEGAL_AREAS)[number] | null) => void
+  value: LegalArea[]
+  onChange: (areas: LegalArea[]) => void
 }) {
-  const label = value ? AREAS_JURIDICAS[value]?.label : undefined
+  function toggle(area: LegalArea) {
+    onChange(value.includes(area) ? value.filter((a) => a !== area) : [...value, area])
+  }
+
   return (
-    <Select
-      value={toSelectValue(value)}
-      onValueChange={(v) => onChange(fromSelectValue(v) as (typeof LEGAL_AREAS)[number] | null)}
-    >
-      <SelectTrigger className="w-full text-sm bg-card">
-        {label ? <span className="truncate text-sm">{label}</span> : <SelectValue placeholder="Selecionar área..." />}
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NONE_VALUE}>Não definida</SelectItem>
-        {LEGAL_AREAS.map((area) => (
-          <SelectItem key={area} value={area}>
-            {AREAS_JURIDICAS[area].label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {LEGAL_AREAS.map((area) => {
+        const meta = AREAS_JURIDICAS[area]
+        const active = value.includes(area)
+        return (
+          <button
+            key={area}
+            type="button"
+            onClick={() => toggle(area)}
+            aria-pressed={active}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
+              active
+                ? cn(meta.bg, meta.color, 'border-transparent')
+                : 'bg-card border-border text-muted-foreground hover:border-border hover:bg-muted/40',
+            )}
+          >
+            {meta.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -280,8 +296,8 @@ function FormShell({
   onClose,
   type,
   onTypeChange,
-  legalArea,
-  onLegalAreaChange,
+  legalAreas,
+  onLegalAreasChange,
   children,
 }: {
   title: string
@@ -290,8 +306,8 @@ function FormShell({
   onClose: () => void
   type: ClientType
   onTypeChange: (t: ClientType) => void
-  legalArea: (typeof LEGAL_AREAS)[number] | null | undefined
-  onLegalAreaChange: (v: (typeof LEGAL_AREAS)[number] | null) => void
+  legalAreas: LegalArea[]
+  onLegalAreasChange: (areas: LegalArea[]) => void
   children: React.ReactNode
 }) {
   return (
@@ -317,16 +333,18 @@ function FormShell({
         <div className="p-6 space-y-8">
           <section>
             <SectionDivider icon={Tag}>Classificação</SectionDivider>
-            <div className={cn('grid gap-4', isEditing ? 'grid-cols-1 max-w-xs' : 'grid-cols-2')}>
+            {/* Empilhado, e não lado a lado: os sete chips de área não cabem
+                em meia coluna sem quebrar em três linhas. */}
+            <div className="space-y-4">
               {!isEditing && (
-                <div>
+                <div className="max-w-sm">
                   <FieldLabel required>Tipo de Cliente</FieldLabel>
                   <TypeToggle value={type} onChange={onTypeChange} />
                 </div>
               )}
               <div>
-                <FieldLabel>Área Jurídica</FieldLabel>
-                <LegalAreaSelect value={legalArea} onChange={onLegalAreaChange} />
+                <FieldLabel>Áreas Jurídicas</FieldLabel>
+                <LegalAreasToggle value={legalAreas} onChange={onLegalAreasChange} />
               </div>
             </div>
           </section>
@@ -369,7 +387,7 @@ function PFForm({
       cpf: defaultValues?.cpf ?? '',
       phone: defaultValues?.phone ?? '',
       email: defaultValues?.email ?? '',
-      legal_area: defaultValues?.legal_area ?? undefined,
+      legal_areas: defaultValues?.legal_areas ?? [],
       birth_date: defaultValues?.birth_date ?? '',
       sex: defaultValues?.sex ?? null,
       nationality: defaultValues?.nationality ?? '',
@@ -448,8 +466,8 @@ function PFForm({
         onClose={onClose}
         type={type}
         onTypeChange={onTypeChange}
-        legalArea={form.watch('legal_area')}
-        onLegalAreaChange={(v) => form.setValue('legal_area', v ?? undefined, { shouldValidate: form.formState.isSubmitted })}
+        legalAreas={form.watch('legal_areas') ?? []}
+        onLegalAreasChange={(areas) => form.setValue('legal_areas', areas)}
       >
         {/* ── Identificação ─────────────────────────────────────── */}
         <section>
@@ -708,7 +726,7 @@ function PJForm({
       contact_person: defaultValues?.contact_person ?? '',
       phone: defaultValues?.phone ?? '',
       email: defaultValues?.email ?? '',
-      legal_area: defaultValues?.legal_area ?? undefined,
+      legal_areas: defaultValues?.legal_areas ?? [],
       tags: defaultValues?.tags ?? [],
       address_street: defaultValues?.address_street ?? '',
       address_number: defaultValues?.address_number ?? '',
@@ -793,8 +811,8 @@ function PJForm({
         onClose={onClose}
         type={type}
         onTypeChange={onTypeChange}
-        legalArea={form.watch('legal_area')}
-        onLegalAreaChange={(v) => form.setValue('legal_area', v ?? undefined, { shouldValidate: form.formState.isSubmitted })}
+        legalAreas={form.watch('legal_areas') ?? []}
+        onLegalAreasChange={(areas) => form.setValue('legal_areas', areas)}
       >
         {/* ── Identificação ─────────────────────────────────────── */}
         <section>

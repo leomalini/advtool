@@ -65,7 +65,10 @@ export interface ClientContact {
 
 interface ClientBase extends BaseEntity {
   type: ClientType
-  legal_area: LegalArea | null
+  /** Áreas em que o escritório atende este cliente. Plural desde a migration
+   * 53: um mesmo cliente costuma ter processos em mais de uma. Vazio = não
+   * definida. Não confundir com `crm_items.legal_area`, que é a área do caso. */
+  legal_areas: LegalArea[]
   phone: string | null
   email: string | null
   address_street: string | null

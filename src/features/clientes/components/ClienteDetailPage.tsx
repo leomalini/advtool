@@ -27,8 +27,6 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { AREAS_JURIDICAS } from '@/data/mock'
-import type { AreaJuridica } from '@/data/mock'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import type { CreateTaskInput } from '@/schemas/task.schema'
@@ -47,6 +45,7 @@ import { useCliente, useClientComments, useClientesPendencies } from '../hooks/u
 import { useUpdateCliente } from '../hooks/useClienteMutations'
 import { buildQualificacao, getClientAge } from '../utils/qualificacao'
 import { ClienteForm } from './ClienteForm'
+import { LegalAreaBadges } from './LegalAreaBadges'
 import { ClientComments } from './ClientComments'
 import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalProcesses'
 import { useCrmItemsByClient } from '@/features/crm/hooks/useCrmItems'
@@ -155,7 +154,7 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
   const isPF = cliente.type === 'individual'
   const qualificacao = buildQualificacao(cliente)
   const age = getClientAge(cliente.birth_date)
-  const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area as AreaJuridica] : null
+  const areas = cliente.legal_areas ?? []
 
   const address = [
     [cliente.address_street, cliente.address_number].filter(Boolean).join(', nº '),
@@ -250,20 +249,8 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
         {!isPF && cliente.contact_person && (
           <DataRow label="Contato responsável">{cliente.contact_person}</DataRow>
         )}
-        <DataRow label="Área jurídica">
-          {area ? (
-            <span
-              className={cn(
-                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                area.bg,
-                area.color
-              )}
-            >
-              {area.label}
-            </span>
-          ) : (
-            '—'
-          )}
+        <DataRow label={areas.length > 1 ? 'Áreas jurídicas' : 'Área jurídica'}>
+          <LegalAreaBadges areas={areas} empty="—" />
         </DataRow>
         <DataRow label="Advogado responsável">
           {cliente.assignee ? cliente.assignee.full_name : '—'}
@@ -570,7 +557,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   const name = getClientDisplayName(cliente)
   const document = getClientDocument(cliente)
   const age = getClientAge(cliente.birth_date)
-  const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area as AreaJuridica] : null
+  const areas = cliente.legal_areas ?? []
   const tags = (cliente.tags ?? []) as CrmTag[]
   const tarefasPendentes = tarefas.filter((t) => t.status !== 'done').length
 
@@ -619,17 +606,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                     <span className="text-sm text-muted-foreground">
                       {cliente.type === 'company' ? 'Pessoa Jurídica' : 'Pessoa Física'}
                     </span>
-                    {area && (
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                          area.bg,
-                          area.color
-                        )}
-                      >
-                        {area.label}
-                      </span>
-                    )}
+                    <LegalAreaBadges areas={areas} />
                   </div>
                 </div>
               </div>

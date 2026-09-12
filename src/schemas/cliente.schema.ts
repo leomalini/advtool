@@ -83,9 +83,9 @@ export const createIndividualClientSchema = addressSchema
     tags: z.array(z.string()).optional(),
     name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres').max(150),
     cpf: z.string().regex(CPF_REGEX, 'CPF inválido (formato: 000.000.000-00)'),
-    // Optional — um mesmo cliente pode ter processos em várias áreas jurídicas,
-    // então a área não é uma propriedade fixa do cliente.
-    legal_area: z.enum(LEGAL_AREAS).optional().nullable(),
+    // Lista, e não valor único: um mesmo cliente tem processos em várias áreas,
+    // então a área nunca foi uma propriedade fixa do cadastro. Vazia é válido.
+    legal_areas: z.array(z.enum(LEGAL_AREAS)).optional(),
     phone: optionalPhoneField,
     email: z.string().email('E-mail inválido').optional().or(z.literal('')),
     notes: z.string().max(2000).optional(),
@@ -101,7 +101,7 @@ export const createCompanyClientSchema = addressSchema
     trade_name: z.string().max(200).optional(),
     cnpj: z.string().regex(CNPJ_REGEX, 'CNPJ inválido (formato: 00.000.000/0001-00)'),
     contact_person: z.string().max(150).optional(),
-    legal_area: z.enum(LEGAL_AREAS).optional().nullable(),
+    legal_areas: z.array(z.enum(LEGAL_AREAS)).optional(),
     phone: optionalPhoneField,
     email: z.string().email('E-mail inválido').optional().or(z.literal('')),
     notes: z.string().max(2000).optional(),
