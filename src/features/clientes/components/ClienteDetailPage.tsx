@@ -47,6 +47,7 @@ import { useUpdateCliente } from '../hooks/useClienteMutations'
 import { buildQualificacao, formatAddressLine, getClientAge } from '../utils/qualificacao'
 import { ClienteForm } from './ClienteForm'
 import { LegalAreaBadges } from './LegalAreaBadges'
+import { IssueList, PendencyHeaderBadge, faltamLabel } from './PendencyBadge'
 import { ClientComments } from './ClientComments'
 import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalProcesses'
 import { useCrmItemsByClient } from '@/features/crm/hooks/useCrmItems'
@@ -497,26 +498,11 @@ function PendenciasTab({ clientId, onEdit }: { clientId: string; onEdit: () => v
         <AlertTriangle className="w-4 h-4 shrink-0 text-warning mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">
-            {pendency.issues.length} campo
-            {pendency.issues.length !== 1 ? 's' : ''} em falta
+            {faltamLabel(pendency.issues.length)}
           </p>
-          <ul className="mt-1.5 space-y-0.5">
-            {pendency.issues.map((issue) => (
-              <li
-                key={issue.kind}
-                className={cn(
-                  'text-xs',
-                  // O que trava o trabalho fica em vermelho aqui também, para
-                  // a aba concordar com a tela de pendências.
-                  issue.severity === 'high'
-                    ? 'font-medium text-destructive'
-                    : 'text-muted-foreground'
-                )}
-              >
-                · {issue.label}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-1.5">
+            <IssueList issues={pendency.issues} />
+          </div>
         </div>
         <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={onEdit}>
           <Pencil className="h-3 w-3 mr-1" />
@@ -544,6 +530,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   // divergir do que a aba mostra ao ser aberta.
   const { data: tarefas = [] } = useTasksForEntity({ clientId: clienteId })
   const { data: notas = [] } = useClientComments(clienteId)
+
+  // Mesma query da aba de Pendências — o React Query serve as duas do mesmo
+  // cache, então o aviso do cabeçalho não tem como discordar do que a aba
+  // mostra ao ser aberta.
+  const { data: pendencies = [] } = useClientesPendencies()
+  const pendency = pendencies.find((p) => p.clientId === clienteId)
 
   async function handleEditSubmit(data: CreateClientInput) {
     await updateCliente.mutateAsync(data)
@@ -610,6 +602,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
+                    {pendency && (
+                      <PendencyHeaderBadge
+                        pendency={pendency}
+                        onOpen={() => setTab('pendencias')}
+                      />
+                    )}
                     <h1 className="text-xl font-bold tracking-tight truncate">{name}</h1>
                     <button
                       type="button"
@@ -741,7 +739,17 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                       : 'border-transparent text-muted-foreground hover:text-foreground/80'
                   )}
                 >
-                  {t.label}
+                  <span className="inline-flex items-center gap-1.5">
+                    {t.label}
+                    {/* Bolinha só na aba de Pendências: é a única cujo conteúdo
+                        muda sem ninguém ter feito nada no cadastro. */}
+                    {t.id === 'pendencias' && pendency && (
+                      <span
+                        aria-hidden
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                      />
+                    )}
+                  </span>
                 </button>
               ))}
             </div>
