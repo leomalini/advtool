@@ -24,7 +24,7 @@
 
 ### Implementado ✅
 
-- Listagem com filtros (área jurídica, busca)
+- Listagem com filtros (área jurídica — múltipla desde a migration 53, busca)
 - Cadastro PF/PJ com múltiplos contatos (useFieldArray)
 - Edição e exclusão com confirmação
 - CNPJ lookup via BrasilAPI (`/api/cnpj`)
