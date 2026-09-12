@@ -1,4 +1,9 @@
-import type { ClientWithRelations, MaritalStatus, ClientSex } from '@/types/cliente.types'
+import type {
+  ClientAddress,
+  ClientWithRelations,
+  MaritalStatus,
+  ClientSex,
+} from '@/types/cliente.types'
 import { formatDocument } from '@/utils/format'
 
 /**
@@ -21,24 +26,31 @@ function agree(sex: ClientSex | null, masculine: string, feminine: string): stri
   return sex === 'feminino' ? feminine : masculine
 }
 
+/**
+ * O endereço que vai para a petição.
+ *
+ * O marcado como principal; na falta dele, o primeiro da lista — cadastro
+ * vindo de importação pode não ter marcação, e é melhor uma qualificação com
+ * o endereço provável do que uma sem endereço nenhum.
+ */
+export function getPrimaryAddress(
+  client: Pick<ClientWithRelations, 'addresses'>
+): ClientAddress | null {
+  const addresses = client.addresses ?? []
+  return addresses.find((a) => a.is_primary) ?? addresses[0] ?? null
+}
+
 /** Endereço numa linha só, pulando o que estiver vazio. */
-function buildAddress(client: Pick<
-  ClientWithRelations,
-  | 'address_street'
-  | 'address_number'
-  | 'address_complement'
-  | 'address_neighborhood'
-  | 'address_city'
-  | 'address_state'
-  | 'address_zip'
->): string {
-  const street = [client.address_street, client.address_number].filter(Boolean).join(', nº ')
+export function formatAddressLine(address: ClientAddress | null): string {
+  if (!address) return ''
+
+  const street = [address.street, address.number].filter(Boolean).join(', nº ')
   const parts = [
     street,
-    client.address_complement,
-    client.address_neighborhood,
-    [client.address_city, client.address_state].filter(Boolean).join('/'),
-    client.address_zip ? `CEP ${client.address_zip}` : null,
+    address.complement,
+    address.neighborhood,
+    [address.city, address.state].filter(Boolean).join('/'),
+    address.zip ? `CEP ${address.zip}` : null,
   ]
   return parts.filter((p) => p && p.trim()).join(', ')
 }
@@ -86,7 +98,7 @@ function buildIndividual(client: ClientWithRelations): string {
     parts.push(`${agree(sex, 'nascido', 'nascida')} em ${formatBrDate(client.birth_date)}`)
   }
 
-  const address = buildAddress(client)
+  const address = formatAddressLine(getPrimaryAddress(client))
   if (address) {
     parts.push(`${agree(sex, 'residente e domiciliado', 'residente e domiciliada')} na ${address}`)
   }
@@ -104,7 +116,7 @@ function buildCompany(client: ClientWithRelations): string {
     parts.push(`inscrita no CNPJ sob o nº ${formatDocument(client.cnpj.trim())}`)
   }
 
-  const address = buildAddress(client)
+  const address = formatAddressLine(getPrimaryAddress(client))
   if (address) parts.push(`com sede na ${address}`)
 
   if (client.contact_person?.trim()) {

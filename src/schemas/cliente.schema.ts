@@ -29,19 +29,49 @@ const contactSchema = z
     }
   })
 
+export const ADDRESS_KINDS = ['residencial', 'comercial', 'correspondencia', 'outro'] as const
+
+/** Um endereço da lista. Nada é obrigatório: o cadastro costuma começar só com
+ * a cidade, e a qualificação omite o que faltar em vez de exigir. */
 const addressSchema = z.object({
-  address_street: z.string().max(200).optional(),
-  address_number: z.string().max(20).optional(),
-  address_complement: z.string().max(100).optional(),
-  address_neighborhood: z.string().max(100).optional(),
-  address_city: z.string().max(100).optional(),
-  address_state: z.string().length(2, 'UF deve ter 2 caracteres').optional().or(z.literal('')),
-  address_zip: z
+  kind: z.enum(ADDRESS_KINDS),
+  street: z.string().max(200).optional(),
+  number: z.string().max(20).optional(),
+  complement: z.string().max(100).optional(),
+  neighborhood: z.string().max(100).optional(),
+  city: z.string().max(100).optional(),
+  state: z.string().length(2, 'UF deve ter 2 caracteres').optional().or(z.literal('')),
+  zip: z
     .string()
     .regex(/^\d{5}-?\d{3}$/, 'CEP inválido')
     .optional()
     .or(z.literal('')),
+  is_primary: z.boolean(),
 })
+
+/** A lista de endereços do cliente.
+ *
+ * Exatamente um principal quando há algum: é ele que entra na petição, e o
+ * banco recusa dois pelo índice único parcial da migration 54. Nenhum marcado
+ * é erro de formulário, não de dado — o serviço não tem como escolher por
+ * conta própria qual dos dois é o de casa. */
+const addressListSchema = z
+  .array(addressSchema)
+  .optional()
+  .superRefine((addresses, ctx) => {
+    if (!addresses || addresses.length === 0) return
+
+    const primaries = addresses.reduce((total, a) => total + (a.is_primary ? 1 : 0), 0)
+    if (primaries === 1) return
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        primaries === 0
+          ? 'Marque qual endereço é o principal — é o que entra na qualificação.'
+          : 'Só um endereço pode ser o principal.',
+    })
+  })
 
 const CPF_REGEX = /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/
 const CNPJ_REGEX = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/
@@ -76,9 +106,9 @@ const qualificationSchema = z.object({
   rg_issuer: z.string().max(30).optional(),
 })
 
-export const createIndividualClientSchema = addressSchema
-  .extend(qualificationSchema.shape)
+export const createIndividualClientSchema = qualificationSchema
   .extend({
+    addresses: addressListSchema,
     type: z.literal('individual'),
     tags: z.array(z.string()).optional(),
     name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres').max(150),
@@ -93,8 +123,9 @@ export const createIndividualClientSchema = addressSchema
     contacts: z.array(contactSchema).optional(),
   })
 
-export const createCompanyClientSchema = addressSchema
-  .extend({
+export const createCompanyClientSchema = z
+  .object({
+    addresses: addressListSchema,
     type: z.literal('company'),
     tags: z.array(z.string()).optional(),
     company_name: z.string().min(2, 'Razão Social deve ter ao menos 2 caracteres').max(200),
@@ -110,6 +141,7 @@ export const createCompanyClientSchema = addressSchema
   })
 
 export type ContactInput = z.infer<typeof contactSchema>
+export type AddressInput = z.infer<typeof addressSchema>
 export type CreateIndividualClientInput = z.infer<typeof createIndividualClientSchema>
 export type CreateCompanyClientInput = z.infer<typeof createCompanyClientSchema>
 export type CreateClientInput = CreateIndividualClientInput | CreateCompanyClientInput

@@ -32,6 +32,7 @@ import type { CreateClientInput } from '@/schemas/cliente.schema'
 import type { CreateTaskInput } from '@/schemas/task.schema'
 import {
   getClientDisplayName,
+  ADDRESS_KIND_LABELS,
   getClientDocument,
   SEX_LABELS,
   MARITAL_STATUS_LABELS,
@@ -43,7 +44,7 @@ import { formatDate } from '@/utils/date'
 import { getInitials } from '@/utils/profile'
 import { useCliente, useClientComments, useClientesPendencies } from '../hooks/useClientes'
 import { useUpdateCliente } from '../hooks/useClienteMutations'
-import { buildQualificacao, getClientAge } from '../utils/qualificacao'
+import { buildQualificacao, formatAddressLine, getClientAge } from '../utils/qualificacao'
 import { ClienteForm } from './ClienteForm'
 import { LegalAreaBadges } from './LegalAreaBadges'
 import { ClientComments } from './ClientComments'
@@ -156,15 +157,7 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
   const age = getClientAge(cliente.birth_date)
   const areas = cliente.legal_areas ?? []
 
-  const address = [
-    [cliente.address_street, cliente.address_number].filter(Boolean).join(', nº '),
-    cliente.address_complement,
-    cliente.address_neighborhood,
-    [cliente.address_city, cliente.address_state].filter(Boolean).join('/'),
-    cliente.address_zip ? `CEP ${cliente.address_zip}` : null,
-  ]
-    .filter((p) => p && p.trim())
-    .join(', ')
+  const addresses = cliente.addresses ?? []
 
   return (
     <div className="space-y-4">
@@ -272,10 +265,28 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
         ))}
       </DataSection>
 
-      <DataSection icon={<IdCard className="h-3.5 w-3.5" />} title="Endereço">
-        <DataRow label="Endereço completo">
-          {address ? <CopyableValue value={address} /> : '—'}
-        </DataRow>
+      <DataSection
+        icon={<IdCard className="h-3.5 w-3.5" />}
+        title={addresses.length > 1 ? 'Endereços' : 'Endereço'}
+      >
+        {addresses.length === 0 ? (
+          <DataRow label="Endereço completo">—</DataRow>
+        ) : (
+          addresses.map((address) => (
+            <DataRow
+              key={address.id}
+              // O principal é o que a qualificação usa — o rótulo diz isso em
+              // vez de deixar a pessoa deduzir pela ordem.
+              label={
+                address.is_primary
+                  ? `${ADDRESS_KIND_LABELS[address.kind]} · principal`
+                  : ADDRESS_KIND_LABELS[address.kind]
+              }
+            >
+              <CopyableValue value={formatAddressLine(address) || '—'} />
+            </DataRow>
+          ))
+        )}
       </DataSection>
 
       {cliente.notes && (
