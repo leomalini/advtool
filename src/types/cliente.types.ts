@@ -170,9 +170,31 @@ export function getClientDocument(client: Client | ClientWithRelations): string 
   return (client as CompanyClient).cnpj ?? ''
 }
 
+export type ClientIssueKind =
+  | 'missing_document'
+  | 'missing_contact'
+  | 'missing_phone'
+  | 'missing_email'
+  | 'missing_legal_area'
+  | 'missing_address'
+  | 'missing_birth_date'
+  | 'missing_marital_status'
+  | 'missing_rg'
+
+/** Mesma forma de `ProcessoIssue`: a tela de pendências mostra os dois lado a
+ * lado e não pode tratá-los de jeitos diferentes. */
+export interface ClientIssue {
+  kind: ClientIssueKind
+  label: string
+  /** 'high' aparece primeiro e em vermelho — é o que impede de trabalhar
+   * (falta de documento, nenhum contato). 'medium' é o que enriquece a
+   * qualificação: sem ele a petição sai, só que mais pobre. */
+  severity: 'high' | 'medium'
+}
+
 export interface ClientPendency {
   clientId: string
   displayName: string
   type: ClientType
-  missingFields: string[]
+  issues: ClientIssue[]
 }

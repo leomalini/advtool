@@ -497,13 +497,23 @@ function PendenciasTab({ clientId, onEdit }: { clientId: string; onEdit: () => v
         <AlertTriangle className="w-4 h-4 shrink-0 text-warning mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">
-            {pendency.missingFields.length} campo
-            {pendency.missingFields.length !== 1 ? 's' : ''} em falta
+            {pendency.issues.length} campo
+            {pendency.issues.length !== 1 ? 's' : ''} em falta
           </p>
           <ul className="mt-1.5 space-y-0.5">
-            {pendency.missingFields.map((field) => (
-              <li key={field} className="text-xs text-muted-foreground">
-                · {field}
+            {pendency.issues.map((issue) => (
+              <li
+                key={issue.kind}
+                className={cn(
+                  'text-xs',
+                  // O que trava o trabalho fica em vermelho aqui também, para
+                  // a aba concordar com a tela de pendências.
+                  issue.severity === 'high'
+                    ? 'font-medium text-destructive'
+                    : 'text-muted-foreground'
+                )}
+              >
+                · {issue.label}
               </li>
             ))}
           </ul>
