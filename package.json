@@ -16,7 +16,8 @@
     "db:status": "supabase migration list",
     "db:verify": "supabase migration list --linked",
     "verify:fingerprint": "node scripts/verify-fingerprint.mjs",
-    "webhook:send": "node scripts/send-webhook.mjs"
+    "webhook:send": "node scripts/send-webhook.mjs",
+    "webhook:replay": "node scripts/replay-webhooks.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

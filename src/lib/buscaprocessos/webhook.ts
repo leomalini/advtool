@@ -6,6 +6,7 @@ import { toIsoDate } from './dates'
 import {
   intimacaoToPublicationRow,
   movimentacaoToPublicationRow,
+  diarioCnj,
   diarioToPublicationRow,
 } from './mapPublicacao'
 import { ingestPublications } from '@/lib/publicacoes/ingest'
@@ -90,7 +91,12 @@ export async function handleBpWebhook(
   options: WebhookHandleOptions = {},
 ): Promise<WebhookHandleResult> {
   const dryRun = options.dryRun ?? false
-  const data = (payload.data ?? {}) as Record<string, unknown>
+  // O corpo real é PLANO: `movimentacao`, `monitoramento`, `processo` e
+  // `event_data` chegam no topo, sem envelope `data` — nenhuma das entregas
+  // registradas em `webhook_events` tem esse campo. As duas formas são aceitas
+  // porque uma reentrega manual do formato documentado continua válida, e porque
+  // exigir `data` é o que fazia toda entrega real cair em `ignored`.
+  const data = (payload.data ?? payload) as unknown as Record<string, unknown>
 
   // `data.event` repete o do envelope. Vale como último recurso: numa
   // reentrega manual o cabeçalho pode não vir.
@@ -124,7 +130,7 @@ async function handleDiario(
   const movimentacao = (data as BpWebhookDiarioData).movimentacao
 
   if (movimentacao && (movimentacao.conteudo || movimentacao.id != null)) {
-    const cnj = movimentacao.processo?.numero_novo ?? null
+    const cnj = diarioCnj(movimentacao)
     const legalProcessId = cnj ? await findProcessIdByCnj(supabase, cnj) : null
     const row = diarioToPublicationRow(movimentacao, legalProcessId)
 
@@ -212,10 +218,9 @@ async function handleMovimentacao(
   const movimentacao: BpMovimentacao = {
     // Normalizada aqui, e não lá embaixo: a data crua vem 'dd/MM/yyyy' e entra
     // tanto no cálculo de prazo quanto no hash de deduplicação.
-    data:
-      toIsoDate(eventData?.data) ??
-      toIsoDate(payload.created_at) ??
-      payload.created_at,
+    // Sem data em lugar nenhum, hoje: o motor de prazos recorta o ISO por
+    // posição, e um `undefined` ali viraria `Date.UTC(NaN, …)` sem erro nenhum.
+    data: toIsoDate(eventData?.data) ?? toIsoDate(payload.created_at) ?? todayIso(),
     conteudo: eventData?.conteudo ?? firstString(record, ['conteudo', 'descricao']) ?? null,
     classificacao_predita: null,
     // O webhook informa o tribunal no processo, não na movimentação.
@@ -364,6 +369,11 @@ async function findProcessIdByCnj(
   return (data?.id as string | undefined) ?? null
 }
 
+/** 'yyyy-MM-dd' de hoje — último recurso para um evento que chega sem data. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function firstString(record: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const value = record[key]
@@ -385,7 +395,7 @@ function pickIntimacao(data: Record<string, unknown>): BpIntimacao | null {
 /** Corpo no formato de /v1/processos/{cnj}/movimentacoes. */
 function pickMovimentacaoRest(
   data: Record<string, unknown>,
-  fallbackDate: string,
+  fallbackDate: string | null | undefined,
 ): BpMovimentacao | null {
   const record = (data['movimentacao'] ?? data['movimento']) as
     | Record<string, unknown>
@@ -395,7 +405,7 @@ function pickMovimentacaoRest(
   const fonte = record['fonte'] as { sigla?: string | null; grau?: string | null } | null | undefined
 
   return {
-    data: toIsoDate(record['data']) ?? toIsoDate(fallbackDate) ?? fallbackDate,
+    data: toIsoDate(record['data']) ?? toIsoDate(fallbackDate) ?? todayIso(),
     conteudo: firstString(record, ['conteudo', 'descricao', 'texto']),
     classificacao_predita:
       (record['classificacao_predita'] as BpMovimentacao['classificacao_predita']) ?? null,

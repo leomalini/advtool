@@ -3,11 +3,12 @@ import type { BpWebhookPayload } from './types'
 /**
  * Corpos de teste com a forma REAL dos webhooks da BuscaProcessos.
  *
- * "Real" aqui não é força de expressão: são payloads recebidos em produção,
- * copiados campo a campo. A versão anterior deste arquivo foi montada a partir
- * do OpenAPI dos endpoints `GET /v1/...`, e por isso testava o handler contra
- * uma forma que a origem nunca envia — os testes passavam e o webhook de
- * verdade era ignorado em silêncio.
+ * "Real" aqui não é força de expressão: os campos e o ENVELOPE saem das
+ * entregas registradas em `webhook_events`. Duas versões anteriores erraram
+ * exatamente nisso: a primeira foi montada a partir do OpenAPI dos endpoints
+ * `GET /v1/...`, a segunda embrulhou o corpo num envelope `data` que a origem
+ * nunca manda. Nos dois casos o disparo de teste passava e a entrega de verdade
+ * caía em `ignored` — HTTP 200, nada gravado, nenhum erro em lugar nenhum.
  *
  * O conteúdo é fixo de propósito: disparar o mesmo cenário duas vezes tem que
  * cair na deduplicação, e é isso que prova que ela funciona.
@@ -76,17 +77,20 @@ function toBrDate(iso: string): string {
   return `${day}/${month}/${year}`
 }
 
-function envelope(event: string, data: Record<string, unknown>): BpWebhookPayload {
+/**
+ * O envelope real é PLANO: `event` no topo e o conteúdo ao lado dele.
+ *
+ * Nenhuma das entregas registradas em `webhook_events` tem `data`, `source`,
+ * `created_at` ou `id` — o que identifica o evento é `uuid`. O corpo montado
+ * aqui é o que a tela dispara, então ele tem que ter a forma que chega de fato:
+ * um envelope a mais aqui é um caminho que nunca é exercitado lá.
+ */
+function envelope(event: string, body: Record<string, unknown>): BpWebhookPayload {
   return {
-    id: `evt_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    uuid: `evt_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
     event,
-    source: 'BUSCAPROCESSOS',
-    created_at: new Date().toISOString(),
-    data: { event, ...data },
-    // A origem repete `data` em `raw`. Não é lido, mas está aqui para o corpo
-    // exibido na tela ser fiel ao que chega.
-    raw: { event, ...data },
-  }
+    ...body,
+  } as unknown as BpWebhookPayload
 }
 
 export function buildWebhookPayload(
@@ -134,7 +138,10 @@ export function buildWebhookPayload(
           secao: 'Publicações e Intimações',
           texto_categoria: 'Despacho',
           diario_oficial_id: 111,
-          processo_id: 222,
+          // O CNJ mora aqui e em `numero_processo` — `processo_id` não traz id
+          // nenhum nas entregas reais.
+          processo_id: scenario === 'diario_movimentacao_nova' ? cnj : CNJ_INEXISTENTE,
+          numero_processo: scenario === 'diario_movimentacao_nova' ? cnj : CNJ_INEXISTENTE,
           pagina: 10,
           tipo: 'Intimação',
           conteudo: `<p>${texto}</p>`,
@@ -147,9 +154,9 @@ export function buildWebhookPayload(
           ],
           link: 'https://www.exemplo.com/processo',
           link_pdf: 'https://www.exemplo.com/diario.pdf',
-          processo: {
-            numero_novo: scenario === 'diario_movimentacao_nova' ? cnj : CNJ_INEXISTENTE,
-          },
+          // Sem `processo: { numero_novo }` de propósito: o contrato descreve
+          // esse objeto, as entregas reais não o mandam, e é o formato real que
+          // o disparo de teste precisa exercitar.
         },
       })
     }

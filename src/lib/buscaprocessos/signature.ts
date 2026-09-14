@@ -14,9 +14,17 @@
 
 const WEBHOOK_SECRET = process.env.BUSCA_PROCESSOS_WEBHOOK_SECRET?.trim()
 const WEBHOOK_TOKEN = process.env.BUSCA_PROCESSOS_WEBHOOK_TOKEN?.trim()
+/** Não autentica nada: serve só para o diagnóstico reconhecer o valor quando a
+ * origem manda a chave da API no lugar do token do webhook. */
+const API_KEY = process.env.BUSCA_PROCESSOS_API_KEY?.trim()
 
 /** Prefixo que a BuscaProcessos exibe no token da conta. */
 const TOKEN_PREFIX = 'bp_wh_'
+
+/** O token com e sem o prefixo é o mesmo token. */
+function stripTokenPrefix(value: string): string {
+  return value.startsWith(TOKEN_PREFIX) ? value.slice(TOKEN_PREFIX.length) : value
+}
 
 export function hasWebhookSecret(): boolean {
   return Boolean(WEBHOOK_SECRET)
@@ -104,8 +112,43 @@ export interface AuthCheck {
   method: string | null
   /** O que veio, para o registro poder explicar um 401 sem adivinhação. */
   receivedSignature: string | null
+  /** `Authorization` descrito sem o valor: esquema, tamanho, pontas e com qual
+   * dos valores do ambiente ele coincide. */
+  receivedAuthorization?: string | null
   /** Falhou? Isto diz contra o que foi comparado. */
   detail?: string
+}
+
+/**
+ * `Authorization` descrito sem entregar o valor.
+ *
+ * Um 401 de token só é diagnosticável se der para distinguir "token errado" de
+ * "a origem manda a chave da API no lugar do token" e de "os dois valores do
+ * ambiente estão trocados". Esquema, tamanho e pontas resolvem o primeiro caso;
+ * a comparação com os valores que o ambiente já conhece resolve os outros dois
+ * — e nenhuma delas copia segredo nenhum para o log.
+ */
+function describeAuthorization(header: string): string {
+  const parts = /^(\S+)\s+(.+)$/.exec(header.trim())
+  const scheme = parts ? parts[1] : '(sem esquema)'
+  const value = (parts ? parts[2] : header).trim()
+
+  const known: [string, string | undefined][] = [
+    ['WEBHOOK_TOKEN', WEBHOOK_TOKEN],
+    ['WEBHOOK_SECRET', WEBHOOK_SECRET],
+    ['API_KEY', API_KEY],
+  ]
+  const match = known.find(
+    ([, candidate]) => candidate && equals(stripTokenPrefix(value), stripTokenPrefix(candidate)),
+  )
+
+  const ends = value.length > 8 ? `${value.slice(0, 4)}…${value.slice(-4)}` : '(curto)'
+  return [
+    `esquema=${scheme}`,
+    `tamanho=${value.length}`,
+    `valor=${ends}`,
+    `coincide_com=${match?.[0] ?? 'nenhum'}`,
+  ].join(' ')
 }
 
 /**
@@ -149,19 +192,37 @@ export async function verifyWebhookAuth(
   // campo copiável, então os dois formatos são aceitos — recusar por causa do
   // prefixo seria recusar por causa da tela de onde a pessoa copiou.
   if (WEBHOOK_TOKEN && headers.authorization) {
-    const bearer = headers.authorization.replace(/^Bearer\s+/i, '').trim()
-    const strip = (value: string) =>
-      value.startsWith(TOKEN_PREFIX) ? value.slice(TOKEN_PREFIX.length) : value
+    // Qualquer esquema, não só `Bearer`: o que autentica é conhecer o token, e
+    // recusar `Token …` ou `APIKey …` seria recusar por causa da palavra escrita
+    // antes do valor. O valor cru, sem esquema nenhum, também vale.
+    const parts = /^(\S+)\s+(.+)$/.exec(headers.authorization.trim())
+    const presented = (parts ? parts[2] : headers.authorization).trim()
 
-    if (equals(strip(bearer), strip(WEBHOOK_TOKEN))) {
-      return { configured: true, valid: true, method: 'bearer', receivedSignature: received }
+    if (equals(stripTokenPrefix(presented), stripTokenPrefix(WEBHOOK_TOKEN))) {
+      return {
+        configured: true,
+        valid: true,
+        // O esquema entra no método porque é o que revela como a origem manda de
+        // fato — é este campo que a tela de Configurações mostra.
+        method:
+          parts && parts[1].toLowerCase() !== 'bearer'
+            ? `bearer:${parts[1].toLowerCase()}`
+            : 'bearer',
+        receivedSignature: received,
+        receivedAuthorization: describeAuthorization(headers.authorization),
+      }
     }
   }
+
+  const authorization = headers.authorization ? describeAuthorization(headers.authorization) : null
 
   const tried = [
     WEBHOOK_SECRET && received ? 'HMAC (chave como texto e como bytes hexa)' : null,
     WEBHOOK_SECRET && !received ? 'HMAC configurado, mas a entrega não trouxe assinatura' : null,
-    WEBHOOK_TOKEN && headers.authorization ? 'token Bearer' : null,
+    // O que chegou, e não só "token Bearer": uma recusa que não diz o tamanho
+    // nem com qual valor do ambiente o recebido coincide é indistinguível da
+    // próxima — e foi isso que deixou o webhook parado sem ninguém saber por quê.
+    WEBHOOK_TOKEN && authorization ? `token do webhook [${authorization}]` : null,
     WEBHOOK_TOKEN && !headers.authorization
       ? 'token Bearer configurado, mas a entrega não trouxe Authorization'
       : null,
@@ -172,6 +233,7 @@ export async function verifyWebhookAuth(
     valid: false,
     method: null,
     receivedSignature: received,
+    receivedAuthorization: authorization,
     detail: `Conferido contra: ${tried.join('; ') || 'nada aplicável'}.`,
   }
 }

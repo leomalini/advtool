@@ -418,8 +418,12 @@ export interface BpWebhookDiarioData {
     secao?: string | null
     /** Rótulo curto do ato ("Despacho de Teste") — vira o `title`. */
     texto_categoria?: string | null
-    diario_oficial_id?: number | null
-    processo_id?: number | null
+    diario_oficial_id?: number | string | null
+    /** ⚠️ Vem com o CNJ, não com um id, nas entregas reais. */
+    processo_id?: number | string | null
+    /** O CNJ. É aqui que o número está nas entregas reais — o objeto `processo`
+     * abaixo não vem. */
+    numero_processo?: string | null
     pagina?: number | null
     /** 'Intimação', 'Despacho'… É o que marca a origem como diário. NÃO se
      * chama `tipo_publicacao` aqui. */
@@ -443,7 +447,19 @@ export interface BpWebhookDiarioData {
 }
 
 export interface BpWebhookPayload {
-  id: string
+  /** ⚠️ O ENVELOPE REAL É PLANO — `data` não existe.
+   *
+   * As entregas registradas em `webhook_events` (`diario_movimentacao_nova`,
+   * `processo_verificado`, `atualizacao_processo_concluida`) trazem `event` no
+   * topo e o conteúdo ao lado dele: `movimentacao`, `monitoramento`, `processo`,
+   * `event_data`, `app`. Nenhuma delas tem `data`, `source`, `created_at` nem
+   * `id` — por isso só `event` é obrigatório aqui.
+   *
+   * O handler lê `payload.data ?? payload`. Exigir o envelope mandava TODA
+   * entrega real para `ignored`, com HTTP 200 e sem erro em lugar nenhum. */
+  id?: string
+  /** Como a origem identifica o evento de fato: 'own-process:116441034:…'. */
+  uuid?: string
   event:
     | 'movimentacao_nova'
     | 'diario_movimentacao_nova'
@@ -455,9 +471,10 @@ export interface BpWebhookPayload {
     | 'resultado_processo_async'
     | 'resultado_busca_oab_async'
     | (string & {})
-  source: 'BUSCAPROCESSOS'
-  created_at: string
-  data: Record<string, unknown>
+  source?: 'BUSCAPROCESSOS'
+  created_at?: string
+  /** Só numa reentrega manual do formato documentado. Ver o aviso acima. */
+  data?: Record<string, unknown>
   /** Cópia literal de `data`, como a origem recebeu do tribunal. Não é lida:
    * o que guardamos para auditoria é o envelope inteiro em `webhook_events`. */
   raw?: Record<string, unknown>

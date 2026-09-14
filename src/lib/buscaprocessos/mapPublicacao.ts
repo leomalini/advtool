@@ -112,6 +112,29 @@ type DiarioMovimentacao = NonNullable<BpWebhookDiarioData['movimentacao']>
  * OAB (outro HTML). HTML cru no `content_text` deixaria cada fonte com um
  * fingerprint diferente — ou seja, de volta à duplicata.
  */
+/**
+ * O CNJ de uma publicação de diário.
+ *
+ * `processo.numero_novo` é o campo do contrato, e é o que chega numa reentrega
+ * manual daquele formato. As entregas reais não trazem esse objeto: o número
+ * está em `numero_processo` — e em `processo_id`, que apesar do nome vem com o
+ * CNJ. Conferido nas entregas de `diario_movimentacao_nova` registradas em
+ * `webhook_events`, não inferido do nome do campo.
+ *
+ * A máscara é o que separa o CNJ de um id numérico que ocupe o mesmo campo: sem
+ * ela, `processo_id: 222` entraria como número de processo — e o `cnj_number`
+ * da publicação é por onde a intimação encontra o processo do escritório.
+ */
+const CNJ_MASK = /^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/
+
+export function diarioCnj(mov: DiarioMovimentacao): string | null {
+  for (const candidate of [mov.processo?.numero_novo, mov.numero_processo, mov.processo_id]) {
+    const value = typeof candidate === 'string' ? candidate.trim() : null
+    if (value && CNJ_MASK.test(value)) return value
+  }
+  return null
+}
+
 export function diarioToPublicationRow(
   mov: DiarioMovimentacao,
   legalProcessId: string | null,
@@ -136,7 +159,7 @@ export function diarioToPublicationRow(
 
   return {
     legal_process_id: legalProcessId,
-    cnj_number: mov.processo?.numero_novo ?? null,
+    cnj_number: diarioCnj(mov),
     source: 'busca_processos',
     // Id estável da origem, com prefixo para não colidir com o id de uma
     // intimação de /v1/intimacoes nem com o hash de uma movimentação.

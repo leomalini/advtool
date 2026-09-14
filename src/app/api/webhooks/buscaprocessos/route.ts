@@ -45,12 +45,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // do caminho. A assinatura é um MAC daquele corpo específico: não serve
     // para forjar outra entrega, e é o que torna a recusa diagnosticável.
     await recordWebhookEvent(supabase, {
+      // O evento vem do cabeçalho mesmo numa recusa: sem ele a linha do log não
+      // diz o que foi perdido, e era assim que 25 entregas recusadas seguidas
+      // ficavam indistinguíveis uma da outra.
+      event: req.headers.get('x-buscaprocessos-event'),
       status: 'invalid',
       signatureValid,
       reason: 'Autenticação recusada.',
       error: auth.detail,
       payload: safeJson(rawBody),
-      headers: { ...headers, signature_received: auth.receivedSignature },
+      headers: {
+        ...headers,
+        signature_received: auth.receivedSignature,
+        authorization_received: auth.receivedAuthorization ?? null,
+      },
       durationMs: Date.now() - startedAt,
     })
     return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
@@ -77,7 +85,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await recordWebhookEvent(supabase, {
       event: result.event,
-      externalId: payload.id ?? null,
+      externalId: payload.id ?? payload.uuid ?? null,
       signatureValid,
       status: result.status,
       destinations: result.destinations,
@@ -100,7 +108,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await recordWebhookEvent(supabase, {
       event: payload.event ?? null,
-      externalId: payload.id ?? null,
+      externalId: payload.id ?? payload.uuid ?? null,
       signatureValid,
       status: 'error',
       error: message,

@@ -73,5 +73,9 @@ export function diagnosticHeaders(headers: Headers): Record<string, string | nul
     signature_present: headers.get('x-buscaprocessos-signature') ? 'true' : 'false',
     content_type: headers.get('content-type'),
     user_agent: headers.get('user-agent'),
+    // NOMES, não valores. É o que responde "a origem manda assinatura com outro
+    // nome?" — pergunta que `signature_present: false` deixa aberta e que, sem
+    // isto, só se responde adivinhando nomes de cabeçalho.
+    header_names: [...headers.keys()].sort().join(', '),
   }
 }

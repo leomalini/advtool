@@ -114,7 +114,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const eventId = await recordWebhookEvent(supabase, {
       event: result.event,
-      externalId: payload.id ?? null,
+      externalId: payload.id ?? payload.uuid ?? null,
       // Chamada direta: não passou pela conferência de assinatura.
       signatureValid: null,
       isTest: true,
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const eventId = await recordWebhookEvent(supabase, {
       event: payload.event ?? null,
-      externalId: payload.id ?? null,
+      externalId: payload.id ?? payload.uuid ?? null,
       signatureValid: null,
       isTest: true,
       dryRun,
