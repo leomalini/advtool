@@ -27,13 +27,12 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { AREAS_JURIDICAS } from '@/data/mock'
-import type { AreaJuridica } from '@/data/mock'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import type { CreateTaskInput } from '@/schemas/task.schema'
 import {
   getClientDisplayName,
+  ADDRESS_KIND_LABELS,
   getClientDocument,
   SEX_LABELS,
   MARITAL_STATUS_LABELS,
@@ -45,8 +44,10 @@ import { formatDate } from '@/utils/date'
 import { getInitials } from '@/utils/profile'
 import { useCliente, useClientComments, useClientesPendencies } from '../hooks/useClientes'
 import { useUpdateCliente } from '../hooks/useClienteMutations'
-import { buildQualificacao, getClientAge } from '../utils/qualificacao'
+import { buildQualificacao, formatAddressLine, getClientAge } from '../utils/qualificacao'
 import { ClienteForm } from './ClienteForm'
+import { LegalAreaBadges } from './LegalAreaBadges'
+import { IssueList, PendencyHeaderBadge, faltamLabel } from './PendencyBadge'
 import { ClientComments } from './ClientComments'
 import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalProcesses'
 import { useCrmItemsByClient } from '@/features/crm/hooks/useCrmItems'
@@ -155,17 +156,9 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
   const isPF = cliente.type === 'individual'
   const qualificacao = buildQualificacao(cliente)
   const age = getClientAge(cliente.birth_date)
-  const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area as AreaJuridica] : null
+  const areas = cliente.legal_areas ?? []
 
-  const address = [
-    [cliente.address_street, cliente.address_number].filter(Boolean).join(', nº '),
-    cliente.address_complement,
-    cliente.address_neighborhood,
-    [cliente.address_city, cliente.address_state].filter(Boolean).join('/'),
-    cliente.address_zip ? `CEP ${cliente.address_zip}` : null,
-  ]
-    .filter((p) => p && p.trim())
-    .join(', ')
+  const addresses = cliente.addresses ?? []
 
   return (
     <div className="space-y-4">
@@ -250,20 +243,8 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
         {!isPF && cliente.contact_person && (
           <DataRow label="Contato responsável">{cliente.contact_person}</DataRow>
         )}
-        <DataRow label="Área jurídica">
-          {area ? (
-            <span
-              className={cn(
-                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                area.bg,
-                area.color
-              )}
-            >
-              {area.label}
-            </span>
-          ) : (
-            '—'
-          )}
+        <DataRow label={areas.length > 1 ? 'Áreas jurídicas' : 'Área jurídica'}>
+          <LegalAreaBadges areas={areas} empty="—" />
         </DataRow>
         <DataRow label="Advogado responsável">
           {cliente.assignee ? cliente.assignee.full_name : '—'}
@@ -285,10 +266,28 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
         ))}
       </DataSection>
 
-      <DataSection icon={<IdCard className="h-3.5 w-3.5" />} title="Endereço">
-        <DataRow label="Endereço completo">
-          {address ? <CopyableValue value={address} /> : '—'}
-        </DataRow>
+      <DataSection
+        icon={<IdCard className="h-3.5 w-3.5" />}
+        title={addresses.length > 1 ? 'Endereços' : 'Endereço'}
+      >
+        {addresses.length === 0 ? (
+          <DataRow label="Endereço completo">—</DataRow>
+        ) : (
+          addresses.map((address) => (
+            <DataRow
+              key={address.id}
+              // O principal é o que a qualificação usa — o rótulo diz isso em
+              // vez de deixar a pessoa deduzir pela ordem.
+              label={
+                address.is_primary
+                  ? `${ADDRESS_KIND_LABELS[address.kind]} · principal`
+                  : ADDRESS_KIND_LABELS[address.kind]
+              }
+            >
+              <CopyableValue value={formatAddressLine(address) || '—'} />
+            </DataRow>
+          ))
+        )}
       </DataSection>
 
       {cliente.notes && (
@@ -499,16 +498,11 @@ function PendenciasTab({ clientId, onEdit }: { clientId: string; onEdit: () => v
         <AlertTriangle className="w-4 h-4 shrink-0 text-warning mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">
-            {pendency.missingFields.length} campo
-            {pendency.missingFields.length !== 1 ? 's' : ''} em falta
+            {faltamLabel(pendency.issues.length)}
           </p>
-          <ul className="mt-1.5 space-y-0.5">
-            {pendency.missingFields.map((field) => (
-              <li key={field} className="text-xs text-muted-foreground">
-                · {field}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-1.5">
+            <IssueList issues={pendency.issues} />
+          </div>
         </div>
         <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={onEdit}>
           <Pencil className="h-3 w-3 mr-1" />
@@ -536,6 +530,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   // divergir do que a aba mostra ao ser aberta.
   const { data: tarefas = [] } = useTasksForEntity({ clientId: clienteId })
   const { data: notas = [] } = useClientComments(clienteId)
+
+  // Mesma query da aba de Pendências — o React Query serve as duas do mesmo
+  // cache, então o aviso do cabeçalho não tem como discordar do que a aba
+  // mostra ao ser aberta.
+  const { data: pendencies = [] } = useClientesPendencies()
+  const pendency = pendencies.find((p) => p.clientId === clienteId)
 
   async function handleEditSubmit(data: CreateClientInput) {
     await updateCliente.mutateAsync(data)
@@ -570,7 +570,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   const name = getClientDisplayName(cliente)
   const document = getClientDocument(cliente)
   const age = getClientAge(cliente.birth_date)
-  const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area as AreaJuridica] : null
+  const areas = cliente.legal_areas ?? []
   const tags = (cliente.tags ?? []) as CrmTag[]
   const tarefasPendentes = tarefas.filter((t) => t.status !== 'done').length
 
@@ -602,6 +602,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
+                    {pendency && (
+                      <PendencyHeaderBadge
+                        pendency={pendency}
+                        onOpen={() => setTab('pendencias')}
+                      />
+                    )}
                     <h1 className="text-xl font-bold tracking-tight truncate">{name}</h1>
                     <button
                       type="button"
@@ -619,17 +625,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                     <span className="text-sm text-muted-foreground">
                       {cliente.type === 'company' ? 'Pessoa Jurídica' : 'Pessoa Física'}
                     </span>
-                    {area && (
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                          area.bg,
-                          area.color
-                        )}
-                      >
-                        {area.label}
-                      </span>
-                    )}
+                    <LegalAreaBadges areas={areas} />
                   </div>
                 </div>
               </div>
@@ -743,7 +739,17 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                       : 'border-transparent text-muted-foreground hover:text-foreground/80'
                   )}
                 >
-                  {t.label}
+                  <span className="inline-flex items-center gap-1.5">
+                    {t.label}
+                    {/* Bolinha só na aba de Pendências: é a única cujo conteúdo
+                        muda sem ninguém ter feito nada no cadastro. */}
+                    {t.id === 'pendencias' && pendency && (
+                      <span
+                        aria-hidden
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                      />
+                    )}
+                  </span>
                 </button>
               ))}
             </div>

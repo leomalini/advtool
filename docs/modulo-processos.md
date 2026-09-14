@@ -213,7 +213,7 @@ Para adicionar mais: `COURT_INDEX_MAP` em `src/app/api/cnj/[number]/route.ts`.
 **SELECT usado:**
 ```sql
 *,
-client:clients(id, type, name, company_name, trade_name, phone, email, legal_area),
+client:clients(id, type, name, company_name, trade_name, phone, email),
 assigned_profile:profiles!cases_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
 movements:case_movements(*)
 ```

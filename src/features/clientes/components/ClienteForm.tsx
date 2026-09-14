@@ -2,7 +2,13 @@
 
 import { useState } from 'react'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { useForm, useFieldArray, type Control } from 'react-hook-form'
+import {
+  useForm,
+  useFieldArray,
+  useWatch,
+  type Control,
+  type UseFieldArrayReturn,
+} from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Loader2,
@@ -14,6 +20,7 @@ import {
   MapPin,
   Scale,
   SlidersHorizontal,
+  Star,
   User,
   Building2,
   Tag,
@@ -31,23 +38,32 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { NONE_VALUE, toSelectValue, fromSelectValue } from '@/utils/select'
 import { cn } from '@/lib/utils'
 import {
   createIndividualClientSchema,
   createCompanyClientSchema,
+  ADDRESS_KINDS,
   LEGAL_AREAS,
+  type AddressInput,
   type CreateClientInput,
   type CreateIndividualClientInput,
   type CreateCompanyClientInput,
 } from '@/schemas/cliente.schema'
 import { CRM_TAGS, type CrmTag } from '@/schemas/crmItem.schema'
 import { TagToggle } from '@/components/shared/TagToggle'
-import type { ClientWithRelations, ClientSex, MaritalStatus } from '@/types/cliente.types'
+import type {
+  AddressKind,
+  ClientAddress,
+  ClientWithRelations,
+  ClientSex,
+  LegalArea,
+  MaritalStatus,
+} from '@/types/cliente.types'
 import {
   getClientDisplayName,
+  ADDRESS_KIND_LABELS,
   SEX_LABELS,
   MARITAL_STATUS_LABELS,
 } from '@/types/cliente.types'
@@ -151,33 +167,45 @@ function TypeToggle({ value, onChange }: { value: ClientType; onChange: (t: Clie
   )
 }
 
-// ── Área Jurídica select (shared between PF/PJ) ──────────────────────────────
+// ── Áreas Jurídicas (shared between PF/PJ) ───────────────────────────────────
 
-function LegalAreaSelect({
+/** Seletor de áreas em chips, no lugar do select de valor único que existia
+ * até a migration 53. A alternância é a mesma do `TagToggle`: clicar liga e
+ * desliga. Nenhuma área selecionada é um estado válido — "não definida". */
+function LegalAreasToggle({
   value,
   onChange,
 }: {
-  value: (typeof LEGAL_AREAS)[number] | null | undefined
-  onChange: (v: (typeof LEGAL_AREAS)[number] | null) => void
+  value: LegalArea[]
+  onChange: (areas: LegalArea[]) => void
 }) {
-  const label = value ? AREAS_JURIDICAS[value]?.label : undefined
+  function toggle(area: LegalArea) {
+    onChange(value.includes(area) ? value.filter((a) => a !== area) : [...value, area])
+  }
+
   return (
-    <Select
-      value={toSelectValue(value)}
-      onValueChange={(v) => onChange(fromSelectValue(v) as (typeof LEGAL_AREAS)[number] | null)}
-    >
-      <SelectTrigger className="w-full text-sm bg-card">
-        {label ? <span className="truncate text-sm">{label}</span> : <SelectValue placeholder="Selecionar área..." />}
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NONE_VALUE}>Não definida</SelectItem>
-        {LEGAL_AREAS.map((area) => (
-          <SelectItem key={area} value={area}>
-            {AREAS_JURIDICAS[area].label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {LEGAL_AREAS.map((area) => {
+        const meta = AREAS_JURIDICAS[area]
+        const active = value.includes(area)
+        return (
+          <button
+            key={area}
+            type="button"
+            onClick={() => toggle(area)}
+            aria-pressed={active}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
+              active
+                ? cn(meta.bg, meta.color, 'border-transparent')
+                : 'bg-card border-border text-muted-foreground hover:border-border hover:bg-muted/40',
+            )}
+          >
+            {meta.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -271,6 +299,235 @@ function ContactFields({ control, register, setValue, errors }: ContactFieldsPro
   )
 }
 
+// ── Seção de endereços ───────────────────────────────────────
+
+/** Endereços gravados → itens do formulário. Nulos viram '' porque os inputs
+ * são controlados; o caminho de volta é o `nullifyEmpty` do serviço. */
+function toAddressInputs(addresses: ClientAddress[] | undefined): AddressInput[] {
+  return (addresses ?? []).map((a) => ({
+    kind: a.kind,
+    street: a.street ?? '',
+    number: a.number ?? '',
+    complement: a.complement ?? '',
+    neighborhood: a.neighborhood ?? '',
+    city: a.city ?? '',
+    state: a.state ?? '',
+    zip: a.zip ?? '',
+    is_primary: a.is_primary,
+  }))
+}
+
+function emptyAddress(kind: AddressKind, isPrimary: boolean): AddressInput {
+  return {
+    kind,
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    city: '',
+    state: '',
+    zip: '',
+    is_primary: isPrimary,
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AddressArray = UseFieldArrayReturn<any, 'addresses', 'id'>
+
+interface AddressFieldsProps {
+  /** O array vive no formulário, não aqui: a busca por CNPJ precisa criar o
+   * primeiro endereço, e `setValue` num nome de field array não avisa o
+   * `useFieldArray` — a linha nova não apareceria. */
+  array: AddressArray
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  control: Control<any>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  register: ReturnType<typeof useForm<any>>['register']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setValue: ReturnType<typeof useForm<any>>['setValue']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  errors?: any
+  /** "Apto 42" na pessoa física, "Sala 5" na jurídica. */
+  complementPlaceholder: string
+  /** Tipo com que um endereço novo nasce. */
+  defaultKind: AddressKind
+}
+
+/** Lista de endereços do cliente — um residencial, um de correspondência, o
+ * que for. Espelha o `ContactFields` e substitui as duas seções de endereço
+ * que eram copiadas linha a linha entre PF e PJ. */
+function AddressFields({
+  array,
+  control,
+  register,
+  setValue,
+  errors,
+  complementPlaceholder,
+  defaultKind,
+}: AddressFieldsProps) {
+  const { fields, append, replace } = array
+  const addresses = (useWatch({ control, name: 'addresses' }) ?? []) as AddressInput[]
+
+  /** Erro da lista inteira (nenhum principal marcado), não de um campo. */
+  const listError: string | undefined =
+    errors?.addresses?.root?.message ?? (typeof errors?.addresses?.message === 'string'
+      ? errors.addresses.message
+      : undefined)
+
+  function makePrimary(index: number) {
+    // `setValue` campo a campo em vez de `replace`: trocar a lista inteira
+    // remontaria os inputs e tiraria o foco de quem estivesse digitando.
+    addresses.forEach((_, i) => setValue(`addresses.${i}.is_primary`, i === index))
+  }
+
+  function addAddress() {
+    // O primeiro já nasce principal: é o caso de quase todo cadastro, e evita
+    // que a pessoa esbarre no erro de validação sem ter feito nada.
+    append(emptyAddress(defaultKind, fields.length === 0))
+  }
+
+  function removeAddress(index: number) {
+    const next = addresses.filter((_, i) => i !== index)
+    const hasPrimary = next.some((a) => a.is_primary)
+    // Apagar o principal não pode deixar a lista sem nenhum — o schema
+    // recusaria o salvamento por um estado que a remoção criou sozinha.
+    replace(next.map((a, i) => (hasPrimary ? a : { ...a, is_primary: i === 0 })))
+  }
+
+  async function handleCepBlur(index: number, cep: string) {
+    const clean = cep.replace(/\D/g, '')
+    if (clean.length !== 8) return
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
+      const data = await res.json()
+      if (!data.erro) {
+        setValue(`addresses.${index}.street`, data.logradouro ?? '')
+        setValue(`addresses.${index}.neighborhood`, data.bairro ?? '')
+        setValue(`addresses.${index}.city`, data.localidade ?? '')
+        setValue(`addresses.${index}.state`, data.uf ?? '')
+      }
+    } catch {
+      // silently ignore
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {fields.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Nenhum endereço cadastrado. O principal é o que entra na qualificação da petição.
+        </p>
+      )}
+
+      {fields.map((field, index) => {
+        const isPrimary = addresses[index]?.is_primary ?? false
+        return (
+          <div key={field.id} className="rounded-lg border border-border p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <select
+                {...register(`addresses.${index}.kind`)}
+                className="h-8 w-40 shrink-0 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring"
+              >
+                {ADDRESS_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {ADDRESS_KIND_LABELS[kind]}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => makePrimary(index)}
+                aria-pressed={isPrimary}
+                title="Endereço usado na qualificação da petição"
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                  isPrimary
+                    ? 'border-transparent bg-accent text-accent-foreground'
+                    : 'border-border text-muted-foreground hover:border-ring hover:text-foreground',
+                )}
+              >
+                <Star className={cn('h-3 w-3', isPrimary && 'fill-current')} />
+                {isPrimary ? 'Principal' : 'Tornar principal'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => removeAddress(index)}
+                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                aria-label="Remover endereço"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>CEP</FieldLabel>
+                <Input
+                  {...register(`addresses.${index}.zip`)}
+                  placeholder="00000-000"
+                  maxLength={9}
+                  onChange={(e) => setValue(`addresses.${index}.zip`, formatCEP(e.target.value))}
+                  onBlur={(e) => handleCepBlur(index, e.target.value)}
+                />
+                <FieldError message={errors?.addresses?.[index]?.zip?.message} />
+              </div>
+              <div>
+                <FieldLabel>UF</FieldLabel>
+                <Input
+                  {...register(`addresses.${index}.state`)}
+                  placeholder="SP"
+                  maxLength={2}
+                  className="uppercase"
+                />
+                <FieldError message={errors?.addresses?.[index]?.state?.message} />
+              </div>
+              <div>
+                <FieldLabel>Logradouro</FieldLabel>
+                <Input {...register(`addresses.${index}.street`)} placeholder="Rua das Flores" />
+              </div>
+              <div>
+                <FieldLabel>Número</FieldLabel>
+                <Input {...register(`addresses.${index}.number`)} placeholder="123" />
+              </div>
+              <div>
+                <FieldLabel>Complemento</FieldLabel>
+                <Input
+                  {...register(`addresses.${index}.complement`)}
+                  placeholder={complementPlaceholder}
+                />
+              </div>
+              <div>
+                <FieldLabel>Bairro</FieldLabel>
+                <Input
+                  {...register(`addresses.${index}.neighborhood`)}
+                  placeholder="Jardim Paulista"
+                />
+              </div>
+              <div className="col-span-2">
+                <FieldLabel>Cidade</FieldLabel>
+                <Input {...register(`addresses.${index}.city`)} placeholder="São Paulo" />
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      <FieldError message={listError} />
+
+      <button
+        type="button"
+        onClick={addAddress}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Plus className="w-3 h-3" />
+        Adicionar endereço
+      </button>
+    </div>
+  )
+}
+
 // ── Shell comum (header + sidebar + corpo) usado por PF e PJ ─────────────────
 
 function FormShell({
@@ -280,8 +537,8 @@ function FormShell({
   onClose,
   type,
   onTypeChange,
-  legalArea,
-  onLegalAreaChange,
+  legalAreas,
+  onLegalAreasChange,
   children,
 }: {
   title: string
@@ -290,8 +547,8 @@ function FormShell({
   onClose: () => void
   type: ClientType
   onTypeChange: (t: ClientType) => void
-  legalArea: (typeof LEGAL_AREAS)[number] | null | undefined
-  onLegalAreaChange: (v: (typeof LEGAL_AREAS)[number] | null) => void
+  legalAreas: LegalArea[]
+  onLegalAreasChange: (areas: LegalArea[]) => void
   children: React.ReactNode
 }) {
   return (
@@ -317,16 +574,18 @@ function FormShell({
         <div className="p-6 space-y-8">
           <section>
             <SectionDivider icon={Tag}>Classificação</SectionDivider>
-            <div className={cn('grid gap-4', isEditing ? 'grid-cols-1 max-w-xs' : 'grid-cols-2')}>
+            {/* Empilhado, e não lado a lado: os sete chips de área não cabem
+                em meia coluna sem quebrar em três linhas. */}
+            <div className="space-y-4">
               {!isEditing && (
-                <div>
+                <div className="max-w-sm">
                   <FieldLabel required>Tipo de Cliente</FieldLabel>
                   <TypeToggle value={type} onChange={onTypeChange} />
                 </div>
               )}
               <div>
-                <FieldLabel>Área Jurídica</FieldLabel>
-                <LegalAreaSelect value={legalArea} onChange={onLegalAreaChange} />
+                <FieldLabel>Áreas Jurídicas</FieldLabel>
+                <LegalAreasToggle value={legalAreas} onChange={onLegalAreasChange} />
               </div>
             </div>
           </section>
@@ -369,7 +628,7 @@ function PFForm({
       cpf: defaultValues?.cpf ?? '',
       phone: defaultValues?.phone ?? '',
       email: defaultValues?.email ?? '',
-      legal_area: defaultValues?.legal_area ?? undefined,
+      legal_areas: defaultValues?.legal_areas ?? [],
       birth_date: defaultValues?.birth_date ?? '',
       sex: defaultValues?.sex ?? null,
       nationality: defaultValues?.nationality ?? '',
@@ -378,13 +637,13 @@ function PFForm({
       rg: defaultValues?.rg ?? '',
       rg_issuer: defaultValues?.rg_issuer ?? '',
       tags: defaultValues?.tags ?? [],
-      address_street: defaultValues?.address_street ?? '',
-      address_number: defaultValues?.address_number ?? '',
-      address_complement: defaultValues?.address_complement ?? '',
-      address_neighborhood: defaultValues?.address_neighborhood ?? '',
-      address_city: defaultValues?.address_city ?? '',
-      address_state: defaultValues?.address_state ?? '',
-      address_zip: defaultValues?.address_zip ?? '',
+      // Sem endereço nenhum, abre com um cartão em branco: era assim antes da
+      // migration 54, e exigir um clique em "Adicionar endereço" para o caso
+      // mais comum só acrescenta um passo. Cartão que ficar vazio não é
+      // gravado — ver `hasAddressContent` no serviço.
+      addresses: defaultValues?.addresses?.length
+        ? toAddressInputs(defaultValues.addresses)
+        : [emptyAddress(defaultValues?.type === 'company' ? 'comercial' : 'residencial', true)],
       notes: defaultValues?.notes ?? '',
       contacts: defaultValues?.contacts?.map((c) => ({
         type: c.type,
@@ -395,22 +654,8 @@ function PFForm({
     },
   })
 
-  async function handleCepBlur(cep: string) {
-    const clean = cep.replace(/\D/g, '')
-    if (clean.length !== 8) return
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
-      const data = await res.json()
-      if (!data.erro) {
-        form.setValue('address_street', data.logradouro ?? '')
-        form.setValue('address_neighborhood', data.bairro ?? '')
-        form.setValue('address_city', data.localidade ?? '')
-        form.setValue('address_state', data.uf ?? '')
-      }
-    } catch {
-      // silently ignore
-    }
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addressArray = useFieldArray({ control: form.control as any, name: 'addresses' })
 
   async function handleCpfSearch() {
     const cpf = form.getValues('cpf')?.replace(/\D/g, '') ?? ''
@@ -448,8 +693,8 @@ function PFForm({
         onClose={onClose}
         type={type}
         onTypeChange={onTypeChange}
-        legalArea={form.watch('legal_area')}
-        onLegalAreaChange={(v) => form.setValue('legal_area', v ?? undefined, { shouldValidate: form.formState.isSubmitted })}
+        legalAreas={form.watch('legal_areas') ?? []}
+        onLegalAreasChange={(areas) => form.setValue('legal_areas', areas)}
       >
         {/* ── Identificação ─────────────────────────────────────── */}
         <section>
@@ -612,56 +857,33 @@ function PFForm({
           </div>
         </section>
 
-        {/* ── Endereço ──────────────────────────────────────────── */}
+        {/* ── Endereços ─────────────────────────────────────────── */}
         <section>
-          <SectionDivider icon={MapPin}>Endereço</SectionDivider>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <FieldLabel>CEP</FieldLabel>
-              <Input
-                {...form.register('address_zip')}
-                placeholder="00000-000"
-                maxLength={9}
-                onChange={(e) => form.setValue('address_zip', formatCEP(e.target.value))}
-                onBlur={(e) => handleCepBlur(e.target.value)}
-              />
-              <FieldError message={form.formState.errors.address_zip?.message} />
-            </div>
-            <div>
-              <FieldLabel>UF</FieldLabel>
-              <Input {...form.register('address_state')} placeholder="SP" maxLength={2} className="uppercase" />
-              <FieldError message={form.formState.errors.address_state?.message} />
-            </div>
-            <div>
-              <FieldLabel>Logradouro</FieldLabel>
-              <Input {...form.register('address_street')} placeholder="Rua das Flores" />
-            </div>
-            <div>
-              <FieldLabel>Número</FieldLabel>
-              <Input {...form.register('address_number')} placeholder="123" />
-            </div>
-            <div>
-              <FieldLabel>Complemento</FieldLabel>
-              <Input {...form.register('address_complement')} placeholder="Apto 42" />
-            </div>
-            <div>
-              <FieldLabel>Bairro</FieldLabel>
-              <Input {...form.register('address_neighborhood')} placeholder="Jardim Paulista" />
-            </div>
-            <div className="col-span-2">
-              <FieldLabel>Cidade</FieldLabel>
-              <Input {...form.register('address_city')} placeholder="São Paulo" />
-            </div>
-          </div>
+          <SectionDivider icon={MapPin}>Endereços</SectionDivider>
+          {/* eslint-disable @typescript-eslint/no-explicit-any */}
+          <AddressFields
+            array={addressArray}
+            control={form.control as any}
+            register={form.register as any}
+            setValue={form.setValue as any}
+            errors={form.formState.errors}
+            complementPlaceholder="Apto 42"
+            defaultKind="residencial"
+          />
+          {/* eslint-enable @typescript-eslint/no-explicit-any */}
         </section>
 
         {/* ── Etiquetas ─────────────────────────────────────────── */}
         <section>
           <SectionDivider icon={Tag}>Etiquetas</SectionDivider>
+          {/* `allowCreate` como no cadastro de processo: a lista de fábrica
+              não cobre o vocabulário de cada escritório, e obrigar a sair do
+              formulário para criar uma etiqueta é o que faz ninguém usar. */}
           <TagToggle
             tags={CRM_TAGS}
             value={(form.watch('tags') ?? []) as CrmTag[]}
             onChange={(tags) => form.setValue('tags', tags)}
+            allowCreate
           />
         </section>
 
@@ -708,15 +930,15 @@ function PJForm({
       contact_person: defaultValues?.contact_person ?? '',
       phone: defaultValues?.phone ?? '',
       email: defaultValues?.email ?? '',
-      legal_area: defaultValues?.legal_area ?? undefined,
+      legal_areas: defaultValues?.legal_areas ?? [],
       tags: defaultValues?.tags ?? [],
-      address_street: defaultValues?.address_street ?? '',
-      address_number: defaultValues?.address_number ?? '',
-      address_complement: defaultValues?.address_complement ?? '',
-      address_neighborhood: defaultValues?.address_neighborhood ?? '',
-      address_city: defaultValues?.address_city ?? '',
-      address_state: defaultValues?.address_state ?? '',
-      address_zip: defaultValues?.address_zip ?? '',
+      // Sem endereço nenhum, abre com um cartão em branco: era assim antes da
+      // migration 54, e exigir um clique em "Adicionar endereço" para o caso
+      // mais comum só acrescenta um passo. Cartão que ficar vazio não é
+      // gravado — ver `hasAddressContent` no serviço.
+      addresses: defaultValues?.addresses?.length
+        ? toAddressInputs(defaultValues.addresses)
+        : [emptyAddress(defaultValues?.type === 'company' ? 'comercial' : 'residencial', true)],
       notes: defaultValues?.notes ?? '',
       contacts: defaultValues?.contacts?.map((c) => ({
         type: c.type,
@@ -726,6 +948,9 @@ function PJForm({
       })) ?? [],
     },
   })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addressArray = useFieldArray({ control: form.control as any, name: 'addresses' })
 
   async function handleCnpjSearch() {
     const cnpj = form.getValues('cnpj')?.replace(/\D/g, '') ?? ''
@@ -746,35 +971,32 @@ function PJForm({
       if (data.trade_name) form.setValue('trade_name', data.trade_name)
       if (data.phone) form.setValue('phone', data.phone)
       if (data.email) form.setValue('email', data.email)
-      if (data.address_street) form.setValue('address_street', data.address_street)
-      if (data.address_number) form.setValue('address_number', data.address_number)
-      if (data.address_complement) form.setValue('address_complement', data.address_complement)
-      if (data.address_neighborhood) form.setValue('address_neighborhood', data.address_neighborhood)
-      if (data.address_city) form.setValue('address_city', data.address_city)
-      if (data.address_state) form.setValue('address_state', data.address_state)
-      if (data.address_zip) form.setValue('address_zip', data.address_zip)
+      // A rota devolve as chaves `address_*` da Receita (o contrato dela não
+      // mudou). Elas alimentam o PRIMEIRO endereço, criando-o quando a lista
+      // ainda está vazia — mesmo efeito observável de antes da migration 54.
+      const current = (form.getValues('addresses') ?? []) as AddressInput[]
+      const [first = emptyAddress('comercial', true), ...rest] = current
+      // `replace` do field array, e não `setValue`: quando a lista está vazia
+      // esta chamada CRIA uma linha, e `setValue` num nome de field array não
+      // avisa o `useFieldArray` — o endereço entraria no estado sem aparecer.
+      addressArray.replace([
+        {
+          ...first,
+          street: data.address_street || first.street,
+          number: data.address_number || first.number,
+          complement: data.address_complement || first.complement,
+          neighborhood: data.address_neighborhood || first.neighborhood,
+          city: data.address_city || first.city,
+          state: data.address_state || first.state,
+          zip: data.address_zip || first.zip,
+        },
+        ...rest,
+      ])
       toast.success('Dados preenchidos automaticamente!')
     } catch {
       toast.error('Erro ao buscar CNPJ.')
     } finally {
       setIsFetchingCnpj(false)
-    }
-  }
-
-  async function handleCepBlur(cep: string) {
-    const clean = cep.replace(/\D/g, '')
-    if (clean.length !== 8) return
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
-      const data = await res.json()
-      if (!data.erro) {
-        form.setValue('address_street', data.logradouro ?? '')
-        form.setValue('address_neighborhood', data.bairro ?? '')
-        form.setValue('address_city', data.localidade ?? '')
-        form.setValue('address_state', data.uf ?? '')
-      }
-    } catch {
-      // silently ignore
     }
   }
 
@@ -793,8 +1015,8 @@ function PJForm({
         onClose={onClose}
         type={type}
         onTypeChange={onTypeChange}
-        legalArea={form.watch('legal_area')}
-        onLegalAreaChange={(v) => form.setValue('legal_area', v ?? undefined, { shouldValidate: form.formState.isSubmitted })}
+        legalAreas={form.watch('legal_areas') ?? []}
+        onLegalAreasChange={(areas) => form.setValue('legal_areas', areas)}
       >
         {/* ── Identificação ─────────────────────────────────────── */}
         <section>
@@ -870,56 +1092,33 @@ function PJForm({
           </div>
         </section>
 
-        {/* ── Endereço ──────────────────────────────────────────── */}
+        {/* ── Endereços ─────────────────────────────────────────── */}
         <section>
-          <SectionDivider icon={MapPin}>Endereço</SectionDivider>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <FieldLabel>CEP</FieldLabel>
-              <Input
-                {...form.register('address_zip')}
-                placeholder="00000-000"
-                maxLength={9}
-                onChange={(e) => form.setValue('address_zip', formatCEP(e.target.value))}
-                onBlur={(e) => handleCepBlur(e.target.value)}
-              />
-              <FieldError message={form.formState.errors.address_zip?.message} />
-            </div>
-            <div>
-              <FieldLabel>UF</FieldLabel>
-              <Input {...form.register('address_state')} placeholder="SP" maxLength={2} className="uppercase" />
-              <FieldError message={form.formState.errors.address_state?.message} />
-            </div>
-            <div>
-              <FieldLabel>Logradouro</FieldLabel>
-              <Input {...form.register('address_street')} placeholder="Rua das Flores" />
-            </div>
-            <div>
-              <FieldLabel>Número</FieldLabel>
-              <Input {...form.register('address_number')} placeholder="123" />
-            </div>
-            <div>
-              <FieldLabel>Complemento</FieldLabel>
-              <Input {...form.register('address_complement')} placeholder="Sala 5" />
-            </div>
-            <div>
-              <FieldLabel>Bairro</FieldLabel>
-              <Input {...form.register('address_neighborhood')} placeholder="Itaim Bibi" />
-            </div>
-            <div className="col-span-2">
-              <FieldLabel>Cidade</FieldLabel>
-              <Input {...form.register('address_city')} placeholder="São Paulo" />
-            </div>
-          </div>
+          <SectionDivider icon={MapPin}>Endereços</SectionDivider>
+          {/* eslint-disable @typescript-eslint/no-explicit-any */}
+          <AddressFields
+            array={addressArray}
+            control={form.control as any}
+            register={form.register as any}
+            setValue={form.setValue as any}
+            errors={form.formState.errors}
+            complementPlaceholder="Sala 5"
+            defaultKind="comercial"
+          />
+          {/* eslint-enable @typescript-eslint/no-explicit-any */}
         </section>
 
         {/* ── Etiquetas ─────────────────────────────────────────── */}
         <section>
           <SectionDivider icon={Tag}>Etiquetas</SectionDivider>
+          {/* `allowCreate` como no cadastro de processo: a lista de fábrica
+              não cobre o vocabulário de cada escritório, e obrigar a sair do
+              formulário para criar uma etiqueta é o que faz ninguém usar. */}
           <TagToggle
             tags={CRM_TAGS}
             value={(form.watch('tags') ?? []) as CrmTag[]}
             onChange={(tags) => form.setValue('tags', tags)}
+            allowCreate
           />
         </section>
 

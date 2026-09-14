@@ -35,7 +35,7 @@
 **Campos complementares (opcionais, mas monitorados):**
 
 - Email
-- Endereço completo
+- Endereço completo (múltiplos, em `client_addresses` — migration 54)
 
 ---
 

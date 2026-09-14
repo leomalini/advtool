@@ -13,14 +13,15 @@ import {
   Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { AREAS_JURIDICAS } from '@/data/mock'
+import { LegalAreaBadges } from './LegalAreaBadges'
 import { formatDate } from '@/utils/date'
 import { formatPhone } from '@/utils/format'
 import { getInitials } from '@/utils/profile'
 import { useUpdateCliente } from '../hooks/useClienteMutations'
 import { EMAIL_REGEX, PHONE_DIGITS_REGEX } from '@/schemas/cliente.schema'
 import type { ClientWithRelations } from '@/types/cliente.types'
-import { getClientDocument } from '@/types/cliente.types'
+import { ADDRESS_KIND_LABELS, getClientDocument } from '@/types/cliente.types'
+import { formatAddressLine } from '../utils/qualificacao'
 
 /** Brazilian phone → wa.me link. Assumes a local (no country code) number if fewer than 12 digits. */
 function whatsappLink(phone: string): string {
@@ -144,8 +145,8 @@ export function ClienteResumo({ cliente }: ClienteResumoProps) {
   const extraPhones = cliente.contacts?.filter((c) => c.type === 'phone') ?? []
   const extraEmails = cliente.contacts?.filter((c) => c.type === 'email') ?? []
 
-  const hasAddress = cliente.address_street || cliente.address_city || cliente.address_state
-  const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area] : null
+  const addresses = cliente.addresses ?? []
+  const areas = cliente.legal_areas ?? []
 
   function saveField(field: 'phone' | 'email', value: string) {
     updateCliente.mutate({ [field]: value })
@@ -176,11 +177,9 @@ export function ClienteResumo({ cliente }: ClienteResumoProps) {
               <span className="font-mono">{doc}</span>
             </InfoField>
           )}
-          {area && (
-            <InfoField label="Área jurídica">
-              <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', area.bg, area.color)}>
-                {area.label}
-              </span>
+          {areas.length > 0 && (
+            <InfoField label={areas.length > 1 ? 'Áreas jurídicas' : 'Área jurídica'}>
+              <LegalAreaBadges areas={areas} max={1} />
             </InfoField>
           )}
           {!isPF && cliente.contact_person && (
@@ -264,21 +263,20 @@ export function ClienteResumo({ cliente }: ClienteResumoProps) {
         </div>
       </section>
 
-      {hasAddress && (
+      {addresses.length > 0 && (
         <section className="rounded-lg border p-3.5 flex items-start gap-2">
           <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-          <p className="text-sm leading-relaxed">
-            {[
-              cliente.address_street,
-              cliente.address_number,
-              cliente.address_complement,
-              cliente.address_neighborhood,
-              [cliente.address_city, cliente.address_state].filter(Boolean).join('/'),
-              cliente.address_zip ? `CEP ${cliente.address_zip}` : null,
-            ]
-              .filter(Boolean)
-              .join(', ')}
-          </p>
+          <div className="min-w-0 space-y-2">
+            {addresses.map((address) => (
+              <div key={address.id}>
+                <p className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                  {ADDRESS_KIND_LABELS[address.kind]}
+                  {address.is_primary && ' · principal'}
+                </p>
+                <p className="text-sm leading-relaxed">{formatAddressLine(address) || '—'}</p>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

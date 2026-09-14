@@ -31,7 +31,6 @@ export interface CrmItemClientSummary {
   trade_name: string | null
   phone: string | null
   email: string | null
-  legal_area: string | null
 }
 
 export interface CrmItemProfileSummary {

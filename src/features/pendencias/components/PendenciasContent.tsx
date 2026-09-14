@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertCircle,
@@ -19,7 +19,7 @@ import { useClientesPendencies, useCliente } from '@/features/clientes/hooks/use
 import { useUpdateCliente } from '@/features/clientes/hooks/useClienteMutations'
 import { ClienteForm } from '@/features/clientes/components/ClienteForm'
 import { useLegalProcessesPendencies } from '@/features/processos/hooks/useLegalProcesses'
-import type { ClientPendency } from '@/types/cliente.types'
+import type { ClientPendency, ClientType } from '@/types/cliente.types'
 import type { ProcessoPendency } from '@/types/legalProcess.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 
@@ -34,9 +34,27 @@ function PendencyCard({ pendency, onResolve }: PendencyCardProps) {
   const Icon = pendency.type === 'company' ? Building2 : User
   const initials = pendency.displayName.slice(0, 2).toUpperCase()
 
+  // O que trava o trabalho vem primeiro, como no card de processo. Um cadastro
+  // recém-criado chega a acumular oito avisos, e sem ordem o CPF que falta
+  // ficaria no meio de "estado civil".
+  const hasHigh = pendency.issues.some((i) => i.severity === 'high')
+  const issues = [...pendency.issues].sort(
+    (a, b) => Number(b.severity === 'high') - Number(a.severity === 'high')
+  )
+
   return (
-    <div className="flex items-start gap-4 rounded-xl border p-4 hover:bg-muted/20 transition-colors">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/12 text-sm font-semibold text-warning">
+    <div
+      className={cn(
+        'flex items-start gap-4 rounded-xl border p-4 hover:bg-muted/20 transition-colors',
+        hasHigh && 'border-destructive/30'
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+          hasHigh ? 'bg-destructive/12 text-destructive' : 'bg-warning/12 text-warning'
+        )}
+      >
         {initials}
       </div>
 
@@ -59,13 +77,22 @@ function PendencyCard({ pendency, onResolve }: PendencyCardProps) {
         </div>
 
         <div className="flex flex-wrap gap-1.5">
-          {pendency.missingFields.map((field) => (
+          {issues.map((issue) => (
             <span
-              key={field}
-              className="inline-flex items-center gap-1 rounded-full bg-warning/12 border border-warning/25 px-2 py-0.5 text-xs text-warning"
+              key={issue.kind}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
+                issue.severity === 'high'
+                  ? 'bg-destructive/12 border-destructive/25 text-destructive'
+                  : 'bg-warning/12 border-warning/25 text-warning'
+              )}
             >
-              <AlertCircle className="h-3 w-3" />
-              {field}
+              {issue.severity === 'high' ? (
+                <TriangleAlert className="h-3 w-3" />
+              ) : (
+                <AlertCircle className="h-3 w-3" />
+              )}
+              {issue.label}
             </span>
           ))}
         </div>
@@ -188,6 +215,46 @@ function ResolveDialog({ clientId, onClose }: { clientId: string | null; onClose
 
 // ── Componente principal ─────────────────────────────────────
 
+// ── Filtro por tipo de cliente ───────────────────────────────
+
+type TipoFiltro = 'todos' | ClientType
+
+const TIPO_FILTROS: { id: TipoFiltro; label: string }[] = [
+  { id: 'todos', label: 'Todos' },
+  { id: 'individual', label: 'Pessoa Física' },
+  { id: 'company', label: 'Pessoa Jurídica' },
+]
+
+/** Mesmos chips da listagem de clientes. Ficam no cabeçalho da seção, e não no
+ * topo da página, porque não fazem sentido para as pendências de processo. */
+function TipoFiltroChips({
+  value,
+  onChange,
+}: {
+  value: TipoFiltro
+  onChange: (v: TipoFiltro) => void
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {TIPO_FILTROS.map((filtro) => (
+        <button
+          key={filtro.id}
+          type="button"
+          onClick={() => onChange(filtro.id)}
+          className={cn(
+            'rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
+            value === filtro.id
+              ? 'border-foreground bg-foreground text-background'
+              : 'border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground'
+          )}
+        >
+          {filtro.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function PendenciasContent() {
   const {
     data: clientPendencies = [],
@@ -201,11 +268,22 @@ export function PendenciasContent() {
   } = useLegalProcessesPendencies()
 
   const [resolveId, setResolveId] = useState<string | null>(null)
+  const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('todos')
+
+  const clientesFiltrados = useMemo(
+    () =>
+      tipoFiltro === 'todos'
+        ? clientPendencies
+        : clientPendencies.filter((p) => p.type === tipoFiltro),
+    [clientPendencies, tipoFiltro]
+  )
 
   const isLoading = loadingClients || loadingProcessos
   const isError = errorClients || errorProcessos
   const total = clientPendencies.length + processoPendencies.length
-  const urgentes = processoPendencies.filter((p) =>
+  // Conta os dois lados: um cliente sem nenhum contato é tão urgente quanto um
+  // prazo sem tarefa.
+  const urgentes = [...processoPendencies, ...clientPendencies].filter((p) =>
     p.issues.some((i) => i.severity === 'high')
   ).length
 
@@ -280,18 +358,30 @@ export function PendenciasContent() {
 
           {clientPendencies.length > 0 && (
             <section className="space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <User className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">Clientes</h3>
                 <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
-                  {clientPendencies.length}
+                  {tipoFiltro === 'todos'
+                    ? clientPendencies.length
+                    : `${clientesFiltrados.length} de ${clientPendencies.length}`}
                 </span>
+                <div className="ml-auto">
+                  <TipoFiltroChips value={tipoFiltro} onChange={setTipoFiltro} />
+                </div>
               </div>
-              <div className="space-y-3">
-                {clientPendencies.map((p) => (
-                  <PendencyCard key={p.clientId} pendency={p} onResolve={setResolveId} />
-                ))}
-              </div>
+              {clientesFiltrados.length === 0 ? (
+                <p className="rounded-xl border bg-muted/10 px-4 py-6 text-center text-sm text-muted-foreground">
+                  Nenhuma pendência de{' '}
+                  {tipoFiltro === 'company' ? 'pessoa jurídica' : 'pessoa física'}.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {clientesFiltrados.map((p) => (
+                    <PendencyCard key={p.clientId} pendency={p} onResolve={setResolveId} />
+                  ))}
+                </div>
+              )}
             </section>
           )}
         </>

@@ -63,18 +63,48 @@ export interface ClientContact {
   created_at: string
 }
 
+/** Finalidade do endereço. `kind` e não `type` porque `type` do cliente já é
+ * PF/PJ, e os dois chegam juntos ao componente pelo embed. */
+export type AddressKind = 'residencial' | 'comercial' | 'correspondencia' | 'outro'
+
+export const ADDRESS_KIND_LABELS: Record<AddressKind, string> = {
+  residencial: 'Residencial',
+  comercial: 'Comercial',
+  correspondencia: 'Correspondência',
+  outro: 'Outro',
+}
+
+/** Endereço do cliente (migration 54). Todos os campos são nuláveis pelo mesmo
+ * motivo da qualificação: cadastro incompleto é a regra, e o gerador de
+ * petição omite o que faltar em vez de deixar lacuna. */
+export interface ClientAddress {
+  id: string
+  client_id: string
+  kind: AddressKind
+  street: string | null
+  number: string | null
+  complement: string | null
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
+  /** O que entra na qualificação. No máximo um por cliente — garantido por
+   * índice único parcial, não só pelo formulário. */
+  is_primary: boolean
+  created_at: string
+  updated_at: string
+}
+
 interface ClientBase extends BaseEntity {
   type: ClientType
-  legal_area: LegalArea | null
+  /** Áreas em que o escritório atende este cliente. Plural desde a migration
+   * 53: um mesmo cliente costuma ter processos em mais de uma. Vazio = não
+   * definida. Não confundir com `crm_items.legal_area`, que é a área do caso. */
+  legal_areas: LegalArea[]
   phone: string | null
   email: string | null
-  address_street: string | null
-  address_number: string | null
-  address_complement: string | null
-  address_neighborhood: string | null
-  address_city: string | null
-  address_state: string | null
-  address_zip: string | null
+  // Endereço saiu daqui na migration 54: virou `client_addresses`, embutida em
+  // `ClientWithRelations.addresses`.
   notes: string | null
   assigned_to: string | null
   created_by: string
@@ -120,6 +150,8 @@ export interface ClientWithRelations extends ClientBase {
   assignee?: Profile | null
   creator?: Profile
   contacts?: ClientContact[]
+  /** Opcional como `contacts`: só chega quando o select embute a filha. */
+  addresses?: ClientAddress[]
   name: string | null
   cpf: string | null
   company_name: string | null
@@ -138,9 +170,31 @@ export function getClientDocument(client: Client | ClientWithRelations): string 
   return (client as CompanyClient).cnpj ?? ''
 }
 
+export type ClientIssueKind =
+  | 'missing_document'
+  | 'missing_contact'
+  | 'missing_phone'
+  | 'missing_email'
+  | 'missing_legal_area'
+  | 'missing_address'
+  | 'missing_birth_date'
+  | 'missing_marital_status'
+  | 'missing_rg'
+
+/** Mesma forma de `ProcessoIssue`: a tela de pendências mostra os dois lado a
+ * lado e não pode tratá-los de jeitos diferentes. */
+export interface ClientIssue {
+  kind: ClientIssueKind
+  label: string
+  /** 'high' aparece primeiro e em vermelho — é o que impede de trabalhar
+   * (falta de documento, nenhum contato). 'medium' é o que enriquece a
+   * qualificação: sem ele a petição sai, só que mais pobre. */
+  severity: 'high' | 'medium'
+}
+
 export interface ClientPendency {
   clientId: string
   displayName: string
   type: ClientType
-  missingFields: string[]
+  issues: ClientIssue[]
 }

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ClienteForm } from './ClienteForm'
+import { LegalAreaBadges } from './LegalAreaBadges'
 import {
   Dialog,
   DialogContent,
@@ -116,7 +117,6 @@ interface ClienteRowProps {
 function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: ClienteRowProps) {
   const name = getClientDisplayName(cliente)
   const doc = getClientDocument(cliente)
-  const area = cliente.legal_area ? AREAS_JURIDICAS[cliente.legal_area] : null
   const initials = name.slice(0, 2).toUpperCase()
 
   const primaryPhone = cliente.contacts?.find((c) => c.type === 'phone')?.value ?? cliente.phone
@@ -179,21 +179,14 @@ function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: Cl
         </div>
       </td>
 
-      {/* Área jurídica */}
+      {/* Áreas jurídicas — a coluna é estreita, então só a primeira aparece
+          por extenso e o resto vira "+N". */}
       <td className="px-4 py-3 hidden sm:table-cell">
-        {area ? (
-          <span
-            className={cn(
-              'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-              area.bg,
-              area.color
-            )}
-          >
-            {area.label}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground/50">—</span>
-        )}
+        <LegalAreaBadges
+          areas={cliente.legal_areas ?? []}
+          max={1}
+          empty={<span className="text-xs text-muted-foreground/50">—</span>}
+        />
       </td>
 
       {/* Documento */}
@@ -296,7 +289,7 @@ export function ClientesContent() {
         (qDigits.length > 0 && docDigits.includes(qDigits)) ||
         c.contacts?.some((ct) => ct.value.toLowerCase().includes(q))
 
-      const matchArea = areaFiltro === 'todas' || c.legal_area === areaFiltro
+      const matchArea = areaFiltro === 'todas' || (c.legal_areas ?? []).includes(areaFiltro)
 
       return matchSearch && matchArea
     })

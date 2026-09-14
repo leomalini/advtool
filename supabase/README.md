@@ -48,7 +48,7 @@ mesmos documentos; o que muda por perfil é quem envia e quem apaga.
 
 Após aplicar tudo, confirme em **Table Editor** que existem:
 
-`profiles`, `clients`, `client_contacts`, `crm_items`, `crm_item_comments`,
+`profiles`, `clients`, `client_contacts`, `client_addresses`, `crm_items`, `crm_item_comments`,
 `crm_item_column_history`, `legal_processes`, `legal_process_movements`,
 `legal_process_parties`, `workflows`, `workflow_columns`, `events`,
 `event_assignees`, `tasks`, `task_comments`, `task_checklist_items`,

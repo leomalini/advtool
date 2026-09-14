@@ -1,7 +1,13 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
-import type { ClientWithRelations, ClientPendency, ClientComment } from '@/types/cliente.types'
-import type { CreateClientInput, ContactInput } from '@/schemas/cliente.schema'
+import type {
+  ClientWithRelations,
+  ClientPendency,
+  ClientComment,
+  ClientIssue,
+  ClientType,
+} from '@/types/cliente.types'
+import type { CreateClientInput, ContactInput, AddressInput } from '@/schemas/cliente.schema'
 
 const supabase = createClient()
 
@@ -9,8 +15,25 @@ const CLIENT_SELECT = `
   *,
   assignee:profiles!clients_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
   creator:profiles!clients_created_by_fkey(id, full_name, avatar_url, role, created_at),
-  contacts:client_contacts(*)
+  contacts:client_contacts(*),
+  addresses:client_addresses(*)
 `
+
+/** Principal primeiro, depois por ordem de cadastro.
+ *
+ * A ordenação é feita aqui e não no `.order()` porque embed do PostgREST vem
+ * em ordem de heap, que muda a cada update — sem isto, "o primeiro endereço"
+ * seria um endereço diferente a cada carregamento da tela. */
+function sortAddresses(client: ClientWithRelations): ClientWithRelations {
+  if (!client.addresses) return client
+  return {
+    ...client,
+    addresses: [...client.addresses].sort(
+      (a, b) =>
+        Number(b.is_primary) - Number(a.is_primary) || a.created_at.localeCompare(b.created_at),
+    ),
+  }
+}
 
 export async function getClients(): Promise<ClientWithRelations[]> {
   const { data, error } = await supabase
@@ -19,7 +42,7 @@ export async function getClients(): Promise<ClientWithRelations[]> {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data as ClientWithRelations[]
+  return (data as ClientWithRelations[]).map(sortAddresses)
 }
 
 export async function getClientById(id: string): Promise<ClientWithRelations> {
@@ -30,7 +53,7 @@ export async function getClientById(id: string): Promise<ClientWithRelations> {
     .single()
 
   if (error) throw error
-  return data as ClientWithRelations
+  return sortAddresses(data as ClientWithRelations)
 }
 
 /** Controles de formulário devolvem '' quando intocados, e o Postgres recusa
@@ -44,11 +67,64 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
   return out as T
 }
 
+/** Endereço em que ninguém digitou nada não vira linha.
+ *
+ * O formulário abre com um cartão em branco para o caso comum de haver um
+ * endereço só; salvar sem preencher criaria um registro fantasma, que a tela
+ * de pendências contaria como "tem endereço". */
+function hasAddressContent(address: AddressInput): boolean {
+  return [
+    address.street,
+    address.number,
+    address.complement,
+    address.neighborhood,
+    address.city,
+    address.state,
+    address.zip,
+  ].some((value) => typeof value === 'string' && value.trim() !== '')
+}
+
+/** Grava as filhas do cliente (contatos e endereços).
+ *
+ * O erro sobe: um endereço recusado pela RLS não pode sumir em silêncio, senão
+ * a tela diz "cliente cadastrado" e a petição sai sem o endereço. */
+async function insertChildren(
+  clientId: string,
+  contacts: ContactInput[] | undefined,
+  addresses: AddressInput[] | undefined
+): Promise<void> {
+  if (contacts && contacts.length > 0) {
+    const { error } = await supabase
+      .from('client_contacts')
+      .insert(contacts.map((c) => ({ ...c, client_id: clientId })))
+    if (error) throw error
+  }
+
+  const filled = (addresses ?? []).filter(hasAddressContent)
+  if (filled.length > 0) {
+    // O principal pode ter sido justamente o cartão em branco descartado
+    // acima. Sem isto o cliente ficaria com endereços e nenhum marcado, e a
+    // qualificação teria de adivinhar qual usar.
+    const hasPrimary = filled.some((a) => a.is_primary)
+    const { error } = await supabase.from('client_addresses').insert(
+      filled.map((a, i) => ({
+        ...nullifyEmpty(a),
+        is_primary: hasPrimary ? a.is_primary : i === 0,
+        client_id: clientId,
+      }))
+    )
+    if (error) throw error
+  }
+}
+
 export async function createClientRecord(
   input: CreateClientInput,
   userId: string
 ): Promise<ClientWithRelations> {
-  const { contacts, ...clientData } = input as CreateClientInput & { contacts?: ContactInput[] }
+  const { contacts, addresses, ...clientData } = input as CreateClientInput & {
+    contacts?: ContactInput[]
+    addresses?: AddressInput[]
+  }
 
   const { data, error } = await supabase
     .from('clients')
@@ -58,11 +134,7 @@ export async function createClientRecord(
 
   if (error) throw error
 
-  if (contacts && contacts.length > 0) {
-    await supabase.from('client_contacts').insert(
-      contacts.map((c) => ({ ...c, client_id: data.id }))
-    )
-  }
+  await insertChildren(data.id, contacts, addresses)
 
   await recordActivity({
     type: 'client_created',
@@ -79,21 +151,25 @@ export async function updateClientRecord(
   id: string,
   input: Partial<CreateClientInput>
 ): Promise<void> {
-  const { contacts, ...clientData } = input as Partial<CreateClientInput> & {
+  const { contacts, addresses, ...clientData } = input as Partial<CreateClientInput> & {
     contacts?: ContactInput[]
+    addresses?: AddressInput[]
   }
 
   const { error } = await supabase.from('clients').update(nullifyEmpty(clientData)).eq('id', id)
   if (error) throw error
 
+  // `!== undefined`, e não truthiness: um patch de campo único (o telefone
+  // editado pelo ClienteResumo, por exemplo) não menciona as filhas e não pode
+  // apagá-las. Uma lista vazia, essa sim, apaga — é o pedido explícito.
   if (contacts !== undefined) {
     await supabase.from('client_contacts').delete().eq('client_id', id)
-    if (contacts.length > 0) {
-      await supabase.from('client_contacts').insert(
-        contacts.map((c) => ({ ...c, client_id: id }))
-      )
-    }
   }
+  if (addresses !== undefined) {
+    await supabase.from('client_addresses').delete().eq('client_id', id)
+  }
+
+  await insertChildren(id, contacts, addresses)
 }
 
 export async function deleteClientRecord(id: string): Promise<void> {
@@ -101,35 +177,104 @@ export async function deleteClientRecord(id: string): Promise<void> {
   if (error) throw error
 }
 
+const PENDENCY_SELECT = `
+  id, type, name, company_name, trade_name, cpf, cnpj, phone, email,
+  legal_areas, birth_date, marital_status, rg,
+  contacts:client_contacts(type),
+  addresses:client_addresses(id)
+`
+
+interface PendencyRow {
+  id: string
+  type: ClientType
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
+  cpf: string | null
+  cnpj: string | null
+  phone: string | null
+  email: string | null
+  legal_areas: string[] | null
+  birth_date: string | null
+  marital_status: string | null
+  rg: string | null
+  contacts: { type: 'phone' | 'email' }[] | null
+  addresses: { id: string }[] | null
+}
+
+/**
+ * Cadastros incompletos, por cliente.
+ *
+ * Duas severidades: `high` é o que trava o trabalho — sem documento não se
+ * peticiona, sem nenhum contato não se avisa o cliente. `medium` é o que
+ * enriquece a qualificação (nascimento, estado civil, RG, endereço): a peça
+ * sai sem eles, só que mais pobre. Sem essa separação, os nove avisos
+ * possíveis chegariam todos com o mesmo peso visual.
+ *
+ * Nascimento, estado civil e RG só valem para pessoa física — não existem no
+ * cadastro de empresa, e cobrá-los deixaria toda PJ permanentemente pendente.
+ */
 export async function getClientsPendencies(): Promise<ClientPendency[]> {
   const { data, error } = await supabase
     .from('clients')
-    .select('id, type, name, company_name, trade_name, cpf, cnpj, phone, email, legal_area')
+    .select(PENDENCY_SELECT)
     .order('created_at', { ascending: false })
 
   if (error) throw error
 
   const pendencies: ClientPendency[] = []
 
-  for (const c of data ?? []) {
-    const missing: string[] = []
-    const displayName =
-      c.type === 'individual' ? (c.name ?? '') : (c.trade_name ?? c.company_name ?? '')
+  for (const c of (data ?? []) as unknown as PendencyRow[]) {
+    const issues: ClientIssue[] = []
+    const isPF = c.type === 'individual'
+    const displayName = isPF ? (c.name ?? '') : (c.trade_name ?? c.company_name ?? '')
 
-    if (c.type === 'individual' && !c.cpf) missing.push('CPF')
-    if (c.type === 'company' && !c.cnpj) missing.push('CNPJ')
-    if (!c.phone && !c.email) missing.push('Contato (telefone ou email)')
-    if (!c.phone) missing.push('Telefone')
-    if (!c.email) missing.push('E-mail')
-    if (!c.legal_area) missing.push('Área jurídica')
+    const contacts = c.contacts ?? []
+    // Telefone e e-mail existem nas duas formas: coluna do cliente e linha em
+    // `client_contacts`. Olhar só a coluna marcava como sem contato quem tinha
+    // o celular cadastrado como contato adicional.
+    const hasPhone = Boolean(c.phone) || contacts.some((ct) => ct.type === 'phone')
+    const hasEmail = Boolean(c.email) || contacts.some((ct) => ct.type === 'email')
 
-    if (missing.length > 0) {
-      pendencies.push({
-        clientId: c.id,
-        displayName,
-        type: c.type,
-        missingFields: missing,
+    if (isPF && !c.cpf) issues.push({ kind: 'missing_document', label: 'CPF', severity: 'high' })
+    if (!isPF && !c.cnpj) issues.push({ kind: 'missing_document', label: 'CNPJ', severity: 'high' })
+
+    if (!hasPhone && !hasEmail) {
+      // Um aviso só. Listar "Contato", "Telefone" e "E-mail" para a mesma
+      // ausência inflava a contagem e dizia três vezes a mesma coisa.
+      issues.push({
+        kind: 'missing_contact',
+        label: 'Nenhum contato (telefone ou e-mail)',
+        severity: 'high',
       })
+    } else {
+      if (!hasPhone) issues.push({ kind: 'missing_phone', label: 'Telefone', severity: 'medium' })
+      if (!hasEmail) issues.push({ kind: 'missing_email', label: 'E-mail', severity: 'medium' })
+    }
+
+    if (!c.legal_areas?.length) {
+      issues.push({ kind: 'missing_legal_area', label: 'Área jurídica', severity: 'medium' })
+    }
+    if (!c.addresses?.length) {
+      issues.push({ kind: 'missing_address', label: 'Endereço', severity: 'medium' })
+    }
+
+    if (isPF) {
+      if (!c.birth_date) {
+        issues.push({
+          kind: 'missing_birth_date',
+          label: 'Data de nascimento',
+          severity: 'medium',
+        })
+      }
+      if (!c.marital_status) {
+        issues.push({ kind: 'missing_marital_status', label: 'Estado civil', severity: 'medium' })
+      }
+      if (!c.rg) issues.push({ kind: 'missing_rg', label: 'RG', severity: 'medium' })
+    }
+
+    if (issues.length > 0) {
+      pendencies.push({ clientId: c.id, displayName, type: c.type, issues })
     }
   }
 
