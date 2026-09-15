@@ -18,6 +18,7 @@ import {
   Pencil,
   Phone,
   Scale,
+  Search,
   Tag,
   User,
   UserCog,
@@ -49,6 +50,8 @@ import { ClienteForm } from './ClienteForm'
 import { LegalAreaBadges } from './LegalAreaBadges'
 import { IssueList, PendencyHeaderBadge, faltamLabel } from './PendencyBadge'
 import { ClientComments } from './ClientComments'
+import { Can } from '@/components/shared/Can'
+import { BuscaPorDocumentoDialog } from '@/features/processos/components/BuscaPorDocumentoDialog'
 import { useLegalProcessesByClient } from '@/features/processos/hooks/useLegalProcesses'
 import { useCrmItemsByClient } from '@/features/crm/hooks/useCrmItems'
 import { useWorkflows } from '@/features/crm/hooks/useWorkflows'
@@ -303,9 +306,18 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
 
 // ── Aba: Processos ────────────────────────────────────────────────────────────
 
-function ProcessosTab({ clientId }: { clientId: string }) {
+function ProcessosTab({
+  clientId,
+  clientName,
+  clientDocument,
+}: {
+  clientId: string
+  clientName: string
+  clientDocument: string
+}) {
   const { data: processos = [], isLoading } = useLegalProcessesByClient(clientId)
   const { data: workflows = [] } = useWorkflows()
+  const [buscaOpen, setBuscaOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -323,10 +335,38 @@ function ProcessosTab({ clientId }: { clientId: string }) {
         <span className="text-xs text-muted-foreground">
           {processos.length} processo{processos.length !== 1 ? 's' : ''}
         </span>
-        <Button asChild size="sm" className="h-7 text-xs">
-          <Link href={`/processos?create=1&clientId=${clientId}`}>Novo processo</Link>
-        </Button>
+        <div className="flex gap-2">
+          {/* Só quem pode criar processo vê a busca: ela gasta crédito pago e
+              existe para terminar em importação. */}
+          <Can resource="processos" action="create">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setBuscaOpen(true)}
+              disabled={!clientDocument}
+              title={
+                clientDocument
+                  ? undefined
+                  : 'Cadastre o CPF ou CNPJ do cliente para poder consultar'
+              }
+            >
+              <Search className="h-3.5 w-3.5" /> Buscar por CPF/CNPJ
+            </Button>
+          </Can>
+          <Button asChild size="sm" className="h-7 text-xs">
+            <Link href={`/processos?create=1&clientId=${clientId}`}>Novo processo</Link>
+          </Button>
+        </div>
       </div>
+
+      <BuscaPorDocumentoDialog
+        open={buscaOpen}
+        onOpenChange={setBuscaOpen}
+        clientId={clientId}
+        clientName={clientName}
+        document={clientDocument}
+      />
 
       {processos.length === 0 ? (
         <EmptyTab
@@ -775,7 +815,13 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                   itemLabel="cliente"
                 />
               )}
-              {tab === 'processos' && <ProcessosTab clientId={clienteId} />}
+              {tab === 'processos' && (
+                <ProcessosTab
+                  clientId={clienteId}
+                  clientName={getClientDisplayName(cliente)}
+                  clientDocument={getClientDocument(cliente)}
+                />
+              )}
               {tab === 'casos' && <CasosTab clientId={clienteId} />}
               {tab === 'financeiro' && (
                 <FinancialEntriesTab

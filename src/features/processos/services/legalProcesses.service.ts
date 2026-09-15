@@ -288,6 +288,29 @@ export async function findLegalProcessByCnj(cnj: string): Promise<LegalProcessWi
   return toLegalProcessWithRelations(data as Parameters<typeof toLegalProcessWithRelations>[0])
 }
 
+/** Quais destes CNJs já estão na nossa base — devolve CNJ → id do processo.
+ *
+ * Uma consulta só, e não uma por número: a busca por CPF/CNPJ devolve dezenas
+ * de processos de uma vez, e conferir um a um seria uma ida ao banco por linha
+ * da lista. O `Map` existe porque a tela precisa não só saber QUE já existe,
+ * mas para onde mandar quem clicar. */
+export async function findLegalProcessesByCnjs(cnjs: string[]): Promise<Map<string, string>> {
+  const found = new Map<string, string>()
+  if (cnjs.length === 0) return found
+
+  const { data, error } = await supabase
+    .from('legal_processes')
+    .select('id, cnj_number')
+    .in('cnj_number', cnjs)
+
+  if (error) throw error
+
+  for (const row of (data ?? []) as { id: string; cnj_number: string | null }[]) {
+    if (row.cnj_number) found.set(row.cnj_number, row.id)
+  }
+  return found
+}
+
 export async function createLegalProcess(
   input: LegalProcessInput,
   userId: string
