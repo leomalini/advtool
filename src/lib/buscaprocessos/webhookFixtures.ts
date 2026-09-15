@@ -152,8 +152,12 @@ export function buildWebhookPayload(
             { nome: 'ADVOGADO EXEMPLO', envolvido_tipo: 'Advogado', oab: '123456/ES' },
             { nome: 'PARTE EXEMPLO', envolvido_tipo: 'Requerente', oab: null },
           ],
-          link: 'https://www.exemplo.com/processo',
+          // Como nas entregas reais: `link` é o endereço da API (que a tela não
+          // abre) e a página de verdade vem em `link_publicacao_tribunal`.
+          link: 'https://api.buscaprocessos.app.br/v1/intimacoes/publicacoes/987654321',
+          link_api: 'https://api.buscaprocessos.app.br/v1/intimacoes/publicacoes/987654321',
           link_pdf: 'https://www.exemplo.com/diario.pdf',
+          link_publicacao_tribunal: 'https://pje.exemplo.jus.br/pje/ConsultaDocumento?x=exemplo',
           // Sem `processo: { numero_novo }` de propósito: o contrato descreve
           // esse objeto, as entregas reais não o mandam, e é o formato real que
           // o disparo de teste precisa exercitar.

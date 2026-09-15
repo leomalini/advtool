@@ -436,8 +436,14 @@ export interface BpWebhookDiarioData {
     diario_oficial?: string | null
     estado?: string | null
     envolvidos?: BpWebhookDiarioEnvolvido[]
+    /** ⚠️ NÃO é a publicação: aponta para a API da BuscaProcessos e exige a
+     * chave. Aberto no navegador responde `API_KEY_REQUIRED`. */
     link?: string | null
+    /** O mesmo endereço de `link`, com o nome honesto. */
+    link_api?: string | null
     link_pdf?: string | null
+    /** A página pública no tribunal — é este o link que a tela pode abrir. */
+    link_publicacao_tribunal?: string | null
     processo?: {
       /** O CNJ. */
       numero_novo?: string | null

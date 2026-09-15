@@ -16,6 +16,30 @@ import type { BpIntimacao, BpMovimentacao, BpWebhookDiarioData } from './types'
  * duplicata deste módulo.
  */
 
+/** Host da API da BuscaProcessos. Endereço dali exige `x-api-key` e, aberto no
+ * navegador, responde `API_KEY_REQUIRED` em vez da publicação. */
+const API_HOST = 'api.buscaprocessos.app.br'
+
+/**
+ * O primeiro link que a tela consegue abrir de fato.
+ *
+ * A origem manda endereços de nomes parecidos e destinos muito diferentes:
+ * `link` e `link_api` apontam para a API dela, e só
+ * `link_publicacao_tribunal` aponta para a página pública do tribunal. Guardar
+ * o primeiro em `external_url` colocava na tela um botão "abrir publicação" que
+ * levava a um JSON de erro — e um link que sempre falha é pior que link nenhum,
+ * porque o botão aparece do mesmo jeito.
+ */
+function browsableUrl(...candidates: (string | null | undefined)[]): string | null {
+  for (const candidate of candidates) {
+    const value = candidate?.trim()
+    if (!value || !/^https?:\/\//i.test(value)) continue
+    if (value.includes(API_HOST)) continue
+    return value
+  }
+  return null
+}
+
 /** GET /v1/intimacoes — a íntegra vem em HTML e `conteudo` é só um trecho. */
 export function intimacaoToPublicationRow(
   intimacao: BpIntimacao,
@@ -43,7 +67,7 @@ export function intimacaoToPublicationRow(
     excerpt: excerptFrom(contentText || (intimacao.conteudo ?? '')),
     content_html: intimacao.conteudoCompletoHtml ?? null,
     content_text: contentText,
-    external_url: intimacao.link ?? null,
+    external_url: browsableUrl(intimacao.link),
     raw_data: intimacao,
   }
 }
@@ -90,7 +114,7 @@ export async function movimentacaoToPublicationRow(
     // este mapeamento a publicação que entra pelo cadastro do processo ficava
     // sem link nenhum, enquanto a mesma publicação vinda por OAB ou webhook
     // tinha o dela.
-    external_url: mov.link_publicacao_tribunal ?? null,
+    external_url: browsableUrl(mov.link_publicacao_tribunal),
     raw_data: mov,
   }
 }
@@ -176,7 +200,10 @@ export function diarioToPublicationRow(
     excerpt: excerptFrom(contentText),
     content_html: mov.conteudo ?? null,
     content_text: contentText,
-    external_url: mov.link ?? null,
+    // A página do tribunal primeiro, o PDF do diário depois. `link` fica por
+    // último e quase sempre é descartado: nas entregas reais ele é o endereço da
+    // API, que a tela não consegue abrir.
+    external_url: browsableUrl(mov.link_publicacao_tribunal, mov.link_pdf, mov.link),
     raw_data: mov,
     parties: (mov.envolvidos ?? []).map((envolvido, position) => ({
       name: envolvido.nome,
