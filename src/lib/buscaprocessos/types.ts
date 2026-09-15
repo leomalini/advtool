@@ -3,6 +3,11 @@
 // spec, não de inferência: a versão anterior deste arquivo modelava
 // `partes`/`movimentos`/`tribunal` no topo de `data`, campos que a API nunca
 // devolveu — era o que estourava um TypeError na rota de consulta por CNJ.
+//
+// O bloco de `GET /v1/processos?cpf_cnpj=` e os tipos que ele alcança
+// (`BpCapa`, `BpEnvolvido`, `BpTribunal`, `BpProcessoCapa`) foram conferidos
+// contra uma RESPOSTA REAL, e não contra a spec: onde os dois discordam, o
+// payload observado ganhou, e a divergência está comentada no ponto.
 
 // ── Envelope ─────────────────────────────────────────────────────────────────
 
@@ -43,11 +48,21 @@ export interface BpValorCausa {
   valor_formatado: string | null
 }
 
+/** ⚠️ Em `fontes[].tribunal` isto é um OBJETO; no topo de `BpProcessoCapa` o
+ * campo homônimo `tribunal` é uma STRING com a sigla. Não são o mesmo campo.
+ *
+ * `segmento` e `jtr` vieram de payload real; `id` e `categoria` estavam aqui
+ * desde a modelagem pelo OpenAPI e nenhuma resposta observada os trouxe — daí
+ * serem opcionais, e não `| null` obrigatórios. */
 export interface BpTribunal {
-  id: number | null
+  id?: number | null
   nome: string | null
   sigla: string | null
-  categoria: string | null
+  categoria?: string | null
+  /** 'JUSTICA_ESTADUAL' | 'JUSTICA_FEDERAL' | 'SUPREMO_TRIBUNAL_FEDERAL'… */
+  segmento?: string | null
+  /** Código JTR do CNJ, como string: '808' (TJES), '402' (TRF2). */
+  jtr?: string | null
 }
 
 export interface BpOab {
@@ -56,18 +71,78 @@ export interface BpOab {
   numero: number | null
 }
 
-/** Parte, advogado ou magistrado. `polo` vem em CAIXA ALTA e inclui valores
- * fora do par ativo/passivo: 'ATIVO' | 'PASSIVO' | 'ADVOGADO' | 'NENHUM'. */
+/** A inscrição como ela aparece DENTRO de `envolvidos[].advogados[]`: o par é
+ * `numero`/`uf`, e `numero` é string com zeros à esquerda ('0009591'). Não
+ * confundir com `BpOab` (uf/tipo/numero numérico), que é outra forma. */
+export interface BpAdvogadoOab {
+  numero: string | null
+  uf: string | null
+}
+
+/** Documento de um envolvido na forma tabelada que a busca por CPF/CNPJ traz. */
+export interface BpDocumentoEnvolvido {
+  numero: string | null
+  /** 'CPF' | 'CNPJ'. */
+  tipo: string | null
+}
+
+/** Advogado vinculado a um envolvido.
+ *
+ * Tem forma PRÓPRIA — não é um `BpEnvolvido`: não traz `polo` nem `tipo`, e a
+ * inscrição vem em `oab` (array de numero/uf), não em `oabs`. */
+export interface BpAdvogado {
+  nome: string
+  oab?: BpAdvogadoOab[]
+  cpf?: string | null
+  cnpj?: string | null
+  tipo_pessoa?: string | null
+  documento?: string | null
+}
+
+/** Parte, advogado ou magistrado. `polo` vem em CAIXA ALTA e vai muito além do
+ * par ativo/passivo: payloads reais trazem também 'OUTROS_PARTICIPANTES' e
+ * 'ASSISTENTE_DESINTERESSADO_AMICUS_CURAE'.
+ *
+ * ⚠️ Na busca por CPF/CNPJ, o documento procurado costuma aparecer aqui como
+ * ADVOGADO do processo, e não como parte — quem consome precisa olhar `tipo`
+ * antes de tratar a pessoa como titular do processo. */
 export interface BpEnvolvido {
   nome: string
   tipo: string | null
-  tipo_normalizado: string | null
-  polo: 'ATIVO' | 'PASSIVO' | 'ADVOGADO' | 'NENHUM' | (string & {})
+  tipo_normalizado?: string | null
+  polo:
+    | 'ATIVO'
+    | 'PASSIVO'
+    | 'ADVOGADO'
+    | 'NENHUM'
+    | 'OUTROS_PARTICIPANTES'
+    | 'ASSISTENTE_DESINTERESSADO_AMICUS_CURAE'
+    | (string & {})
   tipo_pessoa?: 'FISICA' | 'JURIDICA' | (string & {}) | null
+  /** Alias camelCase devolvido em paralelo ao snake_case. */
+  tipoPessoa?: string | null
   cpf?: string | null
   cnpj?: string | null
-  advogados?: BpEnvolvido[]
+  /** O CPF ou CNPJ já escolhido pela origem — igual a `cpf ?? cnpj`. */
+  documento?: string | null
+  documentos?: BpDocumentoEnvolvido[]
+  advogados?: BpAdvogado[]
   oabs?: BpOab[]
+}
+
+/** Último ato conhecido, embutido na própria capa.
+ *
+ * Vale dinheiro: a busca por CPF/CNPJ já traz a DESCRIÇÃO do último movimento
+ * aqui, de graça. Sem isso, o mesmo texto só sairia de
+ * `GET /processos/cnj/{cnj}/movimentacoes`, que é cobrado à parte. */
+export interface BpUltimoMovimento {
+  /** 'yyyy-MM-dd'. */
+  data: string | null
+  /** 'yyyy-MM-ddTHH:mm:ss', sem fuso declarado. */
+  data_hora?: string | null
+  descricao: string | null
+  /** Código TPU do CNJ; -1 quando a origem não tabelou o ato. */
+  codigo?: number | null
 }
 
 export interface BpCapa {
@@ -75,9 +150,16 @@ export interface BpCapa {
   assunto: string | null
   area: string | null
   orgao_julgador: string | null
-  situacao: string | null
+  /** ⚠️ NÃO vem na busca por CPF/CNPJ — lá a capa não tem `situacao`, e quem
+   * depende dela para derivar status recebe null. O sinal disponível naquele
+   * payload é `ativo`, no topo do processo. */
+  situacao?: string | null
   valor_causa: BpValorCausa | null
   data_distribuicao: string | null
+  /** Distinta de `data_distribuicao`: um recurso é ajuizado num ano e
+   * distribuído noutro. */
+  data_ajuizamento?: string | null
+  ultimo_movimento?: BpUltimoMovimento | null
 }
 
 /** Cada fonte é um tribunal/grau distinto do mesmo processo (1º grau, 2º grau,
@@ -114,11 +196,26 @@ export interface BpProcessoCapa {
   data_ultima_movimentacao?: string | null
   quantidade_movimentacoes?: number | null
   fontes_tribunais_estao_arquivadas?: boolean | null
+  /** ⚠️ String com a SIGLA ('TJES'), não o objeto `BpTribunal` — o campo de
+   * mesmo nome dentro de `fontes[]` é que é objeto. */
+  tribunal?: string | null
+  /** 0 = público. Valor maior indica segredo de justiça na origem. */
+  nivel_sigilo?: number | null
+  /** Sinal de processo em curso na busca por CPF/CNPJ, onde `capa.situacao`
+   * não vem. Não é o mesmo que `fontes_tribunais_estao_arquivadas`, que
+   * aparece noutros payloads. */
+  ativo?: boolean | null
   data_ultima_verificacao?: string | null
+  /** Quando a BuscaProcessos viu o processo pela última vez (lado deles). */
+  last_seen_at?: string | null
   valor_causa?: BpValorCausa | null
   valorCausa?: BpValorCausa | null
   processos_relacionados?: Array<{ numero: string }>
   fontes: BpFonte[]
+  /** Cópia literal do mesmo processo, repetida pela API dentro de cada item.
+   * Dobra o tamanho da resposta e não acrescenta nada — descartada antes de
+   * gravar o cache. */
+  raw?: Record<string, unknown>
 }
 
 export type BpCnjLookupData = BpProcessoCapa
@@ -200,12 +297,43 @@ export interface BpResumoIaData {
 
 // ── GET /v1/processos?cpf_cnpj=… ──────────────────────────────────────────────
 
+/** Quem é o dono do documento consultado, segundo a origem. */
+export interface BpEnvolvidoResumo {
+  nome: string | null
+  tipoPessoa?: 'FISICA' | 'JURIDICA' | (string & {}) | null
+  quantidadeProcessos?: number | null
+}
+
+export interface BpDocumentSearchPagination {
+  current_page: number
+  from: number | null
+  last_page: number
+  per_page: number
+  to: number | null
+  total: number
+}
+
+/** ⚠️ Esta consulta é cobrada POR RESULTADO, não por chamada: um CPF com 27
+ * processos custou R$ 3,90 (`meta.creditsCharged`), enquanto a capa de um
+ * processo custa R$ 0,12. Como o preço depende de quantos processos a pessoa
+ * tem, ele não é previsível antes de consultar — só dá para informar o custo
+ * DEPOIS, lendo `meta.creditsCharged`. É o que justifica o cache local. */
 export interface BpDocumentSearchData {
+  /** Só dígitos, como a API devolve. */
   document: string
+  /** 'cpf' | 'cnpj' — minúsculo. */
   documentType: string
-  envolvido?: Record<string, unknown>
+  envolvido?: BpEnvolvidoResumo
   processos: BpProcessoCapa[]
+  total: number
+  pagination?: BpDocumentSearchPagination
   links?: { next?: { href: string } | null }
+  query?: {
+    limit?: number | null
+    page?: number | null
+    cursor?: string | null
+    li?: string | null
+  }
 }
 
 // ── GET /v1/advogados/processos?oab_estado=…&oab_numero=… ─────────────────────
