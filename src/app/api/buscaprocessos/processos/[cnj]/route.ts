@@ -1,12 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProcessoByCnj, BpApiError, BpPendingError } from '@/lib/buscaprocessos/client'
 import { toLookupResult } from '@/lib/buscaprocessos/mapCapa'
+import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
 
+/**
+ * Consulta a capa de um processo pelo número CNJ.
+ *
+ * Exige 'processos:create', e não 'view', porque a chamada vai à API externa e
+ * consome recurso: os dois consumidores (`ProcessoForm` e
+ * `VincularProcessoField`) só chegam aqui quando o processo NÃO está na nossa
+ * base — ou seja, a caminho de cadastrá-lo. Quem não pode cadastrar não tem
+ * motivo para consultar um CNJ novo.
+ *
+ * A trava é conferida antes da chamada: depois dela não há o que proteger.
+ */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ cnj: string }> },
 ): Promise<NextResponse> {
   const { cnj } = await params
+
+  const guard = await requirePermissionApi('processos', 'create')
+  if (!guard.ok) return guard.response
 
   try {
     const { data: processo } = await getProcessoByCnj(cnj, req.signal)

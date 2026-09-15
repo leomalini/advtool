@@ -7,6 +7,7 @@ import {
   BpApiError,
   BpPendingError,
 } from '@/lib/buscaprocessos/client'
+import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
 
 /**
  * Espelha o schema `ProcessMonitoringRequest` do OpenAPI: só `numero_cnj` é
@@ -25,6 +26,9 @@ const createSchema = z.object({
 })
 
 export async function GET(): Promise<NextResponse> {
+  const guard = await requirePermissionApi('processos', 'view')
+  if (!guard.ok) return guard.response
+
   try {
     const { data } = await listMonitoramentos()
     return NextResponse.json(data)
@@ -40,7 +44,23 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
+/**
+ * Liga o monitoramento contínuo de um processo.
+ *
+ * Exige 'processos:update' porque cria um compromisso recorrente do lado da
+ * BuscaProcessos — uma assinatura que segue ativa até alguém cancelar. Sem
+ * trava nenhuma, uma requisição anônima criava esse compromisso. A conferência
+ * vem antes da chamada externa: uma vez criado, o monitoramento existe lá fora
+ * mesmo que nada seja gravado aqui.
+ *
+ * 'update' e não 'create': quem pode cadastrar processo também pode atualizar
+ * (só o perfil `finance` é somente-leitura), então o monitoramento automático
+ * disparado logo após o cadastro continua funcionando.
+ */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const guard = await requirePermissionApi('processos', 'update')
+  if (!guard.ok) return guard.response
+
   let body: unknown
   try {
     body = await req.json()
