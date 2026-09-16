@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hasServiceRoleKey } from '@/lib/supabase/admin'
 import {
-  INVALID_LINK_MESSAGE,
+  NO_STORE,
   clientDisplayName,
-  clientIpFrom,
-  documentKindFor,
-  hashIp,
-  logPortalAttempt,
-  resolvePortalLink,
+  requirePortalSession,
   touchPortalLink,
 } from '@/lib/clientPortal/access'
 import { getPortalProcesses } from '@/lib/clientPortal/data'
-import {
-  PORTAL_SESSION_COOKIE,
-  verifyPortalSessionCookie,
-} from '@/lib/clientPortal/session'
-import type { PortalChallenge, PortalPayload } from '@/types/clientPortal.types'
+import type { PortalPayload } from '@/types/clientPortal.types'
 
 /**
- * GET /api/portal/<token> — o andamento, para quem já provou o documento.
+ * GET /api/portal/<token> — a lista de processos, para quem já provou o
+ * documento.
  *
  * É a única rota do produto que responde sem sessão e devolve dado do
  * escritório. Três camadas a separam de um vazamento, nesta ordem:
@@ -28,11 +21,12 @@ import type { PortalChallenge, PortalPayload } from '@/types/clientPortal.types'
  *      DESTE link (`POST .../verificar`);
  *   3. o payload montado campo a campo em `clientPortal/data.ts`.
  *
- * Sem o cookie, responde 401 com `needs_document` — que é um convite a digitar
- * o CPF, não um erro. A página usa isso para decidir qual tela mostrar.
+ * As duas primeiras moram em `requirePortalSession`. Sem o cookie, ela devolve
+ * 401 com `needs_document` — que é um convite a digitar o CPF, não um erro; a
+ * página usa isso para decidir qual tela mostrar.
  *
- * `no-store` porque a resposta é dado de um cliente específico: cache
- * compartilhado no caminho poderia entregá-la a outro.
+ * O ANDAMENTO não vem aqui: cada processo traz só o resumo, e a timeline chega
+ * por `.../processos/<id>` quando o cliente abre um deles.
  */
 export async function GET(
   request: NextRequest,
@@ -46,39 +40,10 @@ export async function GET(
   }
 
   const { token } = await params
-  const ipHash = await hashIp(clientIpFrom(request.headers))
-  const userAgent = request.headers.get('user-agent')
+  const guard = await requirePortalSession(request, token)
+  if (!guard.ok) return guard.response
 
-  const resolved = await resolvePortalLink(token)
-
-  if (!resolved.ok) {
-    await logPortalAttempt({
-      outcome: resolved.outcome,
-      linkId: resolved.linkId,
-      clientId: resolved.clientId,
-      ipHash,
-      userAgent,
-    })
-    return NextResponse.json({ error: INVALID_LINK_MESSAGE }, { status: 404 })
-  }
-
-  const { link, client } = resolved
-
-  const hasSession = await verifyPortalSessionCookie(
-    request.cookies.get(PORTAL_SESSION_COOKIE)?.value,
-    link.id
-  )
-
-  if (!hasSession) {
-    // Não é log de tentativa: ninguém tentou nada ainda. Quem abre o link pela
-    // primeira vez cai aqui, e registrar isso como recusa encheria o histórico
-    // de ruído e ainda alimentaria o rate limit contra o cliente legítimo.
-    const challenge: PortalChallenge = {
-      needs_document: true,
-      document_kind: documentKindFor(client),
-    }
-    return NextResponse.json(challenge, { status: 401, headers: noStore() })
-  }
+  const { link, client } = guard
 
   try {
     const payload: PortalPayload = {
@@ -89,7 +54,7 @@ export async function GET(
 
     await touchPortalLink(link)
 
-    return NextResponse.json(payload, { headers: noStore() })
+    return NextResponse.json(payload, { headers: NO_STORE })
   } catch (error) {
     console.error('[portal] montagem do payload falhou:', error)
     return NextResponse.json(
@@ -97,8 +62,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
-
-function noStore(): HeadersInit {
-  return { 'Cache-Control': 'no-store, private' }
 }

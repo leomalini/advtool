@@ -10,9 +10,11 @@
  * justamente o que denuncia alguém tentando adivinhar um CPF.
  */
 
+import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { bytesToHex, hashPortalToken, looksLikePortalToken, onlyDigits } from './token'
-import type { ClientPortalAccessOutcome } from '@/types/clientPortal.types'
+import { PORTAL_SESSION_COOKIE, verifyPortalSessionCookie } from './session'
+import type { ClientPortalAccessOutcome, PortalChallenge } from '@/types/clientPortal.types'
 
 /** Tentativas recusadas toleradas por origem, dentro da janela. CPF tem 11
  * dígitos: com 10 chances a cada 15 minutos, varrer o espaço levaria mais
@@ -214,6 +216,71 @@ export function documentMatches(client: PortalClientRow, informed: string): bool
   for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i)
   return diff === 0
 }
+
+/**
+ * O porteiro das rotas públicas: token válido + documento já confirmado.
+ *
+ * Existe para que as três rotas de `/api/portal/*` não repitam a sequência
+ * token → revogação → expiração → cookie. Repetir essa ordem em cada rota é
+ * como uma delas acaba pulando um passo — e aqui um passo pulado é dado de
+ * cliente servido a quem só tinha o link.
+ *
+ * Devolve ou a resposta pronta para recusar, ou o par link+cliente já validado.
+ */
+export type PortalGuardResult =
+  | { ok: true; link: PortalLinkRow; client: PortalClientRow }
+  | { ok: false; response: NextResponse }
+
+export async function requirePortalSession(
+  request: NextRequest,
+  token: string
+): Promise<PortalGuardResult> {
+  const ipHash = await hashIp(clientIpFrom(request.headers))
+  const userAgent = request.headers.get('user-agent')
+
+  const resolved = await resolvePortalLink(token)
+
+  if (!resolved.ok) {
+    await logPortalAttempt({
+      outcome: resolved.outcome,
+      linkId: resolved.linkId,
+      clientId: resolved.clientId,
+      ipHash,
+      userAgent,
+    })
+    return {
+      ok: false,
+      response: NextResponse.json({ error: INVALID_LINK_MESSAGE }, { status: 404 }),
+    }
+  }
+
+  const { link, client } = resolved
+
+  const hasSession = await verifyPortalSessionCookie(
+    request.cookies.get(PORTAL_SESSION_COOKIE)?.value,
+    link.id
+  )
+
+  if (!hasSession) {
+    // Não é log de tentativa: ninguém tentou nada ainda. Quem abre o link pela
+    // primeira vez cai aqui, e registrar isso como recusa encheria o histórico
+    // de ruído e ainda alimentaria o rate limit contra o cliente legítimo.
+    const challenge: PortalChallenge = {
+      needs_document: true,
+      document_kind: documentKindFor(client),
+    }
+    return {
+      ok: false,
+      response: NextResponse.json(challenge, { status: 401, headers: NO_STORE }),
+    }
+  }
+
+  return { ok: true, link, client }
+}
+
+/** A resposta carrega dado de um cliente específico: cache compartilhado no
+ * caminho poderia entregá-la a outro. */
+export const NO_STORE = { 'Cache-Control': 'no-store, private' } as const
 
 /** Nome de exibição, na mesma lógica que o resto do app usa para clientes. */
 export function clientDisplayName(client: PortalClientRow): string {

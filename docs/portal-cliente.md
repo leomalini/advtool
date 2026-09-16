@@ -52,6 +52,32 @@ predicado entregaria a base inteira a qualquer um. A leitura passa pela
 service_role dentro de `/api/portal/*`, depois de o token ser validado. A
 superfície pública é **uma rota**, não o PostgREST.
 
+## A lista, quando há muitos processos
+
+A página carrega em **dois níveis**, e é isso que a mantém utilizável para quem
+tem vinte processos em vez de um:
+
+- `GET /api/portal/<token>` devolve só o RESUMO de cada processo — dados de
+  identificação, quantas movimentações visíveis existem e a data da última.
+  Nenhum texto de movimentação trafega aqui. `description` é o campo pesado, e
+  mandar o de todos os processos era a diferença entre alguns KB e vários MB
+  numa conexão de celular, que é de onde o link é aberto.
+- `GET /api/portal/<token>/processos/<id>` devolve a timeline de um processo,
+  buscada quando o cliente abre o card. O React Query guarda: reabrir não volta
+  ao servidor.
+
+⚠️ O id do processo vem da URL, então a rota da timeline **reconfere no banco**
+que aquele processo é do cliente do token. Sem isso, um link legítimo leria
+qualquer processo do escritório trocando o id na barra de endereços. Processo
+de outro cliente responde 404, igual a inexistente — distinguir os dois só
+serviria para mapear o acervo.
+
+Na tela, os cards nascem **fechados**, um aberto por vez. O card fechado já
+responde à pergunta que traz o cliente ao link — "andou alguma coisa?" — com a
+data da última movimentação e a contagem; abrir é para ler o quê. Processo
+único abre sozinho, e a partir de cinco aparece uma busca por número ou
+assunto. Dentro do card, a timeline mostra 8 atos com "ver as outras N".
+
 ## O que o cliente vê da timeline
 
 `legal_process_movements.hidden_from_client` decide, ato a ato.
@@ -101,7 +127,7 @@ e não limita nada.
 | Cookie de sessão | `src/lib/clientPortal/session.ts` |
 | Validação + log | `src/lib/clientPortal/access.ts` |
 | Payload | `src/lib/clientPortal/data.ts` |
-| Rotas públicas | `src/app/api/portal/[token]/{route.ts,verificar/route.ts}` |
+| Rotas públicas | `src/app/api/portal/[token]/{route.ts,verificar/route.ts,processos/[processId]/route.ts}` |
 | Rota do escritório | `src/app/api/clientes/[id]/portal-link/route.ts` |
 | Página | `src/app/acompanhar/[token]/page.tsx` + `src/features/portal/` |
 | Emissão na UI | `src/features/clientes/components/PortalLinkDialog.tsx` |

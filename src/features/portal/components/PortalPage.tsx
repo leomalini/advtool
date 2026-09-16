@@ -1,13 +1,20 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { FileQuestion, Link2Off, Loader2 } from 'lucide-react'
+import { FileQuestion, Link2Off, Loader2, Search } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PortalLinkInvalidError } from '../services/portal.service'
 import { isNeedsDocument, usePortalData } from '../hooks/usePortal'
 import { PortalDocumentGate } from './PortalDocumentGate'
 import { PortalProcessCard } from './PortalProcessCard'
+import type { PortalProcess } from '@/types/clientPortal.types'
+
+/** A partir de quantos processos a busca aparece. Abaixo disso a lista inteira
+ * já está à vista, e um campo de busca só ocuparia espaço. */
+const SEARCH_THRESHOLD = 5
 
 /**
  * A página inteira do portal do cliente.
@@ -42,9 +49,7 @@ export function PortalPage({ token }: { token: string }) {
         icon={<Loader2 className="size-6" aria-hidden />}
         title="Não foi possível carregar"
         description={
-          error instanceof Error
-            ? error.message
-            : 'Tente novamente em alguns instantes.'
+          error instanceof Error ? error.message : 'Tente novamente em alguns instantes.'
         }
       />
     )
@@ -64,11 +69,7 @@ export function PortalPage({ token }: { token: string }) {
           description="Assim que houver um processo vinculado ao seu cadastro, ele aparece nesta página."
         />
       ) : (
-        <div className="flex flex-col gap-4">
-          {data.processes.map((processo) => (
-            <PortalProcessCard key={processo.id} processo={processo} />
-          ))}
-        </div>
+        <ProcessList token={token} processes={data.processes} />
       )}
 
       <footer className="flex flex-col gap-1 border-t pt-4 text-xs text-muted-foreground">
@@ -87,6 +88,93 @@ export function PortalPage({ token }: { token: string }) {
           substitui a orientação do seu advogado.
         </p>
       </footer>
+    </div>
+  )
+}
+
+/**
+ * A lista de processos.
+ *
+ * Um card aberto por vez, de propósito: com vários abertos a página volta a
+ * ser a rolagem infinita que o acordeão veio resolver, e ninguém compara duas
+ * timelines lado a lado num celular.
+ *
+ * Processo único abre sozinho — é o caso mais comum, e obrigar um toque para
+ * ver a única coisa que existe na página é atrito puro.
+ */
+function ProcessList({ token, processes }: { token: string; processes: PortalProcess[] }) {
+  const [openId, setOpenId] = useState<string | null>(
+    processes.length === 1 ? processes[0].id : null
+  )
+  const [query, setQuery] = useState('')
+
+  const showSearch = processes.length >= SEARCH_THRESHOLD
+
+  const filtered = useMemo(() => {
+    const termo = query.trim().toLowerCase()
+    if (!termo) return processes
+
+    // Busca pelos campos que o cliente tem como saber de cor: o número do
+    // processo (inclusive só um pedaço dele) e as palavras do título, da
+    // classe e da comarca.
+    const digits = termo.replace(/\D/g, '')
+
+    return processes.filter((processo) => {
+      const haystack = [processo.title, processo.procedural_class, processo.comarca, processo.subject]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      if (haystack.includes(termo)) return true
+
+      return Boolean(
+        digits && processo.cnj_number?.replace(/\D/g, '').includes(digits)
+      )
+    })
+  }, [processes, query])
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {processes.length === 1 ? '1 processo' : `${processes.length} processos`}
+          {query.trim() && filtered.length !== processes.length && (
+            <> · {filtered.length} na busca</>
+          )}
+        </p>
+
+        {showSearch && (
+          <div className="relative w-full sm:w-64">
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar por número ou assunto"
+              aria-label="Buscar processo"
+              className="h-9 pl-9 text-sm"
+            />
+          </div>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Nenhum processo corresponde a “{query.trim()}”.
+        </p>
+      ) : (
+        filtered.map((processo) => (
+          <PortalProcessCard
+            key={processo.id}
+            processo={processo}
+            token={token}
+            isOpen={openId === processo.id}
+            onToggle={() => setOpenId((current) => (current === processo.id ? null : processo.id))}
+          />
+        ))
+      )}
     </div>
   )
 }
@@ -118,8 +206,9 @@ function PortalSkeleton() {
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-8 w-56" />
       </div>
-      <Skeleton className="h-48 w-full rounded-xl" />
-      <Skeleton className="h-48 w-full rounded-xl" />
+      <Skeleton className="h-20 w-full rounded-xl" />
+      <Skeleton className="h-20 w-full rounded-xl" />
+      <Skeleton className="h-20 w-full rounded-xl" />
     </div>
   )
 }

@@ -1,6 +1,10 @@
 'use client'
 
-import type { PortalChallenge, PortalPayload } from '@/types/clientPortal.types'
+import type {
+  PortalChallenge,
+  PortalPayload,
+  PortalProcessTimeline,
+} from '@/types/clientPortal.types'
 
 /**
  * O acesso do cliente ao próprio andamento.
@@ -47,6 +51,32 @@ export async function getPortalData(token: string): Promise<PortalPayload> {
   }
 
   return (await response.json()) as PortalPayload
+}
+
+/**
+ * O andamento de um processo — buscado só quando o cliente o abre.
+ *
+ * Um 404 aqui significa "não é seu, ou não existe". A rota não distingue os
+ * dois de propósito, e a tela não tenta adivinhar.
+ */
+export async function getPortalProcessTimeline(
+  token: string,
+  processId: string
+): Promise<PortalProcessTimeline> {
+  const response = await fetch(
+    `/api/portal/${encodeURIComponent(token)}/processos/${encodeURIComponent(processId)}`,
+    { credentials: 'same-origin', cache: 'no-store' }
+  )
+
+  if (response.status === 401) {
+    const challenge = (await response.json()) as PortalChallenge
+    throw new PortalNeedsDocumentError(challenge)
+  }
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, 'Não foi possível carregar o andamento.'))
+  }
+
+  return (await response.json()) as PortalProcessTimeline
 }
 
 /** Confere o documento e, dando certo, ganha o cookie de sessão do portal. */

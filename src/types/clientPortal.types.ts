@@ -58,6 +58,15 @@ export interface PortalMovement {
   description: string
 }
 
+/**
+ * O processo como a LISTA o mostra — sem o texto das movimentações.
+ *
+ * A timeline não vem junto de propósito. Um cliente com vinte processos
+ * receberia centenas de movimentações, com o corpo inteiro de cada uma, para
+ * ler talvez uma — e pagaria isso numa conexão de celular, que é de onde o
+ * link é aberto. O resumo abaixo é o que a lista precisa; o resto chega quando
+ * o processo é aberto.
+ */
 export interface PortalProcess {
   id: string
   cnj_number: string | null
@@ -71,7 +80,19 @@ export interface PortalProcess {
   status: string
   /** Título do caso no escritório — o que dá nome ao processo na listagem. */
   title: string | null
+  /** Quantas movimentações visíveis existem — o rótulo do card. */
+  movement_count: number
+  /** A mais recente, só data e título: é o que diz "andou" sem abrir nada. */
+  last_movement: { movement_date: string; title: string | null } | null
+}
+
+/** A timeline de um processo, carregada quando o cliente o abre. */
+export interface PortalProcessTimeline {
+  process_id: string
   movements: PortalMovement[]
+  /** `true` quando há mais do que o teto por processo — a tela avisa em vez de
+   * deixar o cliente achando que viu o processo inteiro. */
+  truncated: boolean
 }
 
 export interface PortalPayload {

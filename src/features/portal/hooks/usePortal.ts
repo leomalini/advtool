@@ -4,11 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   PortalNeedsDocumentError,
   getPortalData,
+  getPortalProcessTimeline,
   verifyPortalDocument,
 } from '../services/portal.service'
 
 export const portalKeys = {
   data: (token: string) => ['portal', token] as const,
+  timeline: (token: string, processId: string) =>
+    ['portal', token, 'processo', processId] as const,
 }
 
 /**
@@ -22,6 +25,24 @@ export function usePortalData(token: string) {
   return useQuery({
     queryKey: portalKeys.data(token),
     queryFn: () => getPortalData(token),
+    retry: false,
+    staleTime: 30 * 1000,
+  })
+}
+
+/**
+ * O andamento de um processo. `enabled` amarra a busca à abertura do card —
+ * é o que evita baixar a timeline de todos os processos de uma vez.
+ *
+ * O cache do React Query faz o resto: reabrir um processo já visto não volta
+ * ao servidor, então navegar entre os cards é instantâneo depois da primeira
+ * abertura.
+ */
+export function usePortalProcessTimeline(token: string, processId: string | null) {
+  return useQuery({
+    queryKey: portalKeys.timeline(token, processId ?? ''),
+    queryFn: () => getPortalProcessTimeline(token, processId!),
+    enabled: Boolean(processId),
     retry: false,
     staleTime: 30 * 1000,
   })
