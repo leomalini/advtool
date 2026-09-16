@@ -21,9 +21,16 @@ nada a reenviar. É a razão de o token ser por cliente.
 
 ## As três camadas de acesso
 
-1. **O token.** 32 bytes aleatórios em base64url. O banco guarda só o SHA-256
-   (`client_portal_links.token_hash`), então um dump não devolve link nenhum
-   utilizável. Um link ativo por cliente, garantido por índice único parcial.
+1. **O token.** 32 bytes aleatórios em base64url. A validação do acesso consulta
+   o SHA-256 (`client_portal_links.token_hash`) — o cliente entrando no portal
+   nunca decifra nada. Um link ativo por cliente, garantido por índice único
+   parcial.
+
+   O token também fica guardado **cifrado** (`token_sealed`, AES-GCM,
+   migration 58), para o escritório poder reexibir o link sem emitir outro. A
+   chave sai do ambiente do servidor (`secret.ts`) e não está em coluna
+   nenhuma: um vazamento apenas do banco — dump, backup, réplica — continua não
+   entregando link utilizável. Ver `vault.ts` para o que se perde e o que não.
 2. **O documento.** O cliente confirma o próprio CPF/CNPJ
    (`POST /api/portal/<token>/verificar`) e ganha um cookie assinado, httpOnly,
    válido por 30 dias. É o que separa "quem recebeu o link encaminhado" de
@@ -66,10 +73,16 @@ O escritório controla o que aparece, não a redação.
 
 ## Operação
 
-Tela do cliente → aba **Cadastro** → seção **Link de acompanhamento**.
-Gerar, copiar, reemitir e revogar. A URL completa aparece **uma vez só**, na
-emissão: o banco tem o hash, e nem a rota consegue remontá-la. Perdeu a
-mensagem, emite outra — o que invalida a anterior.
+Tela do cliente → botão **Link do cliente**, no cabeçalho, ao lado de *Editar
+cadastro*. Fica no cabeçalho e não dentro de uma aba porque reenviar o link é
+tarefa de rotina da secretaria: uma seção no fim da aba Cadastro obrigava a
+lembrar onde ela estava antes de poder usá-la. O ponto ao lado do rótulo diz,
+sem abrir nada, se aquele cliente já tem link ativo.
+
+No diálogo: copiar, abrir como o cliente vê, gerar novo e revogar, mais a data
+do último acesso e a contagem. A URL fica disponível sempre — gerar novo é uma
+decisão, não uma consequência de ter perdido a mensagem, e por isso pede
+confirmação: invalida o link que o cliente já tem.
 
 `client_portal_access_log` registra toda tentativa, inclusive (principalmente)
 as recusadas. Sequência de `document_mismatch` no mesmo link é alguém tentando
@@ -81,7 +94,9 @@ e não limita nada.
 
 | Camada | Arquivo |
 |---|---|
-| Schema | `supabase/migrations/20260101000057_client_portal.sql` |
+| Schema | `supabase/migrations/20260101000057_client_portal.sql` + `..._58_client_portal_link_recoverable.sql` |
+| Segredo e derivação de chaves | `src/lib/clientPortal/secret.ts` |
+| Token cifrado (reexibição) | `src/lib/clientPortal/vault.ts` |
 | Token | `src/lib/clientPortal/token.ts` |
 | Cookie de sessão | `src/lib/clientPortal/session.ts` |
 | Validação + log | `src/lib/clientPortal/access.ts` |
@@ -89,7 +104,7 @@ e não limita nada.
 | Rotas públicas | `src/app/api/portal/[token]/{route.ts,verificar/route.ts}` |
 | Rota do escritório | `src/app/api/clientes/[id]/portal-link/route.ts` |
 | Página | `src/app/acompanhar/[token]/page.tsx` + `src/features/portal/` |
-| Emissão na UI | `src/features/clientes/components/PortalLinkSection.tsx` |
+| Emissão na UI | `src/features/clientes/components/PortalLinkDialog.tsx` |
 
 `APP_PUBLIC_URL` define a base do link copiado; sem ela, cai no `origin` da
 requisição, que atrás de proxy pode ser o endereço interno do container.

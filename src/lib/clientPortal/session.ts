@@ -16,15 +16,17 @@
  *
  * ── Por que a chave é DERIVADA da service_role ──
  * Uma variável de ambiente a mais é uma variável a mais para faltar em
- * produção e derrubar a página. A chave de assinatura sai de um HMAC sobre a
+ * produção e derrubar a página. A chave de assinatura é derivada da
  * `SUPABASE_SERVICE_ROLE_KEY`, que é obrigatória para o portal funcionar de
- * qualquer forma: HMAC é de mão única, então a chave derivada não permite
- * recuperar a original nem assinar nada fora deste domínio. Rotacionar a
- * service_role invalida as sessões — o efeito é o cliente digitar o documento
- * de novo. Quem preferir separar os segredos preenche `CLIENT_PORTAL_SECRET`.
+ * qualquer forma — ver `secret.ts`, que faz a derivação e é a mesma raiz de
+ * onde `vault.ts` tira a chave de cifragem, por um `info` diferente.
+ * Rotacionar a service_role invalida as sessões: o efeito é o cliente digitar
+ * o documento de novo. Quem preferir separar os segredos preenche
+ * `CLIENT_PORTAL_SECRET`.
  */
 
 import { bytesToHex } from './token'
+import { derivePortalKeyBytes } from './secret'
 
 /** 30 dias. Prazo do cookie, não do link. */
 export const PORTAL_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
@@ -36,26 +38,9 @@ const KEY_INFO = 'advtool:client-portal:session:v1'
 
 let cachedKey: Promise<CryptoKey> | null = null
 
-function rootSecret(): string {
-  const explicit = process.env.CLIENT_PORTAL_SECRET?.trim()
-  if (explicit) return explicit
-
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-  if (serviceRole) return `${KEY_INFO}:${serviceRole}`
-
-  throw new Error(
-    '[clientPortal/session] Sem segredo para assinar a sessão: configure ' +
-      'SUPABASE_SERVICE_ROLE_KEY (ou CLIENT_PORTAL_SECRET) no servidor.'
-  )
-}
-
 function signingKey(): Promise<CryptoKey> {
-  cachedKey ??= crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(rootSecret()) as BufferSource,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
+  cachedKey ??= derivePortalKeyBytes(KEY_INFO).then((raw) =>
+    crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   )
   return cachedKey
 }

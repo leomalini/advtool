@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
 import { DataSection } from '@/components/shared/DataSection'
-import { PortalLinkSection } from './PortalLinkSection'
+import { PortalLinkButton } from './PortalLinkDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
@@ -269,8 +269,6 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
           ))
         )}
       </DataSection>
-
-      <PortalLinkSection clientId={cliente.id} />
 
       {cliente.notes && (
         <DataSection icon={<FileText className="h-3.5 w-3.5" />} title="Observações">
@@ -653,6 +651,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                 <span className="text-xs text-muted-foreground hidden sm:block">
                   Cadastrado em {formatDate(cliente.created_at)}
                 </span>
+                <PortalLinkButton clientId={clienteId} />
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                   <Pencil className="h-3.5 w-3.5 mr-1.5" />
                   Editar cadastro

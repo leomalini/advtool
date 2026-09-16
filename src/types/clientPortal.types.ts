@@ -20,9 +20,17 @@ export interface ClientPortalLink {
   last_accessed_at: string | null
   access_count: number
   created_at: string
+  /**
+   * A URL completa, decifrada no servidor a cada leitura (migration 58).
+   *
+   * `null` quando o token guardado não pôde ser aberto — link emitido antes
+   * daquela migration, ou segredo do servidor rotacionado depois da emissão.
+   * Nos dois casos a tela oferece reemitir, que é o único caminho.
+   */
+  url: string | null
 }
 
-/** Só na emissão: é a única vez que o token existe em claro. */
+/** Na emissão a URL sempre existe: ela acabou de ser gerada. */
 export interface IssuedClientPortalLink extends ClientPortalLink {
   url: string
 }
