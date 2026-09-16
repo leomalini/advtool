@@ -99,6 +99,10 @@ export interface LegalProcessMovement {
   read_at: string | null
   /** Providência tomada — distinto de apenas ter lido. */
   handled_at: string | null
+  /** Fora do link de acompanhamento do cliente. Movimentação nasce `false`,
+   * publicação nasce `true` (trigger da migration 57) — daí em diante é o
+   * escritório quem decide, ato a ato. */
+  hidden_from_client: boolean
   source: 'manual' | 'busca_processos'
   raw_data: Record<string, unknown> | null
   created_at: string

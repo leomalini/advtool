@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   ExternalLink,
   FileText,
   Gavel,
@@ -38,6 +40,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -54,6 +57,7 @@ import { useLegalProcess } from '../hooks/useLegalProcesses'
 import {
   useUpdateLegalProcess,
   useMarkMovement,
+  useSetMovementClientVisibility,
   useLinkPartyToClient,
   useSyncProcesso,
   useSetProcessMonitoring,
@@ -466,6 +470,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const syncProcess = useSyncProcesso()
   const setMonitoring = useSetProcessMonitoring(processoId)
   const markMovement = useMarkMovement()
+  const setMovementVisibility = useSetMovementClientVisibility()
   const createTask = useCreateTask()
   const openDocument = useOpenDocument()
   const linkParty = useLinkPartyToClient()
@@ -1178,44 +1183,79 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                           />
                         ))}
 
-                        {isPublicacao && (
-                          <div className="mt-3 flex items-center gap-2 flex-wrap">
-                            {!movement.handled_at && (
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          {isPublicacao && (
+                            <>
+                              {!movement.handled_at && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() =>
+                                    markMovement.mutate({ movementId: movement.id, handled: true })
+                                  }
+                                >
+                                  <Check className="w-3 h-3 mr-1" />
+                                  Marcar tratada
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="h-7 text-xs"
-                                onClick={() =>
-                                  markMovement.mutate({ movementId: movement.id, handled: true })
-                                }
+                                onClick={() => openTaskDialog(movement)}
                               >
-                                <Check className="w-3 h-3 mr-1" />
-                                Marcar tratada
+                                <Plus className="w-3 h-3 mr-1" />
+                                Criar atividade
                               </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() => openTaskDialog(movement)}
-                            >
-                              <Plus className="w-3 h-3 mr-1" />
-                              Criar atividade
-                            </Button>
-                            {unread && (
+                              {unread && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs text-muted-foreground"
+                                  onClick={() =>
+                                    markMovement.mutate({ movementId: movement.id, read: true })
+                                  }
+                                >
+                                  Marcar lida
+                                </Button>
+                              )}
+                            </>
+                          )}
+
+                          {/* Vale para os dois tipos: o padrão difere (publicação
+                              nasce oculta), mas a decisão final é sempre do
+                              escritório. */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 text-xs text-muted-foreground"
                                 onClick={() =>
-                                  markMovement.mutate({ movementId: movement.id, read: true })
+                                  setMovementVisibility.mutate({
+                                    movementId: movement.id,
+                                    hidden: !movement.hidden_from_client,
+                                  })
                                 }
                               >
-                                Marcar lida
+                                {movement.hidden_from_client ? (
+                                  <EyeOff className="w-3 h-3 mr-1" />
+                                ) : (
+                                  <Eye className="w-3 h-3 mr-1" />
+                                )}
+                                {movement.hidden_from_client
+                                  ? 'Oculto do cliente'
+                                  : 'Visível ao cliente'}
                               </Button>
-                            )}
-                          </div>
-                        )}
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {movement.hidden_from_client
+                                ? 'Mostrar este ato no link de acompanhamento'
+                                : 'Esconder este ato do link de acompanhamento'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
                     </div>
                   )

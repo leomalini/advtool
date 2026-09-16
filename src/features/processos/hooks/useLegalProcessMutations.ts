@@ -8,6 +8,7 @@ import {
   deleteLegalProcess,
   addLegalProcessMovement,
   markMovement,
+  setMovementClientVisibility,
   replaceLegalProcessParties,
   linkPartyToClient,
 } from '../services/legalProcesses.service'
@@ -54,6 +55,25 @@ export function useMarkMovement() {
     }) => markMovement(movementId, patch),
     onSuccess: () => invalidate(),
     onError: () => toast.error('Não foi possível atualizar a publicação.'),
+  })
+}
+
+/** Mostra ou esconde um ato no link de acompanhamento do cliente. */
+export function useSetMovementClientVisibility() {
+  const invalidate = useInvalidateLegalProcesses()
+
+  return useMutation({
+    mutationFn: ({ movementId, hidden }: { movementId: string; hidden: boolean }) =>
+      setMovementClientVisibility(movementId, hidden),
+    onSuccess: (_data, { hidden }) => {
+      invalidate()
+      toast.success(
+        hidden
+          ? 'Ato oculto: o cliente não vê mais este item.'
+          : 'Ato liberado: o cliente passa a ver este item.'
+      )
+    },
+    onError: () => toast.error('Não foi possível alterar a visibilidade do ato.'),
   })
 }
 

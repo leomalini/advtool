@@ -27,6 +27,8 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
+import { DataSection } from '@/components/shared/DataSection'
+import { PortalLinkSection } from './PortalLinkSection'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
@@ -115,31 +117,6 @@ function DataRow({ label, children }: { label: string; children: React.ReactNode
       <span className="w-44 shrink-0 text-sm text-muted-foreground">{label}</span>
       <div className="min-w-0 flex-1 text-sm text-foreground">{children}</div>
     </div>
-  )
-}
-
-function DataSection({
-  icon,
-  title,
-  action,
-  children,
-}: {
-  icon: React.ReactNode
-  title: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <section className="rounded-xl border border-border overflow-hidden">
-      <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2.5">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          {icon}
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider">{title}</h3>
-        </div>
-        {action}
-      </header>
-      <div>{children}</div>
-    </section>
   )
 }
 
@@ -292,6 +269,8 @@ function CadastroTab({ cliente }: { cliente: ClientWithRelations }) {
           ))
         )}
       </DataSection>
+
+      <PortalLinkSection clientId={cliente.id} />
 
       {cliente.notes && (
         <DataSection icon={<FileText className="h-3.5 w-3.5" />} title="Observações">

@@ -205,6 +205,25 @@ export async function markMovement(
   if (error) throw error
 }
 
+/**
+ * Mostra ou esconde a movimentação no link de acompanhamento do cliente.
+ *
+ * Coluna própria, e não um derivado de `kind`: movimentação nasce visível e
+ * publicação nasce oculta (trigger da migration 57), mas as duas regras são
+ * apenas o PADRÃO — qual ato o cliente vê é decisão do escritório, ato a ato,
+ * e é isto aqui que a grava.
+ */
+export async function setMovementClientVisibility(
+  movementId: string,
+  hidden: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from('legal_process_movements')
+    .update({ hidden_from_client: hidden })
+    .eq('id', movementId)
+  if (error) throw error
+}
+
 export async function getLegalProcesses(): Promise<LegalProcessWithRelations[]> {
   const { data, error } = await supabase
     .from('legal_processes')
