@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
+import { formatCPF, formatCNPJ } from '@/utils/format'
 import type {
   ClientWithRelations,
   ClientPendency,
@@ -80,6 +81,48 @@ export async function findClientByDocument(
   if (excludeId) query = query.neq('id', excludeId)
 
   const { data, error } = await query.maybeSingle()
+
+  if (error) {
+    if (isMissingDigitsColumn(error)) return findByRawDocument(digits, excludeId)
+    throw error
+  }
+
+  return (data as ClientDocumentMatch | null) ?? null
+}
+
+/** `42703 undefined_column`: a base ainda não recebeu a migration 59. */
+function isMissingDigitsColumn(error: { code?: string; message?: string }): boolean {
+  return error.code === '42703' || Boolean(error.message?.includes('_digits'))
+}
+
+/**
+ * Busca sem as colunas normalizadas — só para bases onde a migration 59 ainda
+ * não foi aplicada.
+ *
+ * Compara contra as DUAS grafias possíveis do mesmo documento, porque é
+ * exatamente isso que a coluna gerada existe para resolver: o formulário grava
+ * com máscara, o tribunal manda em dígitos puros, e procurar por uma só das
+ * formas não encontra a metade gravada na outra.
+ *
+ * Pode ser removida quando todos os ambientes estiverem na 59 — junto com a
+ * chamada em `findClientByDocument`.
+ */
+async function findByRawDocument(
+  digits: string,
+  excludeId?: string,
+): Promise<ClientDocumentMatch | null> {
+  const masked = digits.length === 11 ? formatCPF(digits) : formatCNPJ(digits)
+  const column = digits.length === 11 ? 'cpf' : 'cnpj'
+
+  let query = supabase
+    .from('clients')
+    .select(DOCUMENT_MATCH_SELECT)
+    .or(`${column}.eq.${digits},${column}.eq.${masked}`)
+    .limit(1)
+
+  if (excludeId) query = query.neq('id', excludeId)
+
+  const { data, error } = await query.maybeSingle()
   if (error) throw error
 
   return (data as ClientDocumentMatch | null) ?? null
@@ -112,7 +155,13 @@ export async function findClientsByDocuments(
     .select(`${DOCUMENT_MATCH_SELECT}, cpf_digits, cnpj_digits`)
     .or(`cpf_digits.in.(${list}),cnpj_digits.in.(${list})`)
 
-  if (error) throw error
+  if (error) {
+    // Sem a migration 59 não há por onde comparar em lote sem N consultas.
+    // A importação segue sem pré-vincular: as partes ficam soltas e a tela
+    // continua oferecendo o vínculo, que é o comportamento anterior.
+    if (isMissingDigitsColumn(error)) return found
+    throw error
+  }
 
   for (const row of (data ?? []) as (ClientDocumentMatch & {
     cpf_digits: string | null

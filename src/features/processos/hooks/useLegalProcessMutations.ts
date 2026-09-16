@@ -84,9 +84,22 @@ export function useLinkPartyToClient() {
   return useMutation({
     mutationFn: ({ partyId, clientId }: { partyId: string; clientId: string | null }) =>
       linkPartyToClient(partyId, clientId),
-    onSuccess: (_data, { clientId }) => {
+    onSuccess: (result, { clientId }) => {
       invalidate()
-      toast.success(clientId ? 'Parte vinculada ao cliente.' : 'Vínculo removido.')
+
+      if (!clientId) {
+        toast.success('Vínculo removido.')
+        return
+      }
+
+      // A distinção importa: o processo que já tinha outro cliente NÃO troca de
+      // dono aqui, e dizer só "parte vinculada" deixaria o usuário achando que
+      // trocou. Ver a nota em `linkPartyToClient`.
+      toast.success(
+        result.adoptedByProcess
+          ? 'Parte vinculada — o processo agora é deste cliente.'
+          : 'Parte vinculada. O cliente do processo continua o mesmo.'
+      )
     },
     onError: () => toast.error('Não foi possível vincular a parte.'),
   })
