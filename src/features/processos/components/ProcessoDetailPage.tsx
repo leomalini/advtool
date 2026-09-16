@@ -62,6 +62,7 @@ import {
   useSyncProcesso,
   useSetProcessMonitoring,
 } from '../hooks/useLegalProcessMutations'
+import { findClientByDocument } from '@/features/clientes/services/clientes.service'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import {
@@ -655,6 +656,41 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     })
   }
 
+  /**
+   * "Vincular ou cadastrar" — nesta ordem.
+   *
+   * O botão sempre prometeu as duas coisas, mas ia direto ao cadastro: a
+   * premissa era que a parte "já traz nome e documento, então não há o que
+   * procurar". É o contrário — o documento é justamente por onde se procura, e
+   * pular essa busca era o que criava um segundo cliente com o mesmo CPF.
+   *
+   * Achando, vincula na hora: documento identifica pessoa, não há ambiguidade
+   * a resolver com o usuário, e desfazer é um clique no mesmo card. Não
+   * achando, aí sim abre o formulário.
+   */
+  async function handleLinkParty(party: DisplayParty) {
+    if (!party.id || !party.document) {
+      setLinkingParty(party)
+      return
+    }
+
+    try {
+      const existing = await findClientByDocument(party.document)
+      if (!existing) {
+        setLinkingParty(party)
+        return
+      }
+
+      await linkParty.mutateAsync({ partyId: party.id, clientId: existing.id })
+    } catch (error) {
+      // Busca falhou: cadastrar ainda é melhor que travar a ação. O aviso de
+      // documento duplicado dentro do próprio formulário continua valendo como
+      // segunda chance de perceber a duplicata.
+      console.error('[processos] busca de cliente por documento falhou:', error)
+      setLinkingParty(party)
+    }
+  }
+
   async function handleCreateClientForParty(data: CreateClientInput) {
     if (!linkingParty?.id) return
     const created = await createCliente.mutateAsync(data)
@@ -902,14 +938,14 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 label="Pólo Ativo"
                 tone="ativo"
                 parties={partiesByPolo.ativo}
-                onLinkParty={setLinkingParty}
+                onLinkParty={handleLinkParty}
                 onEditParties={() => setEditOpen(true)}
               />
               <PoloBlock
                 label="Pólo Passivo"
                 tone="passivo"
                 parties={partiesByPolo.passivo}
-                onLinkParty={setLinkingParty}
+                onLinkParty={handleLinkParty}
                 onEditParties={() => setEditOpen(true)}
               />
             </div>
@@ -1429,8 +1465,10 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
         </DialogContent>
       </Dialog>
 
-      {/* Cadastro direto: a parte já traz nome e documento, então não há o que
-          procurar — o popover só oferece o botão quando não existe vínculo. */}
+      {/* Só chega aqui quem NÃO tem cadastro correspondente: `handleLinkParty`
+          procura pelo documento antes e vincula sozinho quando encontra. O
+          formulário nasce semeado com o nome e o documento que vieram do
+          tribunal. */}
       {linkingParty && (
         <ClienteForm
           open

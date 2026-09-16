@@ -69,6 +69,7 @@ import {
 } from '@/types/cliente.types'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import { formatCPF, formatCNPJ, formatPhone, formatCEP } from '@/utils/format'
+import { DuplicateDocumentWarning } from './DuplicateDocumentWarning'
 
 type ClientType = 'individual' | 'company'
 
@@ -722,6 +723,10 @@ function PFForm({
                 </Button>
               </div>
               <FieldError message={form.formState.errors.cpf?.message} />
+              <DuplicateDocumentWarning
+                document={form.watch('cpf')}
+                excludeId={isEditing ? defaultValues?.id : undefined}
+              />
             </div>
           </div>
         </section>
@@ -1038,6 +1043,10 @@ function PJForm({
                 </Button>
               </div>
               <FieldError message={form.formState.errors.cnpj?.message} />
+              <DuplicateDocumentWarning
+                document={form.watch('cnpj')}
+                excludeId={isEditing ? defaultValues?.id : undefined}
+              />
             </div>
 
             <div>

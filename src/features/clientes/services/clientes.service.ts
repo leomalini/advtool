@@ -35,6 +35,97 @@ function sortAddresses(client: ClientWithRelations): ClientWithRelations {
   }
 }
 
+/** O mínimo para dizer "este documento já é de fulano" e oferecer o cadastro
+ * existente, sem carregar contatos, endereços e perfis junto. */
+export interface ClientDocumentMatch {
+  id: string
+  type: ClientType
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
+}
+
+const DOCUMENT_MATCH_SELECT = 'id, type, name, company_name, trade_name'
+
+/**
+ * O cliente que já usa este CPF/CNPJ, se houver.
+ *
+ * Consulta as colunas normalizadas (`cpf_digits`/`cnpj_digits`, migration 59),
+ * e não `cpf`/`cnpj`: o documento é gravado ora mascarado (formulário), ora em
+ * dígitos puros (partes vindas do tribunal), e comparar o valor cru deixaria
+ * passar justamente a duplicata que se quer encontrar.
+ *
+ * As duas colunas são consultadas de uma vez porque quem pergunta nem sempre
+ * sabe qual dos dois o documento é — uma parte do processo chega com um número
+ * e nada dizendo se é pessoa física ou jurídica.
+ *
+ * `excludeId` existe para a edição: o próprio cadastro sendo editado não é uma
+ * duplicata de si mesmo.
+ */
+export async function findClientByDocument(
+  document: string,
+  excludeId?: string,
+): Promise<ClientDocumentMatch | null> {
+  const digits = document.replace(/\D/g, '')
+  // Nada abaixo de 11 dígitos é CPF ou CNPJ — evita consultar a cada tecla
+  // enquanto o usuário ainda está digitando.
+  if (digits.length !== 11 && digits.length !== 14) return null
+
+  let query = supabase
+    .from('clients')
+    .select(DOCUMENT_MATCH_SELECT)
+    .or(`cpf_digits.eq.${digits},cnpj_digits.eq.${digits}`)
+    .limit(1)
+
+  if (excludeId) query = query.neq('id', excludeId)
+
+  const { data, error } = await query.maybeSingle()
+  if (error) throw error
+
+  return (data as ClientDocumentMatch | null) ?? null
+}
+
+/**
+ * Vários documentos de uma vez — usado ao importar um processo, cujas partes
+ * chegam em bloco.
+ *
+ * Devolve um mapa de dígitos → cliente. Uma consulta só: N partes gerariam N
+ * idas ao banco por processo importado, e a importação é em lote.
+ */
+export async function findClientsByDocuments(
+  documents: string[],
+): Promise<Map<string, ClientDocumentMatch>> {
+  const digits = [
+    ...new Set(
+      documents
+        .map((doc) => doc.replace(/\D/g, ''))
+        .filter((doc) => doc.length === 11 || doc.length === 14),
+    ),
+  ]
+
+  const found = new Map<string, ClientDocumentMatch>()
+  if (digits.length === 0) return found
+
+  const list = digits.join(',')
+  const { data, error } = await supabase
+    .from('clients')
+    .select(`${DOCUMENT_MATCH_SELECT}, cpf_digits, cnpj_digits`)
+    .or(`cpf_digits.in.(${list}),cnpj_digits.in.(${list})`)
+
+  if (error) throw error
+
+  for (const row of (data ?? []) as (ClientDocumentMatch & {
+    cpf_digits: string | null
+    cnpj_digits: string | null
+  })[]) {
+    const { cpf_digits, cnpj_digits, ...client } = row
+    if (cpf_digits) found.set(cpf_digits, client)
+    if (cnpj_digits) found.set(cnpj_digits, client)
+  }
+
+  return found
+}
+
 export async function getClients(): Promise<ClientWithRelations[]> {
   const { data, error } = await supabase
     .from('clients')
@@ -117,6 +208,26 @@ async function insertChildren(
   }
 }
 
+/**
+ * Traduz a violação de unicidade de documento (migration 59).
+ *
+ * O Postgres devolve "duplicate key value violates unique constraint
+ * uq_clients_cpf_digits", que é verdade e não ajuda ninguém na tela. A
+ * constraint é a última linha de defesa — a tela avisa antes —, então cair
+ * aqui significa corrida entre duas abas ou um documento colado direto.
+ */
+function translateDocumentConflict(error: { code?: string; message?: string }): Error {
+  if (error.code !== '23505') {
+    return new Error(error.message ?? 'Não foi possível salvar o cliente.')
+  }
+
+  const isCnpj = error.message?.includes('cnpj_digits')
+  return new Error(
+    `Já existe um cliente cadastrado com este ${isCnpj ? 'CNPJ' : 'CPF'}. ` +
+      'Abra o cadastro existente em vez de criar outro.'
+  )
+}
+
 export async function createClientRecord(
   input: CreateClientInput,
   userId: string
@@ -132,7 +243,7 @@ export async function createClientRecord(
     .select(CLIENT_SELECT)
     .single()
 
-  if (error) throw error
+  if (error) throw translateDocumentConflict(error)
 
   await insertChildren(data.id, contacts, addresses)
 
@@ -157,7 +268,7 @@ export async function updateClientRecord(
   }
 
   const { error } = await supabase.from('clients').update(nullifyEmpty(clientData)).eq('id', id)
-  if (error) throw error
+  if (error) throw translateDocumentConflict(error)
 
   // `!== undefined`, e não truthiness: um patch de campo único (o telefone
   // editado pelo ClienteResumo, por exemplo) não menciona as filhas e não pode

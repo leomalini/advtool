@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
 import { updateCrmItemRecord } from '@/features/crm/services/crmItems.service'
+import { findClientsByDocuments } from '@/features/clientes/services/clientes.service'
 import type {
   LegalProcessWithRelations,
   LegalProcessMovement,
@@ -330,6 +331,48 @@ export async function findLegalProcessesByCnjs(cnjs: string[]): Promise<Map<stri
   return found
 }
 
+/**
+ * Preenche o `client_id` das partes que já correspondem a um cliente cadastrado.
+ *
+ * As partes chegam da API do tribunal com nome e documento, e nada mais — nunca
+ * com o id de um cliente nosso. Sem esta passagem, importar o processo de um
+ * cliente que já está na base criava uma parte solta, e o caminho natural na
+ * tela ("Vincular ou cadastrar") levava a cadastrar o mesmo CPF outra vez.
+ *
+ * Só toca em parte SEM vínculo: `client_id` já preenchido é decisão de quem
+ * chamou e não é revisitado aqui.
+ *
+ * Roda apenas na CRIAÇÃO do processo, de propósito. Em `replaceLegalProcessParties`,
+ * que também serve ao editor manual, isto desfaria um desvínculo deliberado —
+ * quem clica em "desvincular" no card da parte veria o vínculo voltar no
+ * próximo salvamento.
+ */
+async function resolvePartyClients(
+  parties: LegalProcessPartyInput[]
+): Promise<LegalProcessPartyInput[]> {
+  const pendentes = parties.filter((p) => !p.client_id && p.document)
+  if (pendentes.length === 0) return parties
+
+  try {
+    const encontrados = await findClientsByDocuments(
+      pendentes.map((p) => p.document as string)
+    )
+    if (encontrados.size === 0) return parties
+
+    return parties.map((party) => {
+      if (party.client_id || !party.document) return party
+
+      const match = encontrados.get(party.document.replace(/\D/g, ''))
+      return match ? { ...party, client_id: match.id } : party
+    })
+  } catch (error) {
+    // Vínculo é conveniência: falhar aqui não pode impedir o processo de ser
+    // cadastrado. A parte fica solta e a tela continua oferecendo o vínculo.
+    console.error('[processos] resolução de clientes das partes falhou:', error)
+    return parties
+  }
+}
+
 export async function createLegalProcess(
   input: LegalProcessInput,
   userId: string
@@ -344,7 +387,7 @@ export async function createLegalProcess(
   if (processError) throw processError
 
   if (parties?.length) {
-    await replaceLegalProcessParties(legalProcess.id, parties)
+    await replaceLegalProcessParties(legalProcess.id, await resolvePartyClients(parties))
   }
 
   // Every processo needs at least one item in the fixed wf-processos workflow
