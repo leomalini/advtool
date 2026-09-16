@@ -8,6 +8,7 @@ import {
   deleteLegalProcess,
   addLegalProcessMovement,
   markMovement,
+  setMovementClientVisibility,
   replaceLegalProcessParties,
   linkPartyToClient,
 } from '../services/legalProcesses.service'
@@ -57,6 +58,25 @@ export function useMarkMovement() {
   })
 }
 
+/** Mostra ou esconde um ato no link de acompanhamento do cliente. */
+export function useSetMovementClientVisibility() {
+  const invalidate = useInvalidateLegalProcesses()
+
+  return useMutation({
+    mutationFn: ({ movementId, hidden }: { movementId: string; hidden: boolean }) =>
+      setMovementClientVisibility(movementId, hidden),
+    onSuccess: (_data, { hidden }) => {
+      invalidate()
+      toast.success(
+        hidden
+          ? 'Ato oculto: o cliente não vê mais este item.'
+          : 'Ato liberado: o cliente passa a ver este item.'
+      )
+    },
+    onError: () => toast.error('Não foi possível alterar a visibilidade do ato.'),
+  })
+}
+
 /** Vincula uma parte a um cliente cadastrado — ou desfaz o vínculo com `null`. */
 export function useLinkPartyToClient() {
   const invalidate = useInvalidateLegalProcesses()
@@ -64,9 +84,22 @@ export function useLinkPartyToClient() {
   return useMutation({
     mutationFn: ({ partyId, clientId }: { partyId: string; clientId: string | null }) =>
       linkPartyToClient(partyId, clientId),
-    onSuccess: (_data, { clientId }) => {
+    onSuccess: (result, { clientId }) => {
       invalidate()
-      toast.success(clientId ? 'Parte vinculada ao cliente.' : 'Vínculo removido.')
+
+      if (!clientId) {
+        toast.success('Vínculo removido.')
+        return
+      }
+
+      // A distinção importa: o processo que já tinha outro cliente NÃO troca de
+      // dono aqui, e dizer só "parte vinculada" deixaria o usuário achando que
+      // trocou. Ver a nota em `linkPartyToClient`.
+      toast.success(
+        result.adoptedByProcess
+          ? 'Parte vinculada — o processo agora é deste cliente.'
+          : 'Parte vinculada. O cliente do processo continua o mesmo.'
+      )
     },
     onError: () => toast.error('Não foi possível vincular a parte.'),
   })

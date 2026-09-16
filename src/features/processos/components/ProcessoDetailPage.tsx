@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   ExternalLink,
   FileText,
   Gavel,
@@ -38,6 +40,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -54,10 +57,12 @@ import { useLegalProcess } from '../hooks/useLegalProcesses'
 import {
   useUpdateLegalProcess,
   useMarkMovement,
+  useSetMovementClientVisibility,
   useLinkPartyToClient,
   useSyncProcesso,
   useSetProcessMonitoring,
 } from '../hooks/useLegalProcessMutations'
+import { findClientByDocument } from '@/features/clientes/services/clientes.service'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { CrmTag } from '@/schemas/crmItem.schema'
 import {
@@ -466,6 +471,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const syncProcess = useSyncProcesso()
   const setMonitoring = useSetProcessMonitoring(processoId)
   const markMovement = useMarkMovement()
+  const setMovementVisibility = useSetMovementClientVisibility()
   const createTask = useCreateTask()
   const openDocument = useOpenDocument()
   const linkParty = useLinkPartyToClient()
@@ -648,6 +654,41 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
         toast.success('Nota registrada.')
       },
     })
+  }
+
+  /**
+   * "Vincular ou cadastrar" — nesta ordem.
+   *
+   * O botão sempre prometeu as duas coisas, mas ia direto ao cadastro: a
+   * premissa era que a parte "já traz nome e documento, então não há o que
+   * procurar". É o contrário — o documento é justamente por onde se procura, e
+   * pular essa busca era o que criava um segundo cliente com o mesmo CPF.
+   *
+   * Achando, vincula na hora: documento identifica pessoa, não há ambiguidade
+   * a resolver com o usuário, e desfazer é um clique no mesmo card. Não
+   * achando, aí sim abre o formulário.
+   */
+  async function handleLinkParty(party: DisplayParty) {
+    if (!party.id || !party.document) {
+      setLinkingParty(party)
+      return
+    }
+
+    try {
+      const existing = await findClientByDocument(party.document)
+      if (!existing) {
+        setLinkingParty(party)
+        return
+      }
+
+      await linkParty.mutateAsync({ partyId: party.id, clientId: existing.id })
+    } catch (error) {
+      // Busca falhou: cadastrar ainda é melhor que travar a ação. O aviso de
+      // documento duplicado dentro do próprio formulário continua valendo como
+      // segunda chance de perceber a duplicata.
+      console.error('[processos] busca de cliente por documento falhou:', error)
+      setLinkingParty(party)
+    }
   }
 
   async function handleCreateClientForParty(data: CreateClientInput) {
@@ -897,14 +938,14 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                 label="Pólo Ativo"
                 tone="ativo"
                 parties={partiesByPolo.ativo}
-                onLinkParty={setLinkingParty}
+                onLinkParty={handleLinkParty}
                 onEditParties={() => setEditOpen(true)}
               />
               <PoloBlock
                 label="Pólo Passivo"
                 tone="passivo"
                 parties={partiesByPolo.passivo}
-                onLinkParty={setLinkingParty}
+                onLinkParty={handleLinkParty}
                 onEditParties={() => setEditOpen(true)}
               />
             </div>
@@ -1178,44 +1219,79 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                           />
                         ))}
 
-                        {isPublicacao && (
-                          <div className="mt-3 flex items-center gap-2 flex-wrap">
-                            {!movement.handled_at && (
+                        <div className="mt-3 flex items-center gap-2 flex-wrap">
+                          {isPublicacao && (
+                            <>
+                              {!movement.handled_at && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() =>
+                                    markMovement.mutate({ movementId: movement.id, handled: true })
+                                  }
+                                >
+                                  <Check className="w-3 h-3 mr-1" />
+                                  Marcar tratada
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="h-7 text-xs"
-                                onClick={() =>
-                                  markMovement.mutate({ movementId: movement.id, handled: true })
-                                }
+                                onClick={() => openTaskDialog(movement)}
                               >
-                                <Check className="w-3 h-3 mr-1" />
-                                Marcar tratada
+                                <Plus className="w-3 h-3 mr-1" />
+                                Criar atividade
                               </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() => openTaskDialog(movement)}
-                            >
-                              <Plus className="w-3 h-3 mr-1" />
-                              Criar atividade
-                            </Button>
-                            {unread && (
+                              {unread && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs text-muted-foreground"
+                                  onClick={() =>
+                                    markMovement.mutate({ movementId: movement.id, read: true })
+                                  }
+                                >
+                                  Marcar lida
+                                </Button>
+                              )}
+                            </>
+                          )}
+
+                          {/* Vale para os dois tipos: o padrão difere (publicação
+                              nasce oculta), mas a decisão final é sempre do
+                              escritório. */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 text-xs text-muted-foreground"
                                 onClick={() =>
-                                  markMovement.mutate({ movementId: movement.id, read: true })
+                                  setMovementVisibility.mutate({
+                                    movementId: movement.id,
+                                    hidden: !movement.hidden_from_client,
+                                  })
                                 }
                               >
-                                Marcar lida
+                                {movement.hidden_from_client ? (
+                                  <EyeOff className="w-3 h-3 mr-1" />
+                                ) : (
+                                  <Eye className="w-3 h-3 mr-1" />
+                                )}
+                                {movement.hidden_from_client
+                                  ? 'Oculto do cliente'
+                                  : 'Visível ao cliente'}
                               </Button>
-                            )}
-                          </div>
-                        )}
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {movement.hidden_from_client
+                                ? 'Mostrar este ato no link de acompanhamento'
+                                : 'Esconder este ato do link de acompanhamento'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
                     </div>
                   )
@@ -1389,8 +1465,10 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
         </DialogContent>
       </Dialog>
 
-      {/* Cadastro direto: a parte já traz nome e documento, então não há o que
-          procurar — o popover só oferece o botão quando não existe vínculo. */}
+      {/* Só chega aqui quem NÃO tem cadastro correspondente: `handleLinkParty`
+          procura pelo documento antes e vincula sozinho quando encontra. O
+          formulário nasce semeado com o nome e o documento que vieram do
+          tribunal. */}
       {linkingParty && (
         <ClienteForm
           open

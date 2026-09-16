@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
 import { updateCrmItemRecord } from '@/features/crm/services/crmItems.service'
+import { findClientsByDocuments } from '@/features/clientes/services/clientes.service'
 import type {
   LegalProcessWithRelations,
   LegalProcessMovement,
@@ -163,19 +164,78 @@ export async function replaceLegalProcessParties(
   if (error) throw error
 }
 
-/** Vincula (ou desvincula, com `null`) uma parte a um cliente cadastrado.
+export interface PartyLinkResult {
+  /** O processo estava sem cliente e passou a ser deste. */
+  adoptedByProcess: boolean
+}
+
+/**
+ * Vincula (ou desvincula, com `null`) uma parte a um cliente cadastrado.
  *
  * Só faz sentido para partes persistidas: as que vêm do fallback
- * `plaintiff`/`defendant` não têm linha própria e por isso não têm id. */
+ * `plaintiff`/`defendant` não têm linha própria e por isso não têm id.
+ *
+ * ── Por que também mexe no crm_item ──
+ * `legal_process_parties.client_id` responde "esta parte é aquele cliente".
+ * Quem responde "este processo é do cliente X" é `crm_items.client_id`, e são
+ * colunas independentes. O efeito era que vincular a parte no Pólo Ativo não
+ * produzia efeito nenhum visível: o processo continuava sem cliente no
+ * cabeçalho, fora da ficha do cliente e fora do link de acompanhamento —
+ * enquanto a aba Cliente, que escreve no crm_item, "funcionava". Duas ações
+ * com o mesmo nome e resultados diferentes.
+ *
+ * Agora vincular a parte adota o cliente no processo SE ele ainda não tiver um.
+ * Não sobrescreve: trocar o cliente de um processo que já tem dono é decisão
+ * deliberada, e o lugar dela é a aba Cliente. Por isso o retorno diz o que
+ * aconteceu — a tela precisa poder contar ao usuário.
+ */
 export async function linkPartyToClient(
   partyId: string,
   clientId: string | null
-): Promise<void> {
-  const { error } = await supabase
+): Promise<PartyLinkResult> {
+  const { data: party, error } = await supabase
     .from('legal_process_parties')
     .update({ client_id: clientId })
     .eq('id', partyId)
+    .select('legal_process_id')
+    .single()
   if (error) throw error
+
+  // Desvincular a parte não desfaz o dono do processo: são fatos distintos, e
+  // um processo sem cliente por causa de um desvínculo de parte seria perda
+  // silenciosa de cadastro.
+  if (!clientId) return { adoptedByProcess: false }
+
+  return { adoptedByProcess: await adoptClientOnProcess(party.legal_process_id, clientId) }
+}
+
+/**
+ * Dá dono ao processo quando ele ainda não tem.
+ *
+ * Devolve `false` — sem escrever — quando já existe um cliente vinculado,
+ * inclusive se for outro. Ver a nota em `linkPartyToClient`.
+ */
+async function adoptClientOnProcess(
+  legalProcessId: string,
+  clientId: string
+): Promise<boolean> {
+  // O item mestre é o de `wf-processos`; um processo pode ter itens em outros
+  // workflows, e o dono do processo mora no mestre. `limit(1)` com ordenação
+  // porque embed e heap order não garantem qual viria primeiro.
+  const { data: item, error } = await supabase
+    .from('crm_items')
+    .select('id, client_id')
+    .eq('legal_process_id', legalProcessId)
+    .eq('workflow_id', 'wf-processos')
+    .order('created_at')
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!item || item.client_id) return false
+
+  await updateCrmItemRecord(item.id, { client_id: clientId })
+  return true
 }
 
 /** Marca uma publicação como lida e/ou tratada.
@@ -201,6 +261,25 @@ export async function markMovement(
   const { error } = await supabase
     .from('legal_process_movements')
     .update(update)
+    .eq('id', movementId)
+  if (error) throw error
+}
+
+/**
+ * Mostra ou esconde a movimentação no link de acompanhamento do cliente.
+ *
+ * Coluna própria, e não um derivado de `kind`: movimentação nasce visível e
+ * publicação nasce oculta (trigger da migration 57), mas as duas regras são
+ * apenas o PADRÃO — qual ato o cliente vê é decisão do escritório, ato a ato,
+ * e é isto aqui que a grava.
+ */
+export async function setMovementClientVisibility(
+  movementId: string,
+  hidden: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from('legal_process_movements')
+    .update({ hidden_from_client: hidden })
     .eq('id', movementId)
   if (error) throw error
 }
@@ -311,6 +390,48 @@ export async function findLegalProcessesByCnjs(cnjs: string[]): Promise<Map<stri
   return found
 }
 
+/**
+ * Preenche o `client_id` das partes que já correspondem a um cliente cadastrado.
+ *
+ * As partes chegam da API do tribunal com nome e documento, e nada mais — nunca
+ * com o id de um cliente nosso. Sem esta passagem, importar o processo de um
+ * cliente que já está na base criava uma parte solta, e o caminho natural na
+ * tela ("Vincular ou cadastrar") levava a cadastrar o mesmo CPF outra vez.
+ *
+ * Só toca em parte SEM vínculo: `client_id` já preenchido é decisão de quem
+ * chamou e não é revisitado aqui.
+ *
+ * Roda apenas na CRIAÇÃO do processo, de propósito. Em `replaceLegalProcessParties`,
+ * que também serve ao editor manual, isto desfaria um desvínculo deliberado —
+ * quem clica em "desvincular" no card da parte veria o vínculo voltar no
+ * próximo salvamento.
+ */
+async function resolvePartyClients(
+  parties: LegalProcessPartyInput[]
+): Promise<LegalProcessPartyInput[]> {
+  const pendentes = parties.filter((p) => !p.client_id && p.document)
+  if (pendentes.length === 0) return parties
+
+  try {
+    const encontrados = await findClientsByDocuments(
+      pendentes.map((p) => p.document as string)
+    )
+    if (encontrados.size === 0) return parties
+
+    return parties.map((party) => {
+      if (party.client_id || !party.document) return party
+
+      const match = encontrados.get(party.document.replace(/\D/g, ''))
+      return match ? { ...party, client_id: match.id } : party
+    })
+  } catch (error) {
+    // Vínculo é conveniência: falhar aqui não pode impedir o processo de ser
+    // cadastrado. A parte fica solta e a tela continua oferecendo o vínculo.
+    console.error('[processos] resolução de clientes das partes falhou:', error)
+    return parties
+  }
+}
+
 export async function createLegalProcess(
   input: LegalProcessInput,
   userId: string
@@ -325,7 +446,7 @@ export async function createLegalProcess(
   if (processError) throw processError
 
   if (parties?.length) {
-    await replaceLegalProcessParties(legalProcess.id, parties)
+    await replaceLegalProcessParties(legalProcess.id, await resolvePartyClients(parties))
   }
 
   // Every processo needs at least one item in the fixed wf-processos workflow

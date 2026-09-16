@@ -11,6 +11,18 @@ import { NextResponse, type NextRequest } from 'next/server'
 const PAGINAS_PUBLICAS = ['/login', '/recuperar-senha']
 
 /**
+ * Prefixos que respondem sem sessão E sem redirecionamento para o login.
+ *
+ * `/acompanhar/<token>` é a página que o CLIENTE do escritório abre. Ela nunca
+ * terá cookie de sessão — quem entra lá não é usuário do sistema — e a própria
+ * rota faz a autorização dela, pelo token e pelo documento
+ * (`lib/clientPortal/access.ts`). Sai do gate antes mesmo da checagem de
+ * sessão: chamar `getUser()` aqui seria uma ida à rede por requisição para
+ * confirmar a ausência já conhecida de um cookie.
+ */
+const PREFIXOS_PUBLICOS = ['/acompanhar']
+
+/**
  * Checagem OTIMISTA de sessão, conforme o §4.3 do planejamento multiusuário:
  * decide apenas SE há sessão, nunca QUEM é. A permissão por módulo vive no RLS
  * e no `requirePermission()` de cada `page.tsx`.
@@ -31,6 +43,10 @@ export async function updateSession(request: NextRequest) {
   //   • o webhook do BuscaProcessos, que é servidor-para-servidor e nunca
   //     manda cookie.
   if (pathname.startsWith('/api/')) {
+    return NextResponse.next({ request })
+  }
+
+  if (PREFIXOS_PUBLICOS.some((prefixo) => pathname.startsWith(prefixo))) {
     return NextResponse.next({ request })
   }
 
