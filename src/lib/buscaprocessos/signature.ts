@@ -21,9 +21,31 @@ const API_KEY = process.env.BUSCA_PROCESSOS_API_KEY?.trim()
 /** Prefixo que a BuscaProcessos exibe no token da conta. */
 const TOKEN_PREFIX = 'bp_wh_'
 
-/** O token com e sem o prefixo é o mesmo token. */
-function stripTokenPrefix(value: string): string {
-  return value.startsWith(TOKEN_PREFIX) ? value.slice(TOKEN_PREFIX.length) : value
+/**
+ * O token reduzido ao que de fato o identifica — dos dois lados da comparação.
+ *
+ * A tela da conta oferece o mesmo token em três formatos: o valor cru no campo,
+ * `bp_wh_` + valor no exemplo de cabeçalho, e o cabeçalho INTEIRO
+ * (`Bearer bp_wh_…`) no botão de copiar. Qualquer um deles pode ir parar na
+ * variável de ambiente, às vezes entre aspas. Normalizar só o que CHEGA não
+ * bastava: com `Bearer …` colado na variável da Vercel, a origem mandava o token
+ * certo e toda entrega voltava 401 com `coincide_com=nenhum`.
+ *
+ * Todos os formatos exigem conhecer o mesmo segredo; normalizar não afrouxa
+ * nada, só deixa de recusar por causa da tela de onde a pessoa copiou.
+ */
+function normalizeToken(value: string): string {
+  let token = value.trim().replace(/^["']+|["']+$/g, '').trim()
+
+  const withScheme = /^\S+\s+(.+)$/.exec(token)
+  if (withScheme) token = withScheme[1].trim()
+
+  return token.startsWith(TOKEN_PREFIX) ? token.slice(TOKEN_PREFIX.length) : token
+}
+
+/** Pontas de um valor, para o log reconhecer sem guardar o segredo. */
+function maskEnds(value: string): string {
+  return value.length > 8 ? `${value.slice(0, 4)}…${value.slice(-4)}` : '(curto)'
 }
 
 export function hasWebhookSecret(): boolean {
@@ -139,15 +161,34 @@ function describeAuthorization(header: string): string {
     ['API_KEY', API_KEY],
   ]
   const match = known.find(
-    ([, candidate]) => candidate && equals(stripTokenPrefix(value), stripTokenPrefix(candidate)),
+    ([, candidate]) => candidate && equals(normalizeToken(header), normalizeToken(candidate)),
   )
 
-  const ends = value.length > 8 ? `${value.slice(0, 4)}…${value.slice(-4)}` : '(curto)'
   return [
     `esquema=${scheme}`,
     `tamanho=${value.length}`,
-    `valor=${ends}`,
+    `valor=${maskEnds(value)}`,
     `coincide_com=${match?.[0] ?? 'nenhum'}`,
+  ].join(' ')
+}
+
+/**
+ * A variável `BUSCA_PROCESSOS_WEBHOOK_TOKEN` descrita como o recebido é.
+ *
+ * `coincide_com=nenhum` sozinho não diz QUAL lado está diferente. Foi o que
+ * aconteceu: o recebido tinha tamanho e pontas idênticos ao token da conta, e a
+ * única explicação restante era o valor do ambiente — que o log não mostrava.
+ * O início BRUTO entra de propósito: é onde aparecem `Bear`, aspas ou `bp_w`.
+ */
+function describeConfiguredToken(): string | null {
+  if (!WEBHOOK_TOKEN) return null
+
+  const normalized = normalizeToken(WEBHOOK_TOKEN)
+  return [
+    `tamanho=${WEBHOOK_TOKEN.length}`,
+    `inicio_bruto=${JSON.stringify(WEBHOOK_TOKEN.slice(0, 4))}`,
+    `normalizado=${maskEnds(normalized)}`,
+    `tamanho_normalizado=${normalized.length}`,
   ].join(' ')
 }
 
@@ -196,9 +237,8 @@ export async function verifyWebhookAuth(
     // recusar `Token …` ou `APIKey …` seria recusar por causa da palavra escrita
     // antes do valor. O valor cru, sem esquema nenhum, também vale.
     const parts = /^(\S+)\s+(.+)$/.exec(headers.authorization.trim())
-    const presented = (parts ? parts[2] : headers.authorization).trim()
 
-    if (equals(stripTokenPrefix(presented), stripTokenPrefix(WEBHOOK_TOKEN))) {
+    if (equals(normalizeToken(headers.authorization), normalizeToken(WEBHOOK_TOKEN))) {
       return {
         configured: true,
         valid: true,
@@ -222,7 +262,9 @@ export async function verifyWebhookAuth(
     // O que chegou, e não só "token Bearer": uma recusa que não diz o tamanho
     // nem com qual valor do ambiente o recebido coincide é indistinguível da
     // próxima — e foi isso que deixou o webhook parado sem ninguém saber por quê.
-    WEBHOOK_TOKEN && authorization ? `token do webhook [${authorization}]` : null,
+    WEBHOOK_TOKEN && authorization
+      ? `token do webhook [recebido: ${authorization}] [configurado: ${describeConfiguredToken()}]`
+      : null,
     WEBHOOK_TOKEN && !headers.authorization
       ? 'token Bearer configurado, mas a entrega não trouxe Authorization'
       : null,
