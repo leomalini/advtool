@@ -151,7 +151,7 @@ export function Sidebar() {
         <span className="truncate flex-1">{label}</span>
         {badge != null && badge > 0 && (
           <span className="flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-warning px-1 text-[10px] font-bold text-warning-foreground">
-            {badge}
+            {badge > 99 ? "99+" : badge}
           </span>
         )}
       </Link>

@@ -15,14 +15,24 @@ const supabase = createClient()
 const NOTIFICATION_COLUMNS =
   'id, kind, resource, title, body, link, entity_type, entity_id, source, read_at, created_at'
 
-/** O sino mostra os últimos; o histórico completo não é o problema deste módulo. */
-export async function getRecentNotifications(limit = 20): Promise<Notification[]> {
-  const { data, error } = await supabase
+/**
+ * O sino mostra os últimos; o histórico completo não é o problema deste módulo.
+ *
+ * `after`: só os criados depois deste instante — é o "Limpar" do sino, que
+ * esvazia o painel sem apagar nada (ver `useNotificationsClearedAfter`).
+ */
+export async function getRecentNotifications(
+  limit = 20,
+  after: string | null = null,
+): Promise<Notification[]> {
+  let query = supabase
     .from('notifications')
     .select(NOTIFICATION_COLUMNS)
     .order('created_at', { ascending: false })
     .limit(limit)
+  if (after) query = query.gt('created_at', after)
 
+  const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as Notification[]
 }

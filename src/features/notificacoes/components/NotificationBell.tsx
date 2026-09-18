@@ -1,20 +1,21 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Bell, CheckCheck, Gavel, Newspaper, TriangleAlert } from 'lucide-react'
+import { Bell, BrushCleaning, CheckCheck, Gavel, Newspaper, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
   useNotifications,
+  useNotificationsClearedAfter,
   useUnreadNotificationCount,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
@@ -92,13 +93,21 @@ function NotificationRow({
   )
 }
 
+/** Quantos avisos o painel carrega. Acima disso, o rodapé avisa que há mais. */
+const LIST_LIMIT = 20
+
+function formatCount(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
 export function NotificationBell() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
 
   useRealtimeNotifications()
 
-  const { data: notifications = [], isLoading } = useNotifications(20)
+  const { clearedAfter, clearUntil } = useNotificationsClearedAfter()
+  const { data: notifications = [], isLoading } = useNotifications(LIST_LIMIT, clearedAfter)
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
@@ -108,6 +117,23 @@ export function NotificationBell() {
     setOpen(false)
     if (notification.link) router.push(notification.link)
   }
+
+  /**
+   * Marca tudo como lido e esvazia o painel. O marco é o `created_at` do aviso
+   * mais recente da lista, não o relógio do navegador: com o relógio adiantado,
+   * um aviso que chegasse logo depois ficaria escondido.
+   */
+  async function clearAll() {
+    const newest = notifications[0]?.created_at
+    try {
+      if (unreadCount > 0) await markAllRead.mutateAsync()
+    } catch {
+      return // o hook já mostrou o erro; sem marcar como lido, não esconde
+    }
+    if (newest) clearUntil(newest)
+  }
+
+  const hasMore = notifications.length >= LIST_LIMIT
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -123,27 +149,48 @@ export function NotificationBell() {
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-warning px-1 text-[9px] font-bold text-warning-foreground">
-              {unreadCount > 99 ? '99+' : unreadCount}
+              {formatCount(unreadCount)}
             </span>
           )}
         </Button>
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[340px] p-0">
-        <div className="flex items-center justify-between border-b px-3 py-2">
+        <div className="flex items-center gap-2 border-b px-3 py-2">
           <span className="text-[12.5px] font-semibold">Avisos</span>
           {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
-              onClick={() => markAllRead.mutate()}
-              disabled={markAllRead.isPending}
-            >
-              <CheckCheck className="h-3 w-3" />
-              Marcar todos como lidos
-            </Button>
+            <span className="rounded-full bg-warning/15 px-1.5 py-px text-[10.5px] font-semibold text-warning">
+              {formatCount(unreadCount)} não lido{unreadCount === 1 ? '' : 's'}
+            </span>
           )}
+          <div className="ml-auto flex items-center">
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+                onClick={() => markAllRead.mutate()}
+                disabled={markAllRead.isPending}
+                title="Marcar todos como lidos"
+              >
+                <CheckCheck className="h-3 w-3" />
+                Lidos
+              </Button>
+            )}
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+                onClick={() => void clearAll()}
+                disabled={markAllRead.isPending}
+                title="Marcar tudo como lido e esvaziar a lista"
+              >
+                <BrushCleaning className="h-3 w-3" />
+                Limpar
+              </Button>
+            )}
+          </div>
         </div>
 
         {isLoading ? (
@@ -153,17 +200,31 @@ export function NotificationBell() {
             Nada novo por aqui.
           </p>
         ) : (
-          <ScrollArea className="max-h-[380px]">
-            <div className="divide-y">
-              {notifications.map((notification) => (
-                <NotificationRow
-                  key={notification.id}
-                  notification={notification}
-                  onOpen={openNotification}
-                />
-              ))}
-            </div>
-          </ScrollArea>
+          // Rolagem nativa: o ScrollArea com `max-h` não limitava a altura do
+          // viewport interno, e com muitos avisos a lista vazava para fora do
+          // painel e da tela.
+          <div className="max-h-[min(380px,60vh)] divide-y overflow-y-auto overscroll-contain">
+            {notifications.map((notification) => (
+              <NotificationRow
+                key={notification.id}
+                notification={notification}
+                onOpen={openNotification}
+              />
+            ))}
+          </div>
+        )}
+
+        {hasMore && (
+          <div className="flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px] text-muted-foreground">
+            <span>Mostrando os {LIST_LIMIT} mais recentes.</span>
+            <Link
+              href="/publicacoes"
+              onClick={() => setOpen(false)}
+              className="font-medium text-primary hover:underline"
+            >
+              Ver publicações
+            </Link>
+          </div>
         )}
       </PopoverContent>
     </Popover>
