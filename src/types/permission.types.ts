@@ -23,6 +23,7 @@ export type Resource =
   | 'pendencias'
   | 'configuracoes'
   | 'usuarios'
+  | 'ia'
 
 export type Action = 'view' | 'create' | 'update' | 'delete' | 'manage'
 

@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Gavel,
   Newspaper,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store/ui.store";
@@ -53,6 +54,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/processos", label: "Processos", icon: Gavel, resource: "processos" },
       { href: "/publicacoes", label: "Publicações", icon: Newspaper, resource: "publicacoes" },
       { href: "/agenda", label: "Agenda", icon: Calendar, resource: "agenda" },
+      { href: "/ia", label: "Assistente", icon: Sparkles, resource: "ia" },
     ],
   },
   {
