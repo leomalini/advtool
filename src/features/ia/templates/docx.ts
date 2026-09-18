@@ -1,6 +1,5 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom'
 import Docxtemplater from 'docxtemplater'
-import InspectModule from 'docxtemplater/js/inspect-module.js'
 import PizZip from 'pizzip'
 
 /**
@@ -21,6 +20,27 @@ const OPTIONS = {
   // o JSON inteiro de cada erro no console do servidor.
   errorLogging: false,
 } as const
+
+/**
+ * Parser dos campos: o nome sem espaços nas pontas — `{ cliente_nome }` vale o
+ * mesmo que `{cliente_nome}` — e `.` como o próprio escopo (laços).
+ *
+ * Também é por ele que os campos do modelo são listados (`onField`): o
+ * `docxtemplater` chama o parser uma vez por campo ao compilar. O
+ * `InspectModule` faria o mesmo, mas faz `require("lodash")` sem declarar a
+ * dependência — passava na build local só por achar um lodash fora do projeto
+ * e quebrou o deploy na Vercel.
+ */
+function createParser(onField?: (name: string) => void) {
+  return (tag: string) => {
+    const name = tag.trim()
+    onField?.(name)
+    return {
+      get: (scope: unknown) =>
+        name === '.' ? scope : (scope as Record<string, unknown> | null)?.[name],
+    }
+  }
+}
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
@@ -175,15 +195,19 @@ function openZip(bytes: Uint8Array | ArrayBuffer): PizZip {
 
 /** Nomes dos campos `{...}` do modelo, em ordem alfabética. */
 export function inspectTemplateFields(bytes: Uint8Array | ArrayBuffer): string[] {
-  const inspector = new InspectModule()
+  const fields = new Set<string>()
   try {
-    // O construtor com zip compila na hora — é aqui que um campo mal formado
-    // aparece.
-    new Docxtemplater(openZip(bytes), { ...OPTIONS, modules: [inspector] })
+    // O construtor com zip compila na hora: é aqui que o parser vê cada campo
+    // e que um campo mal formado lança.
+    new Docxtemplater(openZip(bytes), {
+      ...OPTIONS,
+      parser: createParser((name) => fields.add(name)),
+    })
   } catch (error) {
     throw toSyntaxError(error)
   }
-  return Object.keys(inspector.getAllTags()).sort()
+  fields.delete('.')
+  return [...fields].sort()
 }
 
 /**
@@ -200,12 +224,14 @@ export function renderTemplate(
   try {
     doc = new Docxtemplater(openZip(bytes), {
       ...OPTIONS,
+      parser: createParser(),
       nullGetter: (part) => {
         // Tag simples sem valor. Laços e XML cru (`module` preenchido) não
         // fazem parte do que os modelos usam; renderizam vazio.
         if (part.module) return ''
-        missing.add(part.value)
-        return `[FALTA: ${part.value}]`
+        const name = part.value.trim()
+        missing.add(name)
+        return `[FALTA: ${name}]`
       },
     })
     doc.render(values)
