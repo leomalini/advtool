@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { getDisplayName } from '@/utils/profile'
 import {
   DOCUMENT_CATEGORY_LABELS,
+  documentPermission,
   formatFileSize,
   getFileExtension,
   type DocumentCategory,
@@ -30,18 +31,24 @@ import {
 } from '../hooks/useDocumentMutations'
 import { Can } from '@/components/shared/Can'
 
-const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
+const ALL_CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 
 interface DocumentsTabProps {
   legalProcessId?: string | null
   crmItemIds?: string[]
   clientId?: string | null
   eventId?: string | null
+  financialEntryId?: string | null
   /** Onde novos arquivos são gravados. */
   lockedLegalProcessId?: string | null
   lockedCrmItemId?: string | null
   lockedClientId?: string | null
   lockedEventId?: string | null
+  /** Exclusivo: com ele, os outros `locked*` não vão junto (migration 63). */
+  lockedFinancialEntryId?: string | null
+  /** Opções do seletor de categoria. Por padrão, todas. */
+  categories?: readonly DocumentCategory[]
+  defaultCategory?: DocumentCategory
   itemLabel?: string
   /** Dentro de outro modal (detalhe do evento): área de envio de uma linha e
    * estado vazio discreto, em vez do layout de aba inteira. */
@@ -55,10 +62,14 @@ export function DocumentsTab({
   crmItemIds,
   clientId,
   eventId,
+  financialEntryId,
   lockedLegalProcessId,
   lockedCrmItemId,
   lockedClientId,
   lockedEventId,
+  lockedFinancialEntryId,
+  categories = ALL_CATEGORIES,
+  defaultCategory = 'outros',
   itemLabel = 'item',
   compact = false,
 }: DocumentsTabProps) {
@@ -67,6 +78,7 @@ export function DocumentsTab({
     crmItemIds,
     clientId,
     eventId,
+    financialEntryId,
   })
   const uploadDocument = useUploadDocument()
   const deleteDocument = useDeleteDocument()
@@ -74,9 +86,12 @@ export function DocumentsTab({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [category, setCategory] = useState<DocumentCategory>('outros')
+  const [category, setCategory] = useState<DocumentCategory>(defaultCategory)
   const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
   const [sizeError, setSizeError] = useState<string | null>(null)
+
+  // Quem envia segue o dono do arquivo, como a RLS.
+  const uploadPermission = documentPermission(lockedFinancialEntryId, 'upload')
 
   function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -94,6 +109,7 @@ export function DocumentsTab({
           crm_item_id: lockedCrmItemId ?? '',
           client_id: lockedClientId ?? '',
           event_id: lockedEventId ?? '',
+          financial_entry_id: lockedFinancialEntryId ?? '',
         },
         file,
       })
@@ -141,7 +157,7 @@ export function DocumentsTab({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <SelectItem key={c} value={c}>
                 {DOCUMENT_CATEGORY_LABELS[c]}
               </SelectItem>
@@ -151,7 +167,7 @@ export function DocumentsTab({
       </div>
 
       {/* Dropzone */}
-      <Can resource="documentos" action="create">
+      <Can {...uploadPermission}>
       <div
         onDragOver={(e) => {
           e.preventDefault()
@@ -267,7 +283,7 @@ export function DocumentsTab({
                 >
                   <Download className="w-3.5 h-3.5" />
                 </button>
-                <Can resource="documentos" action="delete">
+                <Can {...documentPermission(doc.financial_entry_id, 'delete')}>
                   <button
                     type="button"
                     title="Excluir"

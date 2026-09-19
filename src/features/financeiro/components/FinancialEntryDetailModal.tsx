@@ -21,13 +21,16 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
+  describeEntryDeletion,
   formatCurrency,
   getFinancialSituation,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
+import { FINANCIAL_DOCUMENT_CATEGORIES } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import { useLegalProcess } from '@/features/processos/hooks/useLegalProcesses'
+import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { useUpdateFinancialEntry, useDeleteFinancialEntry } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
@@ -94,8 +97,11 @@ export function FinancialEntryDetailModal({
           showCloseButton={false}
           className="sm:max-w-[520px] p-0 gap-0 overflow-hidden"
         >
+          {/* min-w-0 nos dois wrappers: são os itens do grid do DialogContent.
+              Sem ele, texto que não quebra (processo no formulário, nome de
+              anexo) alarga a coluna e o overflow-hidden corta o modal. */}
           {editing ? (
-            <div className="flex flex-col max-h-[85vh]">
+            <div className="flex flex-col max-h-[85vh] min-w-0">
               <div className="shrink-0 flex items-center justify-between px-6 pt-5 pb-4 border-b">
                 <DialogTitle className="text-sm font-semibold">Editar Lançamento</DialogTitle>
                 <button
@@ -132,7 +138,7 @@ export function FinancialEntryDetailModal({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col max-h-[85vh]">
+            <div className="flex flex-col max-h-[85vh] min-w-0">
               {/* Header — tingido pelo tipo do lançamento */}
               <div
                 className="relative shrink-0 px-6 pt-5 pb-4 border-b"
@@ -252,6 +258,20 @@ export function FinancialEntryDetailModal({
                     Lançamento avulso — sem cliente ou processo vinculado.
                   </p>
                 )}
+
+                {/* Comprovante, nota fiscal, boleto. Pertencem só ao
+                    lançamento (migration 63): não levam o cliente nem o
+                    processo dele, e saem junto se ele for excluído. */}
+                <div className="pt-4 border-t">
+                  <DocumentsTab
+                    compact
+                    financialEntryId={entry.id}
+                    lockedFinancialEntryId={entry.id}
+                    categories={FINANCIAL_DOCUMENT_CATEGORIES}
+                    defaultCategory="comprovante"
+                    itemLabel="lançamento"
+                  />
+                </div>
               </div>
 
               {/* Rodapé */}
@@ -308,7 +328,7 @@ export function FinancialEntryDetailModal({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Excluir lançamento"
-        description={`"${entry.description}" será removido permanentemente.`}
+        description={describeEntryDeletion(entry)}
         isLoading={deleteEntry.isPending}
         onConfirm={handleDelete}
       />

@@ -5,6 +5,9 @@ export const documentCategorySchema = z.enum([
   'contrato',
   'procuracao',
   'decisao',
+  'comprovante',
+  'nota_fiscal',
+  'boleto',
   'outros',
 ])
 
@@ -18,6 +21,8 @@ export const documentUploadSchema = z.object({
   crm_item_id: optionalUuid,
   legal_process_id: optionalUuid,
   event_id: optionalUuid,
+  /** Exclusivo: anexo de lançamento não leva os outros vínculos (migration 63). */
+  financial_entry_id: optionalUuid,
 })
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>

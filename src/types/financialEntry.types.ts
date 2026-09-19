@@ -68,6 +68,9 @@ export interface FinancialEntryWithRelations extends FinancialEntry {
     id: string
     cnj_number: string | null
   } | null
+  /** Só os ids dos anexos: as listas mostram quantos são; o detalhe busca o
+   * resto. */
+  documents?: { id: string }[]
   creator?: Profile
 }
 
@@ -128,6 +131,38 @@ export function getFinancialSituation(
   return entry.due_date !== null && entry.due_date < today ? 'vencido' : 'a_vencer'
 }
 
+/**
+ * A data que põe o lançamento num mês do fluxo de caixa: o que foi pago conta
+ * pelo pagamento; o resto, pelo vencimento — ou pela previsão, na condição
+ * especial. `null` para o que ainda não tem quando: condição especial sem
+ * previsão.
+ *
+ * Fonte única do recorte por período. O gráfico, os indicadores do mês e o
+ * filtro da tabela passam por aqui — antes o gráfico usava o pagamento e a
+ * tabela o vencimento, e o clique num mês mostrava na tabela outros
+ * lançamentos que não os somados na coluna.
+ */
+export function getCashFlowDate(
+  entry: Pick<FinancialEntry, 'status' | 'due_date' | 'paid_at'>
+): string | null {
+  return entry.status === 'pago' ? (entry.paid_at ?? entry.due_date) : entry.due_date
+}
+
 export function formatCurrency(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+/** Texto do diálogo de exclusão. Os anexos saem junto (migration 63), e isso
+ * precisa estar escrito antes do clique. */
+export function describeEntryDeletion(
+  entry: Pick<FinancialEntryWithRelations, 'description' | 'documents'>
+): string {
+  const count = entry.documents?.length ?? 0
+  const attachments =
+    count === 0
+      ? ''
+      : count === 1
+        ? ', junto com o documento anexado'
+        : `, junto com os ${count} documentos anexados`
+  return `"${entry.description}" será removido permanentemente${attachments}.`
 }

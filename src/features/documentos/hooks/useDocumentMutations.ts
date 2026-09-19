@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { uploadDocument, deleteDocument, getDocumentUrl } from '../services/documents.service'
 import { documentKeys } from './useDocuments'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
+import { financialEntryKeys } from '@/features/financeiro/hooks/useFinancialEntries'
 import { useAuth } from '@/hooks/useAuth'
 import type { DocumentUploadInput } from '@/schemas/document.schema'
 
@@ -16,6 +17,8 @@ export function useInvalidateDocumentSurfaces() {
     // Prefixo — alcança forEntity também.
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
+    // As listas do Financeiro contam os anexos de cada lançamento (o clipe).
+    queryClient.invalidateQueries({ queryKey: financialEntryKeys.all })
   }
 }
 

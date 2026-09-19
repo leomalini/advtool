@@ -16,7 +16,7 @@ export function WorkflowSelector({ selectedId, counts = {}, onChange }: Workflow
   const { data: workflows = [] } = useWorkflows()
 
   return (
-    <div className="flex items-center gap-1 bg-muted rounded-lg p-1 max-w-full overflow-x-auto crm-tabs-scroll">
+    <div className="flex items-center gap-1 bg-muted rounded-lg p-1 max-w-full overflow-x-auto">
       {workflows.map((wf) => {
         const count = counts[wf.id] ?? 0
         const isActive = selectedId === wf.id

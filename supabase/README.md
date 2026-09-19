@@ -40,9 +40,14 @@ foi criado manualmente, ela não falha.
 As três policies originais (`auth_upload`, `auth_read`, `auth_delete`) liberavam o
 bucket inteiro para qualquer conta autenticada. **A migration 38 as substituiu**
 por `attachments_select` / `attachments_insert` / `attachments_delete`, que
-seguem `documentos:view` / `:create` / `:delete` da matriz de permissões. Continua
-sem escopo por pasta — a decisão de negócio é que todo mundo do escritório vê os
-mesmos documentos; o que muda por perfil é quem envia e quem apaga.
+seguem `documentos:view` / `:create` / `:delete` da matriz de permissões. A
+decisão de negócio é que todo mundo do escritório vê os mesmos documentos; o que
+muda por perfil é quem envia e quem apaga.
+
+A exceção é a pasta `lancamentos/` (**migration 63**): anexos de lançamento do
+Financeiro seguem `financeiro:view` / `:update` / `:delete`, tanto no bucket quanto
+em `public.documents`. Quem não vê o Financeiro (o estagiário) também não vê esses
+arquivos.
 
 ## Verificação
 
@@ -73,6 +78,10 @@ Após aplicar tudo, confirme em **Table Editor** que existem:
 > `'*'` no lugar de `'recurso:acao'` libera para qualquer membro ativo (tabelas
 > de apoio como `event_types` e `workflows`); `NULL` não cria policy nenhuma
 > para aquele comando, ou seja, ninguém pode.
+>
+> **Não reaplique o helper em `documents`.** Desde a migration 63 as policies dela
+> escolhem o recurso por linha (anexo de lançamento → `financeiro`), e o helper as
+> trocaria pelas genéricas, devolvendo esses anexos a quem só tem `documentos:view`.
 >
 > Lembre que **RLS negando não gera erro** — devolve lista vazia ou
 > `0 rows updated`. Policy errada parece "sumiu tudo". Confira com

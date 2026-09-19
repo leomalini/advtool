@@ -116,6 +116,10 @@
   --sidebar-accent-foreground: #5165f0;
   --sidebar-border: #ececef;
   --sidebar-ring: #5165f0;
+
+  /* ── Scrollbar — o foreground em baixa opacidade ── */
+  --scrollbar-thumb: rgba(26, 28, 34, 0.18);
+  --scrollbar-thumb-hover: rgba(26, 28, 34, 0.34);
 }
 
 /* ── Graphite — dark ── */
@@ -178,6 +182,10 @@
   --sidebar-accent-foreground: #8ea2ff;
   --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-ring: #6b8afd;
+
+  /* ── Scrollbar — o foreground em baixa opacidade ── */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
 }
 
 @keyframes adv-pulse-urgent {
@@ -194,20 +202,50 @@
   animation: adv-pulse-urgent 2s ease-in-out infinite;
 }
 
-/* Slim horizontal scrollbar for the CRM workflow tabs */
-.crm-tabs-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-.crm-tabs-scroll::-webkit-scrollbar {
-  height: 6px;
-}
-.crm-tabs-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.crm-tabs-scroll::-webkit-scrollbar-thumb {
-  background-color: var(--border);
-  border-radius: 9999px;
+/*
+ * Scrollbars do app inteiro: finas, trilho transparente, cor do tema. A barra
+ * nativa do Windows (larga, com setas) destoava da interface, principalmente
+ * no tema escuro. Discretas, mas não invisíveis: a tabela do Financeiro rola
+ * na horizontal, e sem barra quem usa mouse não alcança as colunas de fora.
+ * Para esconder de propósito numa faixa específica, use `no-scrollbar`
+ * (vem do shadcn/tailwind.css).
+ */
+@layer base {
+  /* Chromium e Safari: controle total pelos pseudo-elementos. Sem estilizar
+     `::-webkit-scrollbar-button`, as setas somem. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* A borda transparente com `background-clip` desenha um polegar de 4px
+     dentro de uma área de 10px — fino à vista, fácil de acertar com o mouse. */
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+    border-width: 2px;
+  }
+
+  /* Firefox não tem os pseudo-elementos. O `@supports` é o que impede estas
+     duas propriedades de chegar ao Chromium: lá, desde a versão 121, elas
+     têm precedência e desligariam o estilo acima — com as setas de volta. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+  }
 }
 
 @layer base {

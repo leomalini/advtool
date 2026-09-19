@@ -1,7 +1,7 @@
 -- ============================================================
 -- Matriz de visibilidade por perfil — verificação da Fase 3
 --
--- Rodar no SQL Editor do Supabase DEPOIS das migrations 35–38.
+-- Rodar no SQL Editor do Supabase DEPOIS das migrations 35–38 e 63.
 --
 -- Responde a pergunta que o `rbac_fase1_check.sql` não alcança: com as policies
 -- no lugar, o que cada perfil realmente ENXERGA? RLS negando não gera erro,
@@ -22,10 +22,14 @@
 --     · 0 com total = 0  → tabela vazia, o teste não diz nada
 --
 -- ESPERADO
---   financial_entries → paralegal = 0, os outros três = total
---   todo o resto      → os quatro perfis = total
+--   financial_entries    → paralegal = 0, os outros três = total
+--   documents_lancamento → paralegal = 0, os outros três = total (anexos de
+--                          lançamento seguem o Financeiro — migration 63)
+--   documents            → paralegal = total menos documents_lancamento;
+--                          os outros três = total
+--   todo o resto         → os quatro perfis = total
 --
--- Uma única negação de leitura em toda a matriz não é um teste fraco: é a
+-- Só o Financeiro nega leitura em toda a matriz, e isso não é teste fraco: é a
 -- decisão 2 do planejamento ("todos veem tudo do escritório") ficando visível.
 -- O que os perfis mais restritos perdem é ESCRITA, e escrita não dá para
 -- exercitar aqui sem sujar a base — isso se confere na tela, com uma conta de
@@ -54,6 +58,7 @@ select 'total', t.tabela, t.linhas from (
   union all select 'crm_items',       count(*) from public.crm_items
   union all select 'legal_processes', count(*) from public.legal_processes
   union all select 'documents',       count(*) from public.documents
+  union all select 'documents_lancamento', count(*) from public.documents where financial_entry_id is not null
   union all select 'events',          count(*) from public.events
   union all select 'tasks',           count(*) from public.tasks
   union all select 'activities',      count(*) from public.activities
@@ -79,6 +84,7 @@ select 'admin', t.tabela, t.linhas from (
   union all select 'crm_items',       count(*) from public.crm_items
   union all select 'legal_processes', count(*) from public.legal_processes
   union all select 'documents',       count(*) from public.documents
+  union all select 'documents_lancamento', count(*) from public.documents where financial_entry_id is not null
   union all select 'events',          count(*) from public.events
   union all select 'tasks',           count(*) from public.tasks
   union all select 'activities',      count(*) from public.activities
@@ -100,6 +106,7 @@ select 'attorney', t.tabela, t.linhas from (
   union all select 'crm_items',       count(*) from public.crm_items
   union all select 'legal_processes', count(*) from public.legal_processes
   union all select 'documents',       count(*) from public.documents
+  union all select 'documents_lancamento', count(*) from public.documents where financial_entry_id is not null
   union all select 'events',          count(*) from public.events
   union all select 'tasks',           count(*) from public.tasks
   union all select 'activities',      count(*) from public.activities
@@ -121,6 +128,7 @@ select 'paralegal', t.tabela, t.linhas from (
   union all select 'crm_items',       count(*) from public.crm_items
   union all select 'legal_processes', count(*) from public.legal_processes
   union all select 'documents',       count(*) from public.documents
+  union all select 'documents_lancamento', count(*) from public.documents where financial_entry_id is not null
   union all select 'events',          count(*) from public.events
   union all select 'tasks',           count(*) from public.tasks
   union all select 'activities',      count(*) from public.activities
@@ -142,6 +150,7 @@ select 'finance', t.tabela, t.linhas from (
   union all select 'crm_items',       count(*) from public.crm_items
   union all select 'legal_processes', count(*) from public.legal_processes
   union all select 'documents',       count(*) from public.documents
+  union all select 'documents_lancamento', count(*) from public.documents where financial_entry_id is not null
   union all select 'events',          count(*) from public.events
   union all select 'tasks',           count(*) from public.tasks
   union all select 'activities',      count(*) from public.activities

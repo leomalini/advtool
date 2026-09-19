@@ -9,10 +9,12 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
+  describeEntryDeletion,
   formatCurrency,
   getFinancialSituation,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
+import type { PendingAttachments } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import { useFinancialEntriesForEntity } from '../hooks/useFinancialEntries'
 import {
@@ -23,6 +25,7 @@ import {
 import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
+import { AttachmentCountBadge } from './AttachmentCountBadge'
 import { Can } from '@/components/shared/Can'
 
 interface FinancialEntriesTabProps {
@@ -83,12 +86,13 @@ export function FinancialEntriesTab({
   // Lê da lista viva para o detalhe não congelar após uma edição.
   const selected = selectedId ? (entries.find((e) => e.id === selectedId) ?? null) : null
 
-  async function handleCreate(data: FinancialEntryInput) {
+  async function handleCreate(data: FinancialEntryInput, attachments: PendingAttachments) {
     await createEntry.mutateAsync({
       ...data,
       legal_process_id: lockedLegalProcessId ?? data.legal_process_id,
       crm_item_id: lockedCrmItemId ?? data.crm_item_id,
       client_id: lockedClientId ?? data.client_id,
+      attachments,
     })
     setCreateOpen(false)
   }
@@ -211,6 +215,7 @@ export function FinancialEntriesTab({
                     <div className="flex items-center gap-2 flex-wrap">
                       <FinancialSituationBadge entry={entry} />
                       <p className="text-sm font-medium truncate">{entry.description}</p>
+                      <AttachmentCountBadge count={entry.documents?.length ?? 0} />
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span>{FINANCIAL_CATEGORY_LABELS[entry.category]}</span>
@@ -270,7 +275,8 @@ export function FinancialEntriesTab({
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[480px]">
+        {/* Rola por dentro — com anexos o formulário passa da altura da tela. */}
+        <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Lançamento</DialogTitle>
           </DialogHeader>
@@ -280,6 +286,7 @@ export function FinancialEntriesTab({
             onSubmit={handleCreate}
             isLoading={createEntry.isPending}
             hideLinks
+            withAttachments
           />
         </DialogContent>
       </Dialog>
@@ -294,7 +301,7 @@ export function FinancialEntriesTab({
         open={!!pendingDelete}
         onOpenChange={(open) => !open && setPendingDelete(null)}
         title="Excluir lançamento"
-        description={`"${pendingDelete?.description}" será removido permanentemente.`}
+        description={pendingDelete ? describeEntryDeletion(pendingDelete) : ''}
         isLoading={deleteEntry.isPending}
         onConfirm={() => {
           if (!pendingDelete) return
