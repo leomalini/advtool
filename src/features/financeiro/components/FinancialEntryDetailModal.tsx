@@ -97,8 +97,11 @@ export function FinancialEntryDetailModal({
           showCloseButton={false}
           className="sm:max-w-[520px] p-0 gap-0 overflow-hidden"
         >
+          {/* min-w-0 nos dois wrappers: são os itens do grid do DialogContent.
+              Sem ele, texto que não quebra (processo no formulário, nome de
+              anexo) alarga a coluna e o overflow-hidden corta o modal. */}
           {editing ? (
-            <div className="flex flex-col max-h-[85vh]">
+            <div className="flex flex-col max-h-[85vh] min-w-0">
               <div className="shrink-0 flex items-center justify-between px-6 pt-5 pb-4 border-b">
                 <DialogTitle className="text-sm font-semibold">Editar Lançamento</DialogTitle>
                 <button
@@ -135,7 +138,7 @@ export function FinancialEntryDetailModal({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col max-h-[85vh]">
+            <div className="flex flex-col max-h-[85vh] min-w-0">
               {/* Header — tingido pelo tipo do lançamento */}
               <div
                 className="relative shrink-0 px-6 pt-5 pb-4 border-b"

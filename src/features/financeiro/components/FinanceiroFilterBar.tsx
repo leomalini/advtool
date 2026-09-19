@@ -161,29 +161,36 @@ export function FinanceiroFilterBar({
         </div>
 
         {/* Período e "sem data" são mutuamente exclusivos: um intervalo não tem
-            como conter a ausência de data, então marcar um desliga o outro. */}
+            como conter a ausência de data, então marcar um desliga o outro.
+            "Período", e não "Vencimento": o pago entra pela data do pagamento,
+            o mesmo critério do gráfico (getCashFlowDate). */}
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">Vencimento</span>
+          <span
+            className="text-xs text-muted-foreground cursor-help"
+            title="Pagos entram pela data do pagamento; os demais, pelo vencimento — o mesmo critério do gráfico."
+          >
+            Período
+          </span>
           <Input
             type="date"
-            value={filters.dueFrom ?? ''}
+            value={filters.periodFrom ?? ''}
             onChange={(e) =>
-              onChange({ ...filters, dueFrom: e.target.value || null, undatedOnly: false })
+              onChange({ ...filters, periodFrom: e.target.value || null, undatedOnly: false })
             }
             disabled={filters.undatedOnly}
             className="h-9 w-[150px] text-sm"
-            aria-label="Vencimento de"
+            aria-label="Período de"
           />
           <span className="text-xs text-muted-foreground">até</span>
           <Input
             type="date"
-            value={filters.dueTo ?? ''}
+            value={filters.periodTo ?? ''}
             onChange={(e) =>
-              onChange({ ...filters, dueTo: e.target.value || null, undatedOnly: false })
+              onChange({ ...filters, periodTo: e.target.value || null, undatedOnly: false })
             }
             disabled={filters.undatedOnly}
             className="h-9 w-[150px] text-sm"
-            aria-label="Vencimento até"
+            aria-label="Período até"
           />
         </div>
 

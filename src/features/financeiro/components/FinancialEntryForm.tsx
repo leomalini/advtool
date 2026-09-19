@@ -108,8 +108,15 @@ export function FinancialEntryForm({
     !!linkedProcessoId &&
     !!processos.find((p) => p.id === linkedProcessoId)?.crm_item?.client_id
 
+  // min-w-0: o DialogContent é um grid, e item de grid não encolhe abaixo do
+  // próprio conteúdo. Um cliente ou processo de nome longo (com `truncate`,
+  // sem quebra de linha) alargava a coluna até o nome inteiro e estourava o
+  // modal. Com ele, o formulário fica na largura do modal e o nome trunca.
   return (
-    <form onSubmit={handleSubmit((data) => onSubmit(data, attachments))} className="space-y-4">
+    <form
+      onSubmit={handleSubmit((data) => onSubmit(data, attachments))}
+      className="space-y-4 min-w-0"
+    >
       {/* Tipo — receita/despesa muda o sinal do valor em toda a UI */}
       <div className="space-y-2">
         <Label>Tipo *</Label>

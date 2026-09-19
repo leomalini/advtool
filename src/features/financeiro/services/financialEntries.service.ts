@@ -7,6 +7,7 @@ import {
 } from '@/features/documentos/services/documents.service'
 import type { PendingAttachments } from '@/types/document.types'
 import {
+  getCashFlowDate,
   getFinancialSituation,
   toISODate,
   todayISO,
@@ -214,15 +215,6 @@ type AggregateRow = Pick<
 
 const AGGREGATE_SELECT = 'type, amount, status, settlement_kind, due_date, paid_at'
 
-/**
- * Data que joga o lançamento num mês: o que foi pago conta pelo pagamento, o
- * resto pelo vencimento. `null` para o que ainda não tem quando — condição
- * especial sem previsão.
- */
-function referenceDate(row: AggregateRow): string | null {
-  return row.status === 'pago' ? (row.paid_at ?? row.due_date) : row.due_date
-}
-
 export async function getFinancialSummary(): Promise<FinancialSummary> {
   const now = new Date()
   const monthStart = toISODate(new Date(now.getFullYear(), now.getMonth(), 1))
@@ -247,7 +239,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
 
   for (const row of (data ?? []) as AggregateRow[]) {
     const amount = Number(row.amount)
-    const reference = referenceDate(row)
+    const reference = getCashFlowDate(row)
     const inThisMonth = reference !== null && reference >= monthStart && reference <= monthEnd
 
     if (row.type === 'despesa') {
@@ -321,7 +313,9 @@ export async function getMonthlyCashFlow(months = 6): Promise<CashFlowResult> {
 
   for (const row of (data ?? []) as AggregateRow[]) {
     const amount = Number(row.amount)
-    const reference = referenceDate(row)
+    // O mesmo critério do filtro da tabela — é o que faz o clique numa coluna
+    // mostrar exatamente os lançamentos somados nela.
+    const reference = getCashFlowDate(row)
 
     // Sem quando: entra na coluna própria em vez de sumir.
     if (reference === null) {

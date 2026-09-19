@@ -131,6 +131,23 @@ export function getFinancialSituation(
   return entry.due_date !== null && entry.due_date < today ? 'vencido' : 'a_vencer'
 }
 
+/**
+ * A data que põe o lançamento num mês do fluxo de caixa: o que foi pago conta
+ * pelo pagamento; o resto, pelo vencimento — ou pela previsão, na condição
+ * especial. `null` para o que ainda não tem quando: condição especial sem
+ * previsão.
+ *
+ * Fonte única do recorte por período. O gráfico, os indicadores do mês e o
+ * filtro da tabela passam por aqui — antes o gráfico usava o pagamento e a
+ * tabela o vencimento, e o clique num mês mostrava na tabela outros
+ * lançamentos que não os somados na coluna.
+ */
+export function getCashFlowDate(
+  entry: Pick<FinancialEntry, 'status' | 'due_date' | 'paid_at'>
+): string | null {
+  return entry.status === 'pago' ? (entry.paid_at ?? entry.due_date) : entry.due_date
+}
+
 export function formatCurrency(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
