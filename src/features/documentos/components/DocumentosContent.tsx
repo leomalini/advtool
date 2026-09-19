@@ -22,6 +22,7 @@ import { getDisplayName } from '@/utils/profile'
 import { getClientDisplayName } from '@/types/cliente.types'
 import {
   DOCUMENT_CATEGORY_LABELS,
+  documentPermission,
   formatFileSize,
   getFileExtension,
   type DocumentCategory,
@@ -34,6 +35,15 @@ import { Can } from '@/components/shared/Can'
 const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 const ALL = '__all__'
 const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_110px_100px_76px]'
+
+/** Cliente e processo de um documento. O anexo de lançamento não tem vínculo
+ * próprio (migration 63): herda os do lançamento, para não aparecer solto. */
+function documentOwners(doc: DocumentWithRelations) {
+  return {
+    client: doc.client ?? doc.financial_entry?.client ?? null,
+    legalProcess: doc.legal_process ?? doc.financial_entry?.legal_process ?? null,
+  }
+}
 
 export function DocumentosContent() {
   const { data: documents = [], isLoading } = useDocuments()
@@ -52,12 +62,14 @@ export function DocumentosContent() {
       if (categoryFilter && doc.category !== categoryFilter) return false
       if (!q) return true
 
+      const { client, legalProcess } = documentOwners(doc)
       const haystack = [
         doc.file_name,
-        doc.client
-          ? getClientDisplayName(doc.client as Parameters<typeof getClientDisplayName>[0])
+        client
+          ? getClientDisplayName(client as Parameters<typeof getClientDisplayName>[0])
           : null,
-        doc.legal_process?.cnj_number,
+        legalProcess?.cnj_number,
+        doc.financial_entry?.description,
       ]
         .filter(Boolean)
         .join(' ')
@@ -66,7 +78,7 @@ export function DocumentosContent() {
       const matchesText = haystack.includes(q)
       const matchesDigits =
         qDigits.length > 0 &&
-        (doc.legal_process?.cnj_number?.replace(/\D/g, '') ?? '').includes(qDigits)
+        (legalProcess?.cnj_number?.replace(/\D/g, '') ?? '').includes(qDigits)
 
       return matchesText || matchesDigits
     })
@@ -204,81 +216,87 @@ export function DocumentosContent() {
                   </div>
                 )}
 
-                {filtered.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className={cn(
-                      TABLE_GRID,
-                      'gap-3 px-4 py-3 items-center hover:bg-muted/20 transition-colors group'
-                    )}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-[9px] font-bold text-muted-foreground">
-                        {getFileExtension(doc.file_name)}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm truncate">{doc.file_name}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {formatFileSize(doc.file_size)}
-                          {doc.uploader && ` · ${getDisplayName(doc.uploader.full_name)}`}
-                        </p>
+                {filtered.map((doc) => {
+                  const { client, legalProcess } = documentOwners(doc)
+
+                  return (
+                    <div
+                      key={doc.id}
+                      className={cn(
+                        TABLE_GRID,
+                        'gap-3 px-4 py-3 items-center hover:bg-muted/20 transition-colors group'
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-[9px] font-bold text-muted-foreground">
+                          {getFileExtension(doc.file_name)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm truncate">{doc.file_name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {formatFileSize(doc.file_size)}
+                            {doc.uploader && ` · ${getDisplayName(doc.uploader.full_name)}`}
+                            {doc.financial_entry &&
+                              ` · Lançamento: ${doc.financial_entry.description}`}
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
-                    {doc.client ? (
-                      <Link
-                        href={`/clientes/${doc.client.id}`}
-                        className="text-xs text-muted-foreground truncate hover:text-foreground hover:underline"
-                      >
-                        {getClientDisplayName(
-                          doc.client as Parameters<typeof getClientDisplayName>[0]
-                        )}
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                      {client ? (
+                        <Link
+                          href={`/clientes/${client.id}`}
+                          className="text-xs text-muted-foreground truncate hover:text-foreground hover:underline"
+                        >
+                          {getClientDisplayName(
+                            client as Parameters<typeof getClientDisplayName>[0]
+                          )}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
 
-                    {doc.legal_process ? (
-                      <Link
-                        href={`/processos?id=${doc.legal_process.id}`}
-                        className="text-xs font-mono text-muted-foreground truncate hover:text-foreground hover:underline"
-                      >
-                        {doc.legal_process.cnj_number ?? 'Sem CNJ'}
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                      {legalProcess ? (
+                        <Link
+                          href={`/processos?id=${legalProcess.id}`}
+                          className="text-xs font-mono text-muted-foreground truncate hover:text-foreground hover:underline"
+                        >
+                          {legalProcess.cnj_number ?? 'Sem CNJ'}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
 
-                    <span className="text-xs text-muted-foreground">
-                      {DOCUMENT_CATEGORY_LABELS[doc.category]}
-                    </span>
+                      <span className="text-xs text-muted-foreground">
+                        {DOCUMENT_CATEGORY_LABELS[doc.category]}
+                      </span>
 
-                    <span className="text-xs text-muted-foreground">
-                      {format(parseISO(doc.created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                    </span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(parseISO(doc.created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                      </span>
 
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        title="Abrir"
-                        onClick={() => openDocument.mutate(doc.file_path)}
-                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      <Can resource="documentos" action="delete">
+                      <div className="flex items-center gap-0.5">
                         <button
                           type="button"
-                          title="Excluir"
-                          onClick={() => setPendingDelete(doc)}
-                          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Abrir"
+                          onClick={() => openDocument.mutate(doc.file_path)}
+                          className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Download className="w-3.5 h-3.5" />
                         </button>
-                      </Can>
+                        <Can {...documentPermission(doc.financial_entry_id, 'delete')}>
+                          <button
+                            type="button"
+                            title="Excluir"
+                            onClick={() => setPendingDelete(doc)}
+                            className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </Can>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

@@ -21,13 +21,16 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
+  describeEntryDeletion,
   formatCurrency,
   getFinancialSituation,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
+import { FINANCIAL_DOCUMENT_CATEGORIES } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import { useLegalProcess } from '@/features/processos/hooks/useLegalProcesses'
+import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { useUpdateFinancialEntry, useDeleteFinancialEntry } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
@@ -252,6 +255,20 @@ export function FinancialEntryDetailModal({
                     Lançamento avulso — sem cliente ou processo vinculado.
                   </p>
                 )}
+
+                {/* Comprovante, nota fiscal, boleto. Pertencem só ao
+                    lançamento (migration 63): não levam o cliente nem o
+                    processo dele, e saem junto se ele for excluído. */}
+                <div className="pt-4 border-t">
+                  <DocumentsTab
+                    compact
+                    financialEntryId={entry.id}
+                    lockedFinancialEntryId={entry.id}
+                    categories={FINANCIAL_DOCUMENT_CATEGORIES}
+                    defaultCategory="comprovante"
+                    itemLabel="lançamento"
+                  />
+                </div>
               </div>
 
               {/* Rodapé */}
@@ -308,7 +325,7 @@ export function FinancialEntryDetailModal({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Excluir lançamento"
-        description={`"${entry.description}" será removido permanentemente.`}
+        description={describeEntryDeletion(entry)}
         isLoading={deleteEntry.isPending}
         onConfirm={handleDelete}
       />

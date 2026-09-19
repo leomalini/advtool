@@ -68,6 +68,9 @@ export interface FinancialEntryWithRelations extends FinancialEntry {
     id: string
     cnj_number: string | null
   } | null
+  /** Só os ids dos anexos: as listas mostram quantos são; o detalhe busca o
+   * resto. */
+  documents?: { id: string }[]
   creator?: Profile
 }
 
@@ -130,4 +133,19 @@ export function getFinancialSituation(
 
 export function formatCurrency(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+/** Texto do diálogo de exclusão. Os anexos saem junto (migration 63), e isso
+ * precisa estar escrito antes do clique. */
+export function describeEntryDeletion(
+  entry: Pick<FinancialEntryWithRelations, 'description' | 'documents'>
+): string {
+  const count = entry.documents?.length ?? 0
+  const attachments =
+    count === 0
+      ? ''
+      : count === 1
+        ? ', junto com o documento anexado'
+        : `, junto com os ${count} documentos anexados`
+  return `"${entry.description}" será removido permanentemente${attachments}.`
 }

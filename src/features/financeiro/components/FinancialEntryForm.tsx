@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
@@ -20,6 +21,9 @@ import { CurrencyInput } from '@/components/shared/CurrencyInput'
 import { ProcessoCombobox } from '@/features/processos/components/ProcessoCombobox'
 import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { useLegalProcesses } from '@/features/processos/hooks/useLegalProcesses'
+import { Can } from '@/components/shared/Can'
+import type { PendingAttachments } from '@/types/document.types'
+import { FinancialEntryAttachmentsField } from './FinancialEntryAttachmentsField'
 import {
   FINANCIAL_TYPE_LABELS,
   FINANCIAL_CATEGORY_LABELS,
@@ -46,11 +50,16 @@ const SETTLEMENT_KIND_HINTS: Record<FinancialSettlementKind, string> = {
 
 interface FinancialEntryFormProps {
   defaultValues?: Partial<FinancialEntryInput>
-  onSubmit: (data: FinancialEntryInput) => void
+  /** `attachments`: documentos escolhidos no formulário, para subir depois de
+   * salvar. Vazio quando `withAttachments` não está ligado. */
+  onSubmit: (data: FinancialEntryInput, attachments: PendingAttachments) => void
   isLoading?: boolean
   /** Aberto de dentro de um caso/processo/cliente: o vínculo já está decidido,
    * então a seção de vínculos não é oferecida. */
   hideLinks?: boolean
+  /** Só na criação. Ao editar, o lançamento já existe e a seção Documentos do
+   * detalhe envia direto. */
+  withAttachments?: boolean
 }
 
 export function FinancialEntryForm({
@@ -58,8 +67,13 @@ export function FinancialEntryForm({
   onSubmit,
   isLoading,
   hideLinks,
+  withAttachments,
 }: FinancialEntryFormProps) {
   const { data: processos = [] } = useLegalProcesses()
+  const [attachments, setAttachments] = useState<PendingAttachments>({
+    files: [],
+    category: 'comprovante',
+  })
   const {
     register,
     handleSubmit,
@@ -95,7 +109,7 @@ export function FinancialEntryForm({
     !!processos.find((p) => p.id === linkedProcessoId)?.crm_item?.client_id
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit((data) => onSubmit(data, attachments))} className="space-y-4">
       {/* Tipo — receita/despesa muda o sinal do valor em toda a UI */}
       <div className="space-y-2">
         <Label>Tipo *</Label>
@@ -330,6 +344,16 @@ export function FinancialEntryForm({
             )}
           </div>
         </div>
+      )}
+
+      {/* Anexar é `financeiro:update`, não `documentos:create` — o arquivo é do
+          lançamento (migration 63). */}
+      {withAttachments && (
+        <Can resource="financeiro" action="update">
+          <div className="pt-3 border-t">
+            <FinancialEntryAttachmentsField value={attachments} onChange={setAttachments} />
+          </div>
+        </Can>
       )}
 
       <Button

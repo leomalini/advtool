@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
 import {
+  getFinancialEntryFilePaths,
+  removeDocumentFiles,
+  uploadDocument,
+} from '@/features/documentos/services/documents.service'
+import type { PendingAttachments } from '@/types/document.types'
+import {
   getFinancialSituation,
   toISODate,
   todayISO,
@@ -18,7 +24,8 @@ const supabase = createClient()
 const ENTRY_SELECT = `
   *,
   client:clients(id, type, name, company_name, trade_name),
-  legal_process:legal_processes(id, cnj_number)
+  legal_process:legal_processes(id, cnj_number),
+  documents(id)
 `
 
 /** Controles de formulário devolvem '' quando intocados; Postgres rejeita isso
@@ -134,9 +141,43 @@ export async function updateFinancialEntry(input: UpdateFinancialEntryInput): Pr
   if (error) throw error
 }
 
+/**
+ * Sobe os arquivos escolhidos no formulário, depois de o lançamento existir.
+ * Um arquivo que falha não derruba os outros — devolve quantos falharam, e o
+ * lançamento continua salvo. Mesmo desenho de attachFilesToEvent.
+ */
+export async function attachFilesToFinancialEntry(
+  financialEntryId: string,
+  { files, category }: PendingAttachments,
+  userId: string
+): Promise<number> {
+  if (files.length === 0) return 0
+  const results = await Promise.allSettled(
+    files.map((file) =>
+      uploadDocument({ category, financial_entry_id: financialEntryId }, file, userId)
+    )
+  )
+  return results.filter((result) => result.status === 'rejected').length
+}
+
+/**
+ * Exclui o lançamento e os anexos dele.
+ *
+ * As linhas dos anexos saem pelo cascade (migration 63); os arquivos no bucket,
+ * não. Por isso os caminhos são lidos antes — e os arquivos só saem se o
+ * lançamento saiu mesmo: RLS negando não gera erro, só "0 linhas".
+ */
 export async function deleteFinancialEntry(id: string): Promise<void> {
-  const { error } = await supabase.from('financial_entries').delete().eq('id', id)
+  const filePaths = await getFinancialEntryFilePaths(id)
+
+  const { data, error } = await supabase
+    .from('financial_entries')
+    .delete()
+    .eq('id', id)
+    .select('id')
   if (error) throw error
+
+  if (data.length > 0) await removeDocumentFiles(filePaths)
 }
 
 // ── Agregados ───────────────────────────────────────────────────────────────

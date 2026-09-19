@@ -31,6 +31,7 @@ import {
   getFinancialSituation,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
+import type { PendingAttachments } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import {
   useFinancialEntries,
@@ -45,6 +46,7 @@ import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
 import { FinanceiroFilterBar } from './FinanceiroFilterBar'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
+import { AttachmentCountBadge } from './AttachmentCountBadge'
 import {
   filterFinancialEntries,
   emptyFinancialFilters,
@@ -223,8 +225,8 @@ export function FinanceiroContent() {
   const totalReceitas = (cashFlow?.months ?? []).reduce((s, m) => s + m.receita, 0)
   const totalDespesas = (cashFlow?.months ?? []).reduce((s, m) => s + m.despesa, 0)
 
-  async function handleCreate(data: FinancialEntryInput) {
-    await createEntry.mutateAsync(data)
+  async function handleCreate(data: FinancialEntryInput, attachments: PendingAttachments) {
+    await createEntry.mutateAsync({ ...data, attachments })
     setCreateOpen(false)
   }
 
@@ -580,6 +582,7 @@ export function FinanceiroContent() {
                         <div className="flex items-center gap-2 min-w-0">
                           <FinancialSituationBadge entry={entry} short bordered />
                           <span className="text-sm truncate">{entry.description}</span>
+                          <AttachmentCountBadge count={entry.documents?.length ?? 0} />
                         </div>
                         {/* A condição é o "vencimento" destes lançamentos —
                             escondê-la deixaria a linha sem dizer o que se
@@ -688,11 +691,17 @@ export function FinanceiroContent() {
       </Card>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[480px]">
+        {/* Rola por dentro: com vínculos e anexos o formulário passa da altura
+            de uma tela de notebook, e o Salvar ficava fora de alcance. */}
+        <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Lançamento</DialogTitle>
           </DialogHeader>
-          <FinancialEntryForm onSubmit={handleCreate} isLoading={createEntry.isPending} />
+          <FinancialEntryForm
+            onSubmit={handleCreate}
+            isLoading={createEntry.isPending}
+            withAttachments
+          />
         </DialogContent>
       </Dialog>
 

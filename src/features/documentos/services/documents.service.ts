@@ -12,6 +12,12 @@ const DOCUMENT_SELECT = `
   *,
   client:clients(id, type, name, company_name, trade_name),
   legal_process:legal_processes(id, cnj_number),
+  financial_entry:financial_entries(
+    id,
+    description,
+    client:clients(id, type, name, company_name, trade_name),
+    legal_process:legal_processes(id, cnj_number)
+  ),
   uploader:profiles!documents_uploaded_by_fkey(id, full_name)
 `
 
@@ -32,9 +38,13 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
  * divergentes — `{clientId}/…` para cliente e `events/{eventId}/…` para evento
  * —, o que tornava impossível saber de quem era um arquivo olhando o caminho.
  * O timestamp evita colisão quando o mesmo arquivo é enviado duas vezes.
+ *
+ * ⚠️ `lancamentos` vem primeiro e não é só organização: é pela pasta que as
+ * policies do bucket reconhecem um anexo de lançamento (migration 63).
  */
 function buildFilePath(input: DocumentUploadInput, fileName: string): string {
   const owner: [string, string | null | undefined][] = [
+    ['lancamentos', input.financial_entry_id],
     ['processos', input.legal_process_id],
     ['casos', input.crm_item_id],
     ['clientes', input.client_id],
@@ -71,8 +81,9 @@ export async function getDocumentsForEntity(params: {
   crmItemIds?: string[]
   clientId?: string | null
   eventId?: string | null
+  financialEntryId?: string | null
 }): Promise<DocumentWithRelations[]> {
-  const { legalProcessId, crmItemIds = [], clientId, eventId } = params
+  const { legalProcessId, crmItemIds = [], clientId, eventId, financialEntryId } = params
 
   const terms: string[] = []
   if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
@@ -80,6 +91,7 @@ export async function getDocumentsForEntity(params: {
   if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
   if (clientId) terms.push(`client_id.eq.${clientId}`)
   if (eventId) terms.push(`event_id.eq.${eventId}`)
+  if (financialEntryId) terms.push(`financial_entry_id.eq.${financialEntryId}`)
   if (terms.length === 0) return []
 
   const { data, error } = await supabase
@@ -129,21 +141,50 @@ export async function uploadDocument(
     entity_id: data.id,
     entity_title: file.name,
     actor_id: userId,
+    // O feed é lido por qualquer membro; a marca é o que permite, um dia,
+    // escondê-lo de quem não vê o Financeiro.
+    metadata: input.financial_entry_id
+      ? { financial_entry_id: input.financial_entry_id }
+      : undefined,
   })
 
   return data as unknown as DocumentRecord
+}
+
+/**
+ * Remove do bucket arquivos cujas linhas já saíram.
+ *
+ * Falhar aqui deixa arquivo órfão, o que é bem menos grave que abortar pela
+ * metade uma exclusão que já aconteceu — por isso loga e segue.
+ */
+export async function removeDocumentFiles(filePaths: string[]): Promise<void> {
+  if (filePaths.length === 0) return
+  const { error } = await supabase.storage.from(BUCKET).remove(filePaths)
+  if (error) console.error('[storage] remove failed:', error.message)
 }
 
 export async function deleteDocument(id: string, filePath: string): Promise<void> {
   const { error } = await supabase.from('documents').delete().eq('id', id)
   if (error) throw error
 
-  // A linha já saiu; falhar aqui deixa um arquivo órfão, o que é bem menos
-  // grave que abortar a exclusão pela metade.
-  const { error: storageError } = await supabase.storage.from(BUCKET).remove([filePath])
-  if (storageError) {
-    console.error('[storage] remove failed:', storageError.message)
-  }
+  await removeDocumentFiles([filePath])
+}
+
+/**
+ * Caminhos dos anexos de um lançamento, lidos ANTES de excluí-lo.
+ *
+ * As linhas saem sozinhas, pelo cascade da migration 63, mas o banco não
+ * alcança o bucket. Depois da exclusão não sobra linha para dizer quais
+ * arquivos remover.
+ */
+export async function getFinancialEntryFilePaths(financialEntryId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('documents')
+    .select('file_path')
+    .eq('financial_entry_id', financialEntryId)
+
+  if (error) throw error
+  return (data ?? []).map((doc) => doc.file_path as string)
 }
 
 /** Há documento anexado só ao evento, e o perfil não pode excluí-lo. */
@@ -192,12 +233,7 @@ export async function deleteEventOnlyDocuments(eventIds: string[]): Promise<void
   }
   if (deleted < owned.length) throw new AttachedDocumentsError()
 
-  // Linhas já saíram; arquivo que falhar aqui fica órfão — mesmo critério de
-  // deleteDocument.
-  const { error: storageError } = await supabase.storage
-    .from(BUCKET)
-    .remove(owned.map((doc) => doc.file_path))
-  if (storageError) console.error('[storage] remove failed:', storageError.message)
+  await removeDocumentFiles(owned.map((doc) => doc.file_path))
 }
 
 /**
