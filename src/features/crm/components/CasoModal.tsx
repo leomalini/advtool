@@ -264,7 +264,7 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
           </div>
 
           {/* Tab bar */}
-          <div className="flex gap-0 overflow-x-auto scrollbar-hide -mb-px">
+          <div className="flex gap-0 overflow-x-auto no-scrollbar -mb-px">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
