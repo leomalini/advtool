@@ -100,6 +100,36 @@ export interface PortalPayload {
   client_name: string
   processes: PortalProcess[]
   generated_at: string
+  /** Mostra o chat de dúvidas: o assistente está ligado no servidor e há
+   * processo sobre o que perguntar. */
+  assistant_enabled: boolean
+}
+
+/** Tamanho máximo de uma pergunta ao assistente do portal — o campo da página
+ * e a rota usam o mesmo teto. */
+export const PORTAL_ASSISTANT_MAX_QUESTION_CHARS = 1000
+
+/**
+ * Mensagens de falha NO MEIO da resposta, quando o stream já começou e a rota
+ * não pode mais responder com status e JSON. Chegam ao chat como texto puro —
+ * a página mostra só estas, e troca qualquer outra (erro de rede, em inglês,
+ * do navegador) pela genérica.
+ */
+export const PORTAL_ASSISTANT_STREAM_ERRORS = {
+  generic: 'Não consegui responder agora. Tente de novo em instantes.',
+  providerQuota: 'O assistente atingiu o limite de uso por agora. Tente de novo mais tarde.',
+} as const
+
+/**
+ * Corpo de `POST /api/portal/<token>/assistente`.
+ *
+ * Só o texto da pergunta nova: o histórico que o modelo recebe vem do banco
+ * (ver `lib/clientPortal/chat.ts`), nunca do navegador.
+ */
+export interface PortalAssistantRequest {
+  /** Id da conversa, gerado pelo chat da página a cada abertura. */
+  conversationId: string
+  text: string
 }
 
 /** 401 do portal. `needs_document` separa "digite seu CPF" de "este link não

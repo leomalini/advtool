@@ -15,6 +15,7 @@ sem módulos. Uma rota, somente leitura:
 | Somente leitura | Canal de mensagens, upload ou assinatura |
 | Token por **cliente** | Token por processo |
 | Processos + andamento publicado | Documentos, financeiro, audiências, partes |
+| Chat com IA sobre o que a página mostra | Canal com o escritório |
 
 Processo novo do mesmo cliente entra sozinho no link que ele já tem — não há
 nada a reenviar. É a razão de o token ser por cliente.
@@ -97,6 +98,62 @@ O texto do tribunal aparece **como é**, sem paráfrase: o cliente eventualmente
 compara com o site do tribunal, e uma reescrita que divirja vira desconfiança.
 O escritório controla o que aparece, não a redação.
 
+## Assistente de dúvidas (IA)
+
+O botão **Tirar dúvidas**, fixo no canto da página, abre um chat em que o
+cliente pergunta sobre o andamento. Ele aparece depois do documento
+confirmado, com pelo menos um processo na lista, sempre que o provedor de IA
+do Assistente estiver configurado. `PORTAL_ASSISTANT_ENABLED=false` desliga só
+o do portal.
+
+**O sigilo está no dado, não no prompt.** O modelo recebe exatamente o que a
+página mostra: a lista de `getPortalProcesses` no prompt e a timeline de
+`getPortalProcessTimeline` pela tool `ver_andamento`, as duas presas ao cliente
+do token. Publicação oculta, `ai_summary` da BuscaProcessos, partes, valor da
+causa, financeiro, tarefas e anotações do escritório nunca chegam a ele.
+Instrução se contorna com insistência; dado que não foi enviado não vaza.
+Esconder um ato de `/processos/[id]` o esconde também da IA, sem passo a mais.
+
+**As instruções cuidam do comportamento** (`features/portal/assistant/prompt.ts`):
+
+- explica o andamento em linguagem simples, citando data e título do ato;
+- não dá orientação jurídica, não prevê resultado nem tempo, não calcula nem
+  confirma prazo;
+- não trata de honorários, documentos, contratos ou estratégia, e não fala de
+  outros processos;
+- não repassa recado nem inventa telefone, e-mail ou nome do escritório;
+- diante de algo urgente (citação, oficial de justiça, bloqueio, audiência
+  próxima), manda falar com o escritório;
+- ato que não aparece na página nunca vira "não aconteceu" — a página é um
+  recorte, e a IA diz isso.
+
+**Limite e registro** (`client_portal_chat_messages`, migration 64):
+
+- 10 perguntas por hora e 30 por dia, por link, contadas no banco. A contagem
+  falha **fechada**: sem conseguir contar, o modelo não é chamado.
+- A pergunta é gravada antes de chamar o modelo (turno que falha também
+  conta); a resposta, ao terminar, junto com as consultas que o modelo fez —
+  que é o que ele viu ao responder.
+- O navegador manda só o texto da pergunta. O histórico que volta ao modelo
+  (as últimas 10 mensagens) é lido do banco, então ninguém forja uma "resposta
+  anterior da IA" nem infla o pedido.
+- O escritório lê com `clientes:view` — por enquanto direto no Supabase, ainda
+  não há tela. Ninguém edita nem apaga por sessão: é o que dá valor ao registro
+  numa reclamação.
+- O chat avisa o cliente, antes da primeira pergunta, que a conversa fica
+  registrada e que ninguém a acompanha em tempo real.
+
+**Provedor.** O mesmo do Assistente da equipe (`AI_ASSISTANT_PROVIDER`), com a
+mesma chave e a mesma cota — por isso o limite por link. ⚠️ No plano gratuito do
+Gemini, o Google usa o conteúdo enviado, e a cota é de 20 requisições **por dia**
+por modelo (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, medido em
+2026-09 no `gemini-3.8-flash`), somando equipe e portal. Cada pergunta gasta
+umas duas requisições (consultar o andamento → responder). Para clientes, só no
+plano pago. Cota do provedor esgotada chega ao cliente como "o assistente
+atingiu o limite de uso por agora", não como erro genérico.
+
+Recarregar a página começa outra conversa.
+
 ## Operação
 
 Tela do cliente → botão **Link do cliente**, no cabeçalho, ao lado de *Editar
@@ -131,6 +188,9 @@ e não limita nada.
 | Rota do escritório | `src/app/api/clientes/[id]/portal-link/route.ts` |
 | Página | `src/app/acompanhar/[token]/page.tsx` + `src/features/portal/` |
 | Emissão na UI | `src/features/clientes/components/PortalLinkDialog.tsx` |
+| Assistente — instruções, tool, modelo | `src/features/portal/assistant/{prompt.ts,tools.ts,model.ts}` |
+| Assistente — limite e registro | `src/lib/clientPortal/chat.ts` + `supabase/migrations/20260101000064_client_portal_chat.sql` |
+| Assistente — rota e chat | `src/app/api/portal/[token]/assistente/route.ts` + `src/features/portal/components/PortalAssistant.tsx` |
 
 `APP_PUBLIC_URL` define a base do link copiado; sem ela, cai no `origin` da
 requisição, que atrás de proxy pode ser o endereço interno do container.
@@ -140,3 +200,6 @@ requisição, que atrás de proxy pode ser o endereço interno do container.
 Documentos, financeiro, próxima audiência e qualquer canal de contato na
 página. Entram quando houver demanda real — cada um aumenta a superfície de
 dado sensível numa rota anônima, que é o oposto do que esta v1 otimiza.
+
+O assistente de dúvidas não abre nenhum desses: ele lê o mesmo recorte da
+página e não leva mensagem ao escritório.
