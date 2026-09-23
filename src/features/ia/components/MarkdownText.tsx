@@ -76,8 +76,18 @@ const components: Components = {
   },
 }
 
+/** Link vira texto. Para quem lê sem saber de onde o link veio — o cliente, no
+ * portal —, um endereço que a IA escreveu não pode ser clicável: ela pode
+ * inventar um, e o texto parece vir do escritório. */
+const componentsWithoutLinks: Components = {
+  ...components,
+  a: ({ children }) => <span>{children}</span>,
+}
+
 interface MarkdownTextProps {
   text: string
+  /** `false` mostra os links como texto simples. Padrão: clicáveis. */
+  allowLinks?: boolean
 }
 
 /**
@@ -88,10 +98,14 @@ interface MarkdownTextProps {
  * repetir dados do banco, e nada disso deve virar marcação. Links passam pelo
  * `defaultUrlTransform`, que bloqueia `javascript:` e afins.
  */
-export function MarkdownText({ text }: MarkdownTextProps) {
+export function MarkdownText({ text, allowLinks = true }: MarkdownTextProps) {
   return (
     <div className="space-y-2 break-words">
-      <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={allowLinks ? components : componentsWithoutLinks}
+        skipHtml
+      >
         {text}
       </Markdown>
     </div>

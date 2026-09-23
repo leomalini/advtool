@@ -4,10 +4,12 @@ import { useMemo, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { FileQuestion, Link2Off, Loader2, Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PortalLinkInvalidError } from '../services/portal.service'
 import { isNeedsDocument, usePortalData } from '../hooks/usePortal'
+import { PortalAssistant } from './PortalAssistant'
 import { PortalDocumentGate } from './PortalDocumentGate'
 import { PortalProcessCard } from './PortalProcessCard'
 import type { PortalProcess } from '@/types/clientPortal.types'
@@ -56,7 +58,13 @@ export function PortalPage({ token }: { token: string }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
+    <div
+      className={cn(
+        'mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10',
+        // Espaço para o botão fixo do chat não cobrir o rodapé no celular.
+        data.assistant_enabled && 'pb-28'
+      )}
+    >
       <header className="flex flex-col gap-1">
         <p className="text-sm text-muted-foreground">Acompanhamento processual</p>
         <h1 className="text-2xl font-semibold leading-tight">{data.client_name}</h1>
@@ -88,6 +96,10 @@ export function PortalPage({ token }: { token: string }) {
           substitui a orientação do seu advogado.
         </p>
       </footer>
+
+      {data.assistant_enabled && (
+        <PortalAssistant token={token} processCount={data.processes.length} />
+      )}
     </div>
   )
 }

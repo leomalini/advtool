@@ -7,6 +7,7 @@ import {
   touchPortalLink,
 } from '@/lib/clientPortal/access'
 import { getPortalProcesses } from '@/lib/clientPortal/data'
+import { isPortalAssistantEnabled } from '@/features/portal/assistant/model'
 import type { PortalPayload } from '@/types/clientPortal.types'
 
 /**
@@ -46,10 +47,13 @@ export async function GET(
   const { link, client } = guard
 
   try {
+    const processes = await getPortalProcesses(client.id)
     const payload: PortalPayload = {
       client_name: clientDisplayName(client),
-      processes: await getPortalProcesses(client.id),
+      processes,
       generated_at: new Date().toISOString(),
+      // Sem processo, o chat não teria sobre o que responder.
+      assistant_enabled: processes.length > 0 && isPortalAssistantEnabled(),
     }
 
     await touchPortalLink(link)
