@@ -6,6 +6,8 @@ import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
 import { recordWebhookEvent } from '@/lib/buscaprocessos/webhookLog'
 import { hasWebhookSecret, hasWebhookToken, signWebhookBody } from '@/lib/buscaprocessos/signature'
 import { webhookUrl, localWebhookUrl } from '@/lib/buscaprocessos/webhookUrl'
+import { readLastOriginDelivery } from '@/lib/buscaprocessos/webhookAlerts'
+import { countPendingRejections } from '@/lib/buscaprocessos/webhookReplay'
 import {
   buildWebhookPayload,
   WEBHOOK_SCENARIO_VALUES,
@@ -56,7 +58,12 @@ export async function GET(): Promise<NextResponse> {
   const guard = await requireAdminApi()
   if (!guard.ok) return guard.response
 
+  // A saúde lê o log com `service_role`: sem a chave, a tela mostra só a
+  // configuração, que é o que dá para afirmar.
+  const health = hasServiceRoleKey() ? await readHealth() : null
+
   return NextResponse.json({
+    health,
     /** O que registramos na BuscaProcessos ao ativar o monitoramento por OAB. */
     registeredUrl: webhookUrl(),
     /** Para onde o modo `http` dispara — aceita localhost, ao contrário da acima. */
@@ -66,6 +73,25 @@ export async function GET(): Promise<NextResponse> {
     serviceRoleConfigured: hasServiceRoleKey(),
     canSendHttp: Boolean(localWebhookUrl()),
   })
+}
+
+/**
+ * A situação real do recebimento, e não só a configurada: a variável pode estar
+ * presente e errada — foi o que aconteceu —, e só a última entrega diz isso.
+ */
+async function readHealth() {
+  const supabase = createAdminClient()
+
+  try {
+    const [lastDelivery, pending] = await Promise.all([
+      readLastOriginDelivery(supabase),
+      countPendingRejections(supabase),
+    ])
+    return { lastDelivery, pendingReplay: pending }
+  } catch (err) {
+    console.error('[webhooks/test] saúde do endpoint:', err)
+    return null
+  }
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

@@ -501,7 +501,7 @@ function TabGeral() {
 
 // ── Main Component ─────────────────────────────────────────────
 
-export function ConfiguracoesContent() {
+export function ConfiguracoesContent({ initialTab }: { initialTab?: string }) {
   const { can } = usePermissions()
 
   // A aba Usuários é administração de acesso, não configuração do escritório —
@@ -510,6 +510,12 @@ export function ConfiguracoesContent() {
   const visibleTabs = TABS.filter(
     (tab) => tab.value !== 'usuarios' || can('usuarios', 'manage')
   )
+
+  // `?aba=` vem de um link (o aviso de webhook recusando entregas abre direto
+  // em Webhooks). Aba desconhecida ou oculta para o perfil cai em Geral.
+  const defaultTab = visibleTabs.some((tab) => tab.value === initialTab)
+    ? (initialTab as TabValue)
+    : 'geral'
 
   return (
     <div className="space-y-5">
@@ -521,7 +527,7 @@ export function ConfiguracoesContent() {
         </p>
       </div>
 
-      <Tabs defaultValue="geral">
+      <Tabs defaultValue={defaultTab}>
         <TabsList variant="line" className="border-b w-full rounded-none pb-0 gap-0 h-auto">
           {visibleTabs.map(({ value, label, icon: Icon }) => (
             <TabsTrigger

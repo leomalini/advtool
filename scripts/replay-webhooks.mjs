@@ -11,8 +11,14 @@
  *   node scripts/replay-webhooks.mjs <url> [--dry-run] [--all] [--event X] [--limit N]
  *
  *   --dry-run  lista o que seria reenviado e não manda nada
- *   --all      inclui todo evento recusado, não só `diario_movimentacao_nova`
+ *   --all      inclui todo evento recusado, não só os que têm tratamento
  *   --event X  reprocessa só o evento X
+ *
+ * Só recusas PENDENTES (`replayed_at` nulo, migration 65). Cada reenvio leva o
+ * cabeçalho `x-advtool-replay-of`, e o endpoint — depois de autenticar — marca a
+ * recusa de origem como recuperada. É a mesma fila do botão "Reprocessar" em
+ * Configurações → Webhooks, que é o caminho do dia a dia; este script fica para
+ * quando não há sessão de admin no navegador.
  *   --limit N  para depois de N entregas
  *
  * A URL é a do endpoint, não a da aplicação:
@@ -56,7 +62,19 @@ const url = args.find(
 )
 const dryRun = args.includes('--dry-run')
 const all = args.includes('--all')
-const eventFilter = valueOf('--event') ?? (all ? null : 'diario_movimentacao_nova')
+
+/** Espelho de `HANDLED_WEBHOOK_EVENTS` (src/lib/buscaprocessos/webhook.ts): um
+ * script de terminal não importa TypeScript. O resto termina em `ignored`. */
+const HANDLED_EVENTS = [
+  'diario_movimentacao_nova',
+  'nova_intimacao',
+  'intimacao_nova',
+  'nova_publicacao',
+  'movimentacao_nova',
+  'nova_movimentacao',
+]
+const singleEvent = valueOf('--event')
+const eventFilter = singleEvent ? [singleEvent] : all ? null : HANDLED_EVENTS
 const limit = Number(valueOf('--limit') ?? 0)
 
 function valueOf(flag) {
@@ -108,6 +126,8 @@ async function sign(body) {
 const query = new URLSearchParams({
   select: 'id,received_at,event,payload,headers',
   status: 'eq.invalid',
+  is_test: 'eq.false',
+  replayed_at: 'is.null',
   order: 'received_at.asc',
 })
 
@@ -116,7 +136,14 @@ const response = await fetch(`${SUPABASE_URL}/rest/v1/webhook_events?${query}`, 
 })
 
 if (!response.ok) {
-  console.error(`Leitura de webhook_events falhou: HTTP ${response.status}`)
+  const detail = await response.json().catch(() => null)
+  if (detail?.code === '42703') {
+    console.error(
+      'webhook_events ainda não tem `replayed_at`: aplique a migration 65 (npm run db:push) antes de reprocessar.',
+    )
+  } else {
+    console.error(`Leitura de webhook_events falhou: HTTP ${response.status}`)
+  }
   process.exit(1)
 }
 
@@ -135,7 +162,7 @@ for (const row of rows) {
   }
 
   const event = payload.event ?? row.event ?? row.headers?.event ?? null
-  if (eventFilter && event !== eventFilter) {
+  if (eventFilter && !eventFilter.includes(event)) {
     skipped++
     continue
   }
@@ -146,7 +173,7 @@ for (const row of rows) {
 
 console.log(
   `${rows.length} entrega(s) recusada(s) no log; ${candidates.length} para reprocessar` +
-    `${eventFilter ? ` (evento ${eventFilter})` : ''}; ${skipped} fora do filtro.`,
+    `${singleEvent ? ` (evento ${singleEvent})` : ''}; ${skipped} fora do filtro.`,
 )
 
 if (!candidates.length) process.exit(0)
@@ -167,6 +194,8 @@ for (const item of candidates) {
 
   const headers = { 'Content-Type': 'application/json' }
   if (item.event) headers['x-buscaprocessos-event'] = item.event
+  // É o que tira a recusa da fila: o endpoint marca depois de autenticar.
+  headers['x-advtool-replay-of'] = item.id
   if (signature) headers['x-buscaprocessos-signature'] = signature
   else if (token) headers['Authorization'] = `Bearer ${token}`
 
@@ -195,7 +224,7 @@ console.log(
       .map(([status, count]) => `${status}: ${count}`)
       .join('  ·  '),
 )
-console.log('O resultado de cada reenvio virou uma linha nova em webhook_events.')
+console.log('O resultado de cada reenvio virou uma linha nova em webhook_events, e a recusa saiu da fila.')
 
 /** Uma linha curta que identifica a entrega sem despejar o corpo inteiro. */
 function describe(payload) {

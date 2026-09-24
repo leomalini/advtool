@@ -36,6 +36,11 @@ export interface WebhookEvent {
   headers: Record<string, string | null> | null
   duration_ms: number | null
   received_at: string
+  /** Na linha recusada: quando foi reprocessada. Opcional porque a coluna
+   * chega com a migration 65 e a lista não pode quebrar antes dela. */
+  replayed_at?: string | null
+  /** Na linha criada pelo reprocessamento: a recusa de origem. */
+  replay_of?: string | null
 }
 
 export interface WebhookEventFilters {

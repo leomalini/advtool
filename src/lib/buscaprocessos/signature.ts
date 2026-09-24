@@ -279,3 +279,83 @@ export async function verifyWebhookAuth(
     detail: `Conferido contra: ${tried.join('; ') || 'nada aplicável'}.`,
   }
 }
+
+// ── Conferência da credencial configurada ─────────────────────────────────────
+
+export type CredentialKind = 'token' | 'secret'
+
+/**
+ * O que explica a diferença entre o valor colado na tela e o do ambiente.
+ *
+ * Cada caso corresponde a um erro que acontece de fato ao copiar: o primeiro
+ * caractere que fica para trás na seleção (foi o que deixou o webhook recusando
+ * tudo em setembro de 2026), o último, um pedaço só, algo a mais em volta, o
+ * valor do campo vizinho, a chave da API no lugar do token.
+ */
+export type CredentialFinding =
+  | 'igual'
+  | 'falta_primeiro'
+  | 'falta_ultimo'
+  | 'configurado_incompleto'
+  | 'configurado_com_sobra'
+  | 'valor_da_outra_variavel'
+  | 'valor_da_chave_da_api'
+  | 'diferente'
+
+export type CredentialCheck =
+  | { configured: false }
+  | {
+      configured: true
+      matches: boolean
+      finding: CredentialFinding
+      /** Tamanhos já normalizados — o valor configurado nunca sai daqui. */
+      configuredLength: number
+      providedLength: number
+    }
+
+/** O segredo HMAC é usado como está (só aparado), então é assim que se compara. */
+function normalizeSecret(value: string): string {
+  return value.trim()
+}
+
+/**
+ * Compara um valor colado pelo administrador com a credencial do ambiente.
+ *
+ * Existe porque a variável da Vercel não pode ser lida de volta, e o único
+ * sintoma de um valor errado era toda entrega recusada. A comparação é a MESMA
+ * que o endpoint faz — `normalizeToken` para o token, o valor aparado para o
+ * segredo —, então "confere" aqui quer dizer "o endpoint aceita".
+ *
+ * Só diz o que diverge, nunca o que está configurado. Serve de oráculo para
+ * quem já sabe o valor certo, e por isso a rota que a expõe é só de admin.
+ */
+export function checkConfiguredCredential(kind: CredentialKind, value: string): CredentialCheck {
+  const configuredRaw = kind === 'token' ? WEBHOOK_TOKEN : WEBHOOK_SECRET
+  if (!configuredRaw) return { configured: false }
+
+  const normalize = kind === 'token' ? normalizeToken : normalizeSecret
+  const configured = normalize(configuredRaw)
+  const provided = normalize(value)
+
+  const otherRaw = kind === 'token' ? WEBHOOK_SECRET : WEBHOOK_TOKEN
+  const other = otherRaw ? normalize(otherRaw) : null
+  const apiKey = API_KEY ? normalize(API_KEY) : null
+
+  let finding: CredentialFinding
+  if (equals(configured, provided)) finding = 'igual'
+  else if (provided.length > 1 && equals(configured, provided.slice(1))) finding = 'falta_primeiro'
+  else if (provided.length > 1 && equals(configured, provided.slice(0, -1))) finding = 'falta_ultimo'
+  else if (configured && provided.includes(configured)) finding = 'configurado_incompleto'
+  else if (provided && configured.includes(provided)) finding = 'configurado_com_sobra'
+  else if (other && equals(other, provided)) finding = 'valor_da_outra_variavel'
+  else if (apiKey && equals(apiKey, provided)) finding = 'valor_da_chave_da_api'
+  else finding = 'diferente'
+
+  return {
+    configured: true,
+    matches: finding === 'igual',
+    finding,
+    configuredLength: configured.length,
+    providedLength: provided.length,
+  }
+}

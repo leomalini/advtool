@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Loader2,
   Play,
+  RotateCcw,
   ShieldCheck,
   ShieldOff,
   Trash2,
@@ -39,6 +40,8 @@ import {
   useClearTestWebhookEvents,
   type SendTestWebhookResult,
 } from '../hooks/useWebhookEvents'
+import { WebhookHealthPanel } from './WebhookHealthPanel'
+import { WebhookCredentialCheck } from './WebhookCredentialCheck'
 import {
   WEBHOOK_SCENARIOS,
   buildWebhookPayload,
@@ -155,8 +158,10 @@ function EndpointPanel() {
           ) : (
             <ShieldOff className="h-3.5 w-3.5" />
           )}
+          {/* "Configurada", não "funcionando": a variável pode existir com o valor
+              errado. Quem diz se funciona é a última entrega, logo abaixo. */}
           {data.secretConfigured
-            ? 'Assinatura HMAC conferida a cada entrega'
+            ? 'Chave HMAC configurada'
             : 'Sem BUSCA_PROCESSOS_WEBHOOK_SECRET: qualquer corpo é aceito'}
         </span>
 
@@ -171,9 +176,7 @@ function EndpointPanel() {
           ) : (
             <ShieldOff className="h-3.5 w-3.5" />
           )}
-          {data.tokenConfigured
-            ? 'Token Bearer aceito como alternativa'
-            : 'Sem BUSCA_PROCESSOS_WEBHOOK_TOKEN'}
+          {data.tokenConfigured ? 'Token Bearer configurado' : 'Sem BUSCA_PROCESSOS_WEBHOOK_TOKEN'}
         </span>
 
         <span
@@ -192,6 +195,9 @@ function EndpointPanel() {
             : 'Sem SUPABASE_SERVICE_ROLE_KEY: nada é gravado'}
         </span>
       </div>
+
+      {data.health && <WebhookHealthPanel health={data.health} />}
+      <WebhookCredentialCheck />
     </div>
   )
 }
@@ -501,6 +507,19 @@ function EventRow({ event }: { event: WebhookEvent }) {
         {event.is_test && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             {event.dry_run ? 'Simulação' : 'Teste'}
+          </span>
+        )}
+
+        {event.replay_of && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <RotateCcw className="h-2.5 w-2.5" />
+            Reprocessamento
+          </span>
+        )}
+
+        {event.status === 'invalid' && event.replayed_at && (
+          <span className="rounded-full bg-success/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-success">
+            Recuperada
           </span>
         )}
 

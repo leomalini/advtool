@@ -9,6 +9,11 @@ import { getWebhookEvents } from '../services/webhookEvents.service'
 import type { WebhookEventFilters } from '@/types/webhookEvent.types'
 import type { WebhookScenario } from '@/lib/buscaprocessos/webhookFixtures'
 import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
+// Só tipos: `import type` some na compilação, e nada do módulo de servidor (que
+// lê os segredos do ambiente) chega ao bundle do navegador.
+import type { CredentialCheck, CredentialKind } from '@/lib/buscaprocessos/signature'
+import type { OriginDelivery } from '@/lib/buscaprocessos/webhookAlerts'
+import type { PendingCount, ReplayResult } from '@/lib/buscaprocessos/webhookReplay'
 
 const supabase = createClient()
 
@@ -29,6 +34,57 @@ export interface WebhookEndpointStatus {
   tokenConfigured: boolean
   serviceRoleConfigured: boolean
   canSendHttp: boolean
+  /** O que o log diz. Null quando não dá para ler (sem chave de serviço). */
+  health: WebhookHealth | null
+}
+
+export interface WebhookHealth {
+  /** A última entrega da BuscaProcessos — testes e reprocessamentos fora. */
+  lastDelivery: OriginDelivery | null
+  /** `available: false` = migration 65 não aplicada. */
+  pendingReplay: PendingCount
+}
+
+/** Compara o valor colado com a variável do servidor. Nada é gravado. */
+export function useCheckWebhookCredential() {
+  return useMutation({
+    mutationFn: async (input: {
+      kind: CredentialKind
+      value: string
+    }): Promise<CredentialCheck> => {
+      const res = await fetch('/api/webhooks/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Falha ao conferir a credencial.')
+      return json as CredentialCheck
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+}
+
+/** A rota só responde o ramo disponível; o outro vira erro 409. */
+export type ReplayRoundResult = Extract<ReplayResult, { available: true }>
+
+/** Uma rodada de reprocessamento das recusas pendentes. */
+export function useReplayRejectedWebhooks() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (): Promise<ReplayRoundResult> => {
+      const res = await fetch('/api/webhooks/replay', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Falha ao reprocessar as recusas.')
+      return json as ReplayRoundResult
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: webhookKeys.all })
+      queryClient.invalidateQueries({ queryKey: publicationKeys.all })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
 }
 
 export function useWebhookEndpointStatus(enabled: boolean) {
