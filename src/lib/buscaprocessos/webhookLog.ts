@@ -28,6 +28,8 @@ export interface WebhookEventLog {
   payload?: unknown
   headers?: Record<string, string | null>
   durationMs?: number
+  /** Linha recusada que esta reprocessa (migration 65). */
+  replayOf?: string | null
 }
 
 export async function recordWebhookEvent(
@@ -50,6 +52,10 @@ export async function recordWebhookEvent(
       payload: log.payload ?? null,
       headers: log.headers ?? null,
       duration_ms: log.durationMs ?? null,
+      // Só entra quando existe. Mandar `replay_of: null` em toda entrega faria
+      // o log inteiro depender da migration 65: numa base sem a coluna, o
+      // PostgREST recusa o insert e nenhuma entrega é registrada — nem as reais.
+      ...(log.replayOf ? { replay_of: log.replayOf } : {}),
     })
     .select('id')
     .single()
@@ -60,6 +66,22 @@ export async function recordWebhookEvent(
   }
 
   return data.id as string
+}
+
+/**
+ * Tira a recusa da fila de pendentes — ela foi reprocessada.
+ *
+ * Chamado só depois que o reprocessamento terminou sem erro: uma recusa cujo
+ * reenvio falhou continua pendente e volta na próxima rodada.
+ */
+export async function markReplayed(supabase: SupabaseClient, rejectedId: string): Promise<void> {
+  const { error } = await supabase
+    .from('webhook_events')
+    .update({ replayed_at: new Date().toISOString() })
+    .eq('id', rejectedId)
+    .eq('status', 'invalid')
+
+  if (error) console.error('[buscaprocessos/webhook] recusa não marcada:', error.message)
 }
 
 /**

@@ -85,6 +85,16 @@ const DIARIO_EVENTS = new Set([
   'nova_publicacao',
 ])
 
+/**
+ * Eventos que este módulo trata — o resto termina em `ignored`.
+ *
+ * Exportado para o reprocessamento: uma entrega recusada de `processo_verificado`
+ * não tem o que recuperar, e reenviá-la só produziria mais uma linha `ignored`.
+ * A fila de pendentes é filtrada por esta lista, então ela nunca diverge do que
+ * o handler realmente sabe fazer.
+ */
+export const HANDLED_WEBHOOK_EVENTS: readonly string[] = [...DIARIO_EVENTS, ...MOVEMENT_EVENTS]
+
 export async function handleBpWebhook(
   supabase: SupabaseClient,
   payload: BpWebhookPayload,

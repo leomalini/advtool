@@ -11,10 +11,10 @@ const supabase = createClient()
  * lugar. A escrita é que passa por rota, porque quem escreve é `service_role`.
  */
 
-const WEBHOOK_EVENT_COLUMNS = `
-  id, provider, event, external_id, signature_valid, is_test, dry_run,
-  status, destinations, reason, error, payload, headers, duration_ms, received_at
-`
+// Todas as colunas, e não uma lista: `replayed_at`/`replay_of` chegam com a
+// migration 65, e nomeá-las aqui quebraria a lista inteira numa base onde ela
+// ainda não foi aplicada. A lista já lia todas as outras — inclusive o corpo.
+const WEBHOOK_EVENT_COLUMNS = '*'
 
 export async function getWebhookEvents(
   filters: WebhookEventFilters = {},

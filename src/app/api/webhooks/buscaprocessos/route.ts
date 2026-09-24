@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { verifyWebhookAuth } from '@/lib/buscaprocessos/signature'
 import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
-import { recordWebhookEvent, diagnosticHeaders } from '@/lib/buscaprocessos/webhookLog'
+import {
+  recordWebhookEvent,
+  diagnosticHeaders,
+  markReplayed,
+} from '@/lib/buscaprocessos/webhookLog'
+import { alertOnRejectionStreak } from '@/lib/buscaprocessos/webhookAlerts'
 import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * Recebimento dos webhooks da BuscaProcessos.
@@ -61,8 +68,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
       durationMs: Date.now() - startedAt,
     })
+    // Recusa não avisa ninguém sozinha. A partir de algumas seguidas, o sino
+    // avisa o administrador — o detalhe fica no log, e o aviso aponta para ele.
+    await alertOnRejectionStreak(supabase)
     return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
   }
+
+  // Reenvio pelo terminal (`scripts/replay-webhooks.mjs`) diz qual recusa está
+  // reprocessando. Lido só DEPOIS da autenticação: sem ela, qualquer um que
+  // conhecesse a URL tiraria recusas da fila de pendentes.
+  const replayHeader = req.headers.get('x-advtool-replay-of')?.trim() ?? null
+  const replayOf = replayHeader && UUID.test(replayHeader) ? replayHeader : null
 
   let payload: BpWebhookPayload
   try {
@@ -95,7 +111,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // qual das interpretações da chave a origem usa de fato.
       headers: { ...headers, auth_method: auth.method },
       durationMs: Date.now() - startedAt,
+      replayOf,
     })
+    if (replayOf) await markReplayed(supabase, replayOf)
 
     return NextResponse.json({
       received: true,
@@ -115,6 +133,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       payload,
       headers,
       durationMs: Date.now() - startedAt,
+      // A recusa de origem continua pendente: o reenvio falhou por defeito nosso.
+      replayOf,
     })
 
     // 200 de propósito: a BuscaProcessos reentrega em erro, e reentregar o que
