@@ -28,11 +28,16 @@ const READ_TOOL_LABELS: Record<string, string> = {
   ler_arquivo: 'Lendo o arquivo',
   listar_modelos: 'Consultando modelos',
   gerar_documento_de_modelo: 'Gerando documento do modelo',
+  gerar_docx: 'Gerando documento Word',
   gerar_pdf: 'Gerando PDF',
 }
 
 /** Tools que devolvem um arquivo gerado — viram card de download. */
-const GENERATOR_TOOLS: ReadonlySet<string> = new Set(['gerar_documento_de_modelo', 'gerar_pdf'])
+const GENERATOR_TOOLS: ReadonlySet<string> = new Set([
+  'gerar_documento_de_modelo',
+  'gerar_docx',
+  'gerar_pdf',
+])
 
 interface GeneratedOutput {
   arquivo_id: string

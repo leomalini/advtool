@@ -15,6 +15,9 @@ import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { uploadDocument } from '@/features/documentos/services/documents.service'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
+import { createTemplate } from '@/features/documentos/services/templates.service'
+import { templateKeys } from '@/features/documentos/hooks/useDocumentTemplates'
+import { TemplateSyntaxError } from '@/features/documentos/templates/errors'
 import { downloadAiFileAsFile } from '../services/aiFiles.service'
 import type { ActionOutput, ActionToolName, actionTools } from '../tools/actions'
 
@@ -26,6 +29,7 @@ export type PendingAction =
   | { tool: 'comentar_cliente'; input: ActionInput<'comentar_cliente'> }
   | { tool: 'registrar_movimentacao'; input: ActionInput<'registrar_movimentacao'> }
   | { tool: 'salvar_em_documentos'; input: ActionInput<'salvar_em_documentos'> }
+  | { tool: 'cadastrar_modelo'; input: ActionInput<'cadastrar_modelo'> }
 
 /**
  * Executa uma ação proposta pela IA depois que o usuário confirmou.
@@ -147,6 +151,35 @@ export function useExecuteAction() {
             ok: true,
             id: document.id,
             link: input.processo_id ? `/processos/${input.processo_id}` : `/clientes/${input.cliente_id}`,
+          }
+        }
+
+        case 'cadastrar_modelo': {
+          const { input } = action
+          const file = await downloadAiFileAsFile(input.arquivo_id)
+          if (!/\.docx$/i.test(file.name)) {
+            return { ok: false, motivo: 'o arquivo não é um .docx — só Word serve de modelo' }
+          }
+          try {
+            const template = await createTemplate(
+              {
+                name: input.nome,
+                description: input.descricao ?? '',
+                category: input.categoria,
+                // Sem definição: cada campo recebe o padrão pelo nome, e o
+                // usuário ajusta na tela do modelo.
+                fieldSettings: {},
+                file,
+              },
+              userId,
+            )
+            queryClient.invalidateQueries({ queryKey: templateKeys.all })
+            return { ok: true, id: template.id, link: '/documentos?aba=modelos' }
+          } catch (error) {
+            // Campo mal formado no .docx: o motivo vai para o card e para o
+            // modelo, que pode explicar ao usuário o que corrigir.
+            if (error instanceof TemplateSyntaxError) return { ok: false, motivo: error.message }
+            throw error
           }
         }
       }

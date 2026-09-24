@@ -12,6 +12,7 @@ const ACTION_TITLES: Record<PendingAction['tool'], string> = {
   comentar_cliente: 'Comentar no cliente',
   registrar_movimentacao: 'Registrar movimentação',
   salvar_em_documentos: 'Salvar em Documentos',
+  cadastrar_modelo: 'Cadastrar modelo de documento',
 }
 
 /** Campos do input que valem a pena mostrar, com rótulo humano. Ids ficam de
@@ -35,6 +36,7 @@ const FIELD_LABELS: Record<string, string> = {
   processo_cnj: 'Processo',
   responsavel_nome: 'Responsável',
   arquivo_nome: 'Arquivo',
+  nome: 'Nome',
   categoria: 'Categoria',
 }
 

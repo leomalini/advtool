@@ -2,6 +2,7 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { taskPrioritySchema } from '@/schemas/task.schema'
 import { documentCategorySchema } from '@/schemas/document.schema'
+import { templateCategorySchema } from '@/schemas/documentTemplate.schema'
 
 /**
  * Ações que a IA pode PROPOR. Nenhuma tem `execute`: a chamada volta ao
@@ -117,6 +118,26 @@ export const actionTools = {
       processo_id: z.string().uuid().optional(),
       cliente_nome: displayFields.cliente_nome,
       processo_cnj: displayFields.processo_cnj,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+
+  cadastrar_modelo: tool({
+    description:
+      'Propõe cadastrar um .docx anexado nesta conversa como modelo de documento do escritório ' +
+      '(Documentos → Modelos), para reutilizar. O usuário confirma na tela. Os campos entre ' +
+      'chaves são lidos do arquivo; quais são manuais e quais a IA redige se ajusta depois, na ' +
+      'tela do modelo.',
+    inputSchema: z.object({
+      arquivo_id: z.string().uuid(),
+      arquivo_nome: z.string().describe('Nome do arquivo, para exibição.'),
+      nome: z.string().min(1).max(120).describe('Nome do modelo.'),
+      categoria: templateCategorySchema,
+      descricao: z
+        .string()
+        .max(500)
+        .optional()
+        .describe('Quando usar o modelo — ajuda a escolher o modelo certo depois.'),
     }),
     outputSchema: actionOutputSchema,
   }),
