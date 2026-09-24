@@ -1,7 +1,13 @@
 import { requirePermission } from '@/lib/auth/requirePermission'
 import { DocumentosTabs } from '@/features/documentos/components/DocumentosTabs'
 
-export default async function DocumentosPage() {
+export default async function DocumentosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   await requirePermission('documentos')
-  return <DocumentosTabs />
+
+  const { aba } = await searchParams
+  return <DocumentosTabs initialTab={typeof aba === 'string' ? aba : undefined} />
 }

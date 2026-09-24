@@ -1,14 +1,16 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom'
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
+import { TemplateSyntaxError } from './errors'
+import { PARAGRAPH_BREAK } from './text'
 
 /**
  * Leitura e preenchimento de modelos .docx com `docxtemplater`.
  *
- * Isomórfico de propósito: a tela de modelos inspeciona o arquivo no navegador
- * (para mostrar os campos antes de salvar) e o servidor preenche. As opções
- * precisam ser as mesmas nos dois lados, senão um modelo aceito no upload
- * poderia falhar na geração.
+ * Isomórfico de propósito: a tela de modelos inspeciona e preenche no
+ * navegador, e o Assistente preenche no servidor. As opções são as mesmas nos
+ * dois lados, senão um modelo aceito no upload poderia falhar na geração.
+ * Na tela, este módulo é importado sob demanda — ver `useGenerateDocument`.
  */
 const OPTIONS = {
   // Laço num parágrafo próprio não deixa parágrafo vazio no lugar da tag.
@@ -44,29 +46,6 @@ function createParser(onField?: (name: string) => void) {
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
-
-/**
- * Marca de "parágrafo novo" dentro de um valor: U+2029 PARAGRAPH SEPARATOR —
- * válido em XML e que ninguém digita. Depois do preenchimento, cada marca vira
- * um `<w:p>` de verdade, com as propriedades do parágrafo do modelo.
- *
- * Por que não só quebra de linha: num parágrafo justificado — o comum em
- * petição — o Word estica a linha que termina numa quebra manual até a margem,
- * e o recuo de primeira linha só vale para a primeira. Um {fatos} de cinco
- * parágrafos sairia torto.
- */
-export const PARAGRAPH_BREAK = String.fromCharCode(0x2029)
-
-/** Texto de um campo redigido → valor do modelo: linha em branco separa
- * parágrafos; quebra simples continua quebra de linha. */
-export function toTemplateText(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')
-    .split(/\n[ \t]*\n/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-    .join(PARAGRAPH_BREAK)
-}
 
 function wChild(parent: { childNodes: ArrayLike<unknown> }, localName: string) {
   for (const node of Array.from(parent.childNodes) as Array<{
@@ -157,12 +136,7 @@ function splitParagraphs(xml: string): string {
   return new XMLSerializer().serializeToString(doc)
 }
 
-/** Modelo com campo mal formado (`{cliente_nome` sem fechar, etc.). */
-export class TemplateSyntaxError extends Error {
-  constructor(readonly details: string[]) {
-    super(`O modelo tem campos mal formados: ${details.join('; ')}`)
-  }
-}
+export { TemplateSyntaxError }
 
 interface DocxtemplaterErrorShape {
   properties?: {
@@ -193,7 +167,9 @@ function openZip(bytes: Uint8Array | ArrayBuffer): PizZip {
   }
 }
 
-/** Nomes dos campos `{...}` do modelo, em ordem alfabética. */
+/** Nomes dos campos `{...}` do modelo, na ordem em que o `docxtemplater` os
+ * encontra — a do documento. É a ordem em que a tela de geração os pede:
+ * "dos fatos" antes de "dos pedidos". */
 export function inspectTemplateFields(bytes: Uint8Array | ArrayBuffer): string[] {
   const fields = new Set<string>()
   try {
@@ -207,7 +183,7 @@ export function inspectTemplateFields(bytes: Uint8Array | ArrayBuffer): string[]
     throw toSyntaxError(error)
   }
   fields.delete('.')
-  return [...fields].sort()
+  return [...fields]
 }
 
 /**

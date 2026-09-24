@@ -11,6 +11,7 @@ import {
   Calendar,
   Check,
   Copy,
+  FileSignature,
   FileText,
   IdCard,
   Loader2,
@@ -61,6 +62,7 @@ import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
+import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
 import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
@@ -539,6 +541,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   const [tab, setTab] = useState<Tab>('cadastro')
   const [editOpen, setEditOpen] = useState(false)
   const [taskOpen, setTaskOpen] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
 
   const updateCliente = useUpdateCliente(clienteId)
   const createTask = useCreateTask()
@@ -652,6 +655,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                   Cadastrado em {formatDate(cliente.created_at)}
                 </span>
                 <PortalLinkButton clientId={clienteId} />
+                <Can resource="documentos" action="view">
+                  <Button size="sm" variant="outline" onClick={() => setGenerateOpen(true)}>
+                    <FileSignature className="h-3.5 w-3.5 mr-1.5" />
+                    Gerar documento
+                  </Button>
+                </Can>
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                   <Pencil className="h-3.5 w-3.5 mr-1.5" />
                   Editar cadastro
@@ -836,6 +845,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
           <TaskForm onSubmit={handleCreateTask} isLoading={createTask.isPending} />
         </DialogContent>
       </Dialog>
+
+      <GenerateDocumentDialog
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        clientId={clienteId}
+      />
     </div>
   )
 }

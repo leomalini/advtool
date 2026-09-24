@@ -17,5 +17,7 @@ export interface Profile {
   is_active: boolean
   /** OAB registration number — null for non-attorney profiles. */
   oab_number: string | null
+  /** UF da OAB, em maiúsculas (migration 44). */
+  oab_state: string | null
   created_at: string
 }
