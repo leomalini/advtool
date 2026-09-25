@@ -27,6 +27,12 @@ export function toTemplateText(text: string): string {
     .join(PARAGRAPH_BREAK)
 }
 
+/** "A", "A e B", "A, B e C". */
+export function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} e ${names.at(-1)}`
+}
+
 /**
  * Texto que a IA escreveu, como texto puro. O modelo às vezes responde em
  * Markdown mesmo instruído a não fazer; num .docx os asteriscos e cerquilhas

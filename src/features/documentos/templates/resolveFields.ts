@@ -17,6 +17,7 @@ import {
   type CatalogValues,
 } from './catalog'
 import { currencyToWords, formatLongDate, formatShortDate, officeTodayIso } from './spellOut'
+import { joinNames } from './text'
 
 interface ProcessRow {
   cnj_number: string | null
@@ -42,12 +43,6 @@ interface LawyerRow {
   full_name: string
   oab_number: string | null
   oab_state: string | null
-}
-
-/** "A", "A e B", "A, B e C". */
-export function joinNames(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? ''
-  return `${names.slice(0, -1).join(', ')} e ${names.at(-1)}`
 }
 
 function nonEmpty(value: string | null | undefined): string | undefined {

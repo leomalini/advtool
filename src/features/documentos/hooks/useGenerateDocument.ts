@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
@@ -16,6 +16,24 @@ import type { TemplateValues } from '../templates/values'
 import { documentKeys } from './useDocuments'
 
 const supabase = createClient()
+
+/**
+ * O .docx do modelo, baixado uma vez e reaproveitado pela prévia e pelo
+ * download. A chave é o caminho: trocar o arquivo do modelo muda o caminho, e
+ * com ele a chave — o cache nunca serve um arquivo antigo.
+ */
+export function templateBytesQuery(filePath: string) {
+  return queryOptions({
+    queryKey: ['template-generation', 'bytes', filePath],
+    queryFn: () => downloadTemplateBytes(filePath),
+    staleTime: Infinity,
+    gcTime: 10 * 60_000,
+  })
+}
+
+export function useTemplateBytes(filePath: string | null) {
+  return useQuery({ ...templateBytesQuery(filePath ?? ''), enabled: !!filePath })
+}
 
 /** Cliente de um processo (dono do card mestre ou única parte vinculada). */
 export function useProcessClientId(processId: string | null | undefined) {
@@ -90,9 +108,10 @@ export function useGenerateDocument() {
     mutationFn: async ({ template, values, fileName, saveTo }: GenerateInput) => {
       const [{ renderTemplate }, source] = await Promise.all([
         import('../templates/docx'),
-        downloadTemplateBytes(template.file_path),
+        queryClient.fetchQuery(templateBytesQuery(template.file_path)),
       ])
-      const rendered = renderTemplate(source, values)
+      // Cópia: os bytes do cache servem também à prévia.
+      const rendered = renderTemplate(source.slice(), values)
       const file = new File([rendered.bytes as BlobPart], fileName, {
         type: AI_FILE_TYPES.docx.mediaType,
       })

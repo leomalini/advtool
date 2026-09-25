@@ -9,8 +9,8 @@ import type { DocumentTemplate } from '@/types/documentTemplate.types'
 import { formatCurrency } from '@/types/financialEntry.types'
 import type { PartyPolo } from '@/types/legalProcess.types'
 import type { AiFieldDefinition } from './fieldSettings'
-import { joinNames } from './resolveFields'
 import { formatShortDate } from './spellOut'
+import { joinNames } from './text'
 
 /**
  * O que a IA recebe para redigir os campos de texto de um modelo — SÓ

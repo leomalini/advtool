@@ -10,6 +10,17 @@ export const templateCategorySchema = z.enum(TEMPLATE_CATEGORIES)
 
 export const manualFieldFormatSchema = z.enum(MANUAL_FIELD_FORMATS)
 
+/** Limites do campo de opções — os mesmos que a tela de definição impõe. */
+export const MAX_CHOICE_OPTIONS = 50
+export const MAX_CHOICE_LABEL = 120
+export const MAX_CHOICE_TEXT = 5000
+
+const choiceOptionSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().trim().min(1).max(MAX_CHOICE_LABEL),
+  text: z.string().max(MAX_CHOICE_TEXT),
+})
+
 export const templateFieldSettingSchema: z.ZodType<TemplateFieldSetting> = z.discriminatedUnion(
   'kind',
   [
@@ -17,6 +28,13 @@ export const templateFieldSettingSchema: z.ZodType<TemplateFieldSetting> = z.dis
       kind: z.literal('manual'),
       label: z.string().trim().max(80),
       format: manualFieldFormatSchema,
+    }),
+    z.object({
+      kind: z.literal('choice'),
+      label: z.string().trim().max(80),
+      options: z.array(choiceOptionSchema).max(MAX_CHOICE_OPTIONS),
+      multiple: z.boolean(),
+      joinWith: z.enum(['list', 'paragraphs']),
     }),
     z.object({
       kind: z.literal('ai'),

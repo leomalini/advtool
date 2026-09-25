@@ -30,6 +30,7 @@ import {
 } from '@/types/documentTemplate.types'
 import { useCreateTemplate, useUpdateTemplate } from '../hooks/useDocumentTemplates'
 import { inspectTemplateFile } from '../services/templates.service'
+import { choiceFieldsWithoutOptions } from '../templates/fieldSettings'
 import { TemplateFieldBadges } from './TemplateFieldBadges'
 import { TemplateFieldDefinitions } from './TemplateFieldDefinitions'
 
@@ -49,7 +50,7 @@ export function TemplateFormDialog({
 }: TemplateFormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         {/* Montado a cada abertura: o formulário começa limpo (ou com o modelo
             em edição) sem precisar de reset. */}
         {open && <TemplateFormBody template={template} onClose={() => onOpenChange(false)} />}
@@ -86,7 +87,9 @@ function TemplateFormBody({
   const fileReady = template
     ? inspection.status === 'idle' || inspection.status === 'ok'
     : inspection.status === 'ok'
-  const canSave = fileReady && name.trim().length > 0 && !isPending
+  const choicesWithoutOptions = choiceFieldsWithoutOptions(fields, settings)
+  const canSave =
+    fileReady && name.trim().length > 0 && choicesWithoutOptions.length === 0 && !isPending
 
   async function handleFile(selected: File | null) {
     setFile(selected)
@@ -224,7 +227,13 @@ function TemplateFormBody({
         )}
       </div>
 
-      <DialogFooter>
+      <DialogFooter className="items-center">
+        {choicesWithoutOptions.length > 0 && (
+          <p className="mr-auto text-xs text-destructive">
+            Crie ao menos uma opção em{' '}
+            {choicesWithoutOptions.map((name) => `{${name}}`).join(', ')}.
+          </p>
+        )}
         <Button variant="ghost" onClick={onClose}>
           Cancelar
         </Button>

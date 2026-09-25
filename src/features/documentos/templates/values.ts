@@ -1,7 +1,11 @@
 import { formatCurrency } from '@/types/financialEntry.types'
 import type { ManualFieldFormat } from '@/types/documentTemplate.types'
 import type { CatalogValues } from './catalog'
-import { SPELLED_SUFFIX, type ClassifiedFields } from './fieldSettings'
+import {
+  SPELLED_SUFFIX,
+  type ChoiceFieldDefinition,
+  type ClassifiedFields,
+} from './fieldSettings'
 import {
   currencyToWords,
   formatLongDate,
@@ -11,7 +15,7 @@ import {
   parseLooseNumber,
   percentToWords,
 } from './spellOut'
-import { toPlainText, toTemplateText } from './text'
+import { joinNames, PARAGRAPH_BREAK, toPlainText, toTemplateText } from './text'
 
 /** Valor de cada `{campo}` do modelo. `undefined` sai `[FALTA: campo]`. */
 export type TemplateValues = Record<string, string | undefined>
@@ -60,6 +64,25 @@ function nonEmpty(value: string | undefined): string | undefined {
 }
 
 /**
+ * Texto das opções escolhidas, na ordem em que foram criadas no modelo — não
+ * na ordem dos cliques. Uma opção sem texto vai com o próprio rótulo.
+ */
+export function formatChoiceValue(
+  field: ChoiceFieldDefinition,
+  selectedIds: readonly string[],
+): string | undefined {
+  const texts = field.options
+    .filter((option) => selectedIds.includes(option.id))
+    .map((option) => option.text.trim() || option.label.trim())
+    .filter(Boolean)
+  if (texts.length === 0) return undefined
+  if (texts.length === 1 || field.joinWith === 'paragraphs') {
+    return texts.map(toTemplateText).join(PARAGRAPH_BREAK)
+  }
+  return joinNames(texts)
+}
+
+/**
  * Junta tudo o que preenche um modelo, na precedência da tela: o que quem gera
  * digitou por cima do cadastro vale mais que o cadastro.
  */
@@ -68,6 +91,7 @@ export function buildTemplateValues({
   cadastro,
   cadastroOverrides = {},
   manual,
+  choices = {},
   ai,
 }: {
   classified: ClassifiedFields
@@ -78,6 +102,8 @@ export function buildTemplateValues({
   /** Valor cru dos campos manuais: número com ponto decimal, data em
    * 'yyyy-MM-dd' ou texto. */
   manual: Readonly<Record<string, string>>
+  /** Ids das opções escolhidas em cada campo de opções. */
+  choices?: Readonly<Record<string, readonly string[]>>
   /** Textos dos campos de IA. */
   ai: Readonly<Record<string, string>>
 }): TemplateValues {
@@ -92,6 +118,10 @@ export function buildTemplateValues({
     const { value, spelled } = formatManualValue(field.format, manual[field.name])
     if (field.direct) values[field.name] = value
     if (field.spelled) values[`${field.name}${SPELLED_SUFFIX}`] = spelled
+  }
+
+  for (const field of classified.choice) {
+    values[field.name] = formatChoiceValue(field, choices[field.name] ?? [])
   }
 
   for (const field of classified.ai) {

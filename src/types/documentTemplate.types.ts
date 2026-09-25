@@ -53,15 +53,42 @@ export function isSpellableFormat(format: ManualFieldFormat): format is Spellabl
   return (SPELLABLE_FORMATS as readonly ManualFieldFormat[]).includes(format)
 }
 
+/** Uma opção de um campo de opções. O rótulo aparece na hora de escolher; o
+ * texto é o que vai para o documento — vazio, vai o próprio rótulo. */
+export interface TemplateChoiceOption {
+  /** Estável entre edições: é o que a tela de geração guarda como escolhido. */
+  id: string
+  label: string
+  text: string
+}
+
+/** Como juntar várias opções escolhidas no mesmo campo. */
+export type ChoiceJoin = 'list' | 'paragraphs'
+
+export const CHOICE_JOIN_LABELS: Record<ChoiceJoin, string> = {
+  list: 'Em lista (A, B e C)',
+  paragraphs: 'Um parágrafo cada',
+}
+
 /**
  * Definição de um campo que não é do catálogo de cadastro.
  *
  * - `manual`: quem gera digita o valor (honorários, percentual, prazo).
+ * - `choice`: quem gera escolhe entre opções criadas no modelo (forma de
+ *   pagamento, tipo de ação, cláusula opcional).
  * - `ai`: texto corrido que a IA redige a partir de `instruction` — e que quem
  *   gera revisa antes de baixar.
  */
 export type TemplateFieldSetting =
   | { kind: 'manual'; label: string; format: ManualFieldFormat }
+  | {
+      kind: 'choice'
+      label: string
+      options: TemplateChoiceOption[]
+      /** Mais de uma opção por vez (checkboxes); senão, uma só. */
+      multiple: boolean
+      joinWith: ChoiceJoin
+    }
   | { kind: 'ai'; label: string; instruction: string }
 
 export type TemplateFieldKind = TemplateFieldSetting['kind']

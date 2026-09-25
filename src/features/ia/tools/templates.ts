@@ -7,6 +7,7 @@ import {
 } from '@/features/documentos/templates/docx'
 import {
   classifyTemplateFields,
+  type ChoiceFieldDefinition,
   type ClassifiedFields,
 } from '@/features/documentos/templates/fieldSettings'
 import {
@@ -49,12 +50,51 @@ function describeFields(classified: ClassifiedFields) {
       formato: MANUAL_FIELD_FORMAT_LABELS[field.format],
       ...(field.spelled ? { sai_tambem_por_extenso: true } : {}),
     })),
+    campos_de_opcoes: classified.choice.map((field) => ({
+      campo: field.name,
+      rotulo: field.label,
+      opcoes: field.options.map((option) => option.label),
+      ...(field.multiple ? { aceita_varias: true } : {}),
+    })),
     campos_de_ia: classified.ai.map((field) => ({
       campo: field.name,
       rotulo: field.label,
       instrucao: field.instruction || undefined,
     })),
   }
+}
+
+/** Rótulo como o modelo de linguagem o escreveria: sem caixa, acento nem espaço sobrando. */
+function normalizeLabel(label: string): string {
+  return label
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+/**
+ * Ids das opções pedidas pelo rótulo. Rótulo que não existe vira aviso, não
+ * erro — e num campo de uma opção só, vale a primeira.
+ */
+function resolveChoices(
+  field: ChoiceFieldDefinition,
+  labels: readonly string[],
+): { ids: string[]; warnings: string[] } {
+  const ids: string[] = []
+  const warnings: string[] = []
+  for (const label of labels) {
+    const wanted = normalizeLabel(label)
+    const option = field.options.find((item) => normalizeLabel(item.label) === wanted)
+    if (!option) warnings.push(`A opção "${label}" não existe em {${field.name}}.`)
+    else if (!ids.includes(option.id)) ids.push(option.id)
+  }
+  if (!field.multiple && ids.length > 1) {
+    warnings.push(`{${field.name}} aceita uma opção só — ficou a primeira.`)
+    ids.splice(1)
+  }
+  return { ids, warnings }
 }
 
 /** Advogado padrão quando o usuário não diz: quem pede, se tiver OAB; senão o
@@ -127,8 +167,9 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
       description:
         'Modelos de documento do escritório (.docx): petições, procurações, contratos. Para cada ' +
         'um: campos do cadastro (o sistema preenche), campos manuais (valores que o USUÁRIO ' +
-        'informa — nunca invente) e campos de IA (você redige, seguindo a instrução). Use ' +
-        'antes de gerar_documento_de_modelo.',
+        'informa — nunca invente), campos de opções (o usuário escolhe entre as opções ' +
+        'listadas) e campos de IA (você redige, seguindo a instrução). Use antes de ' +
+        'gerar_documento_de_modelo.',
       inputSchema: z.object({
         termo: z.string().max(120).optional().describe('Trecho do nome do modelo.'),
       }),
@@ -191,6 +232,18 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
             'Campos MANUAIS, só com valores que o usuário informou. Valor em reais, número, ' +
               'percentual ou data como o usuário escreveu.',
           ),
+        escolhas: z
+          .array(
+            z.object({
+              campo: z.string(),
+              opcoes: z.array(z.string().max(200)).min(1).max(20),
+            }),
+          )
+          .optional()
+          .describe(
+            'Campos de OPÇÕES: os rótulos escolhidos, exatamente como listar_modelos mostra. ' +
+              'Só o que o usuário pediu.',
+          ),
         textos: z
           .array(
             z.object({
@@ -215,6 +268,7 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
         processo_id,
         advogados_ids,
         valores,
+        escolhas,
         textos,
         nome_arquivo,
       }) => {
@@ -257,10 +311,22 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
             if (aiNames.has(name)) ai[name] = texto
             else ignored.push(name)
           }
+          const choices: Record<string, string[]> = {}
+          for (const { campo, opcoes } of escolhas ?? []) {
+            const name = campo.replace(/[{}]/g, '').trim()
+            const field = classified.choice.find((item) => item.name === name)
+            if (!field) {
+              ignored.push(name)
+              continue
+            }
+            const { ids, warnings } = resolveChoices(field, opcoes)
+            choices[name] = ids
+            notes.push(...warnings)
+          }
 
           const rendered = renderTemplate(
             source.bytes,
-            buildTemplateValues({ classified, cadastro, manual, ai }),
+            buildTemplateValues({ classified, cadastro, manual, choices, ai }),
           )
 
           const displayName =

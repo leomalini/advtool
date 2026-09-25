@@ -1,6 +1,6 @@
 'use client'
 
-import { PenLine, Sparkles } from 'lucide-react'
+import { ListChecks, PenLine, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { TemplateFieldSettings } from '@/types/documentTemplate.types'
 import { classifyTemplateFields } from '../templates/fieldSettings'
@@ -17,7 +17,7 @@ export function TemplateFieldBadges({ fields, settings }: TemplateFieldBadgesPro
     return <p className="text-xs text-muted-foreground">Nenhum campo encontrado no arquivo.</p>
   }
 
-  const { cadastro, manual, ai } = classifyTemplateFields(fields, settings)
+  const { cadastro, manual, choice, ai } = classifyTemplateFields(fields, settings)
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -41,6 +41,18 @@ export function TemplateFieldBadges({ fields, settings }: TemplateFieldBadgesPro
           <PenLine className="h-3 w-3" />
           {`{${field.name}}`}
           {field.spelled && <span className="text-muted-foreground">+extenso</span>}
+        </Badge>
+      ))}
+      {choice.map((field) => (
+        <Badge
+          key={field.name}
+          variant="outline"
+          className="gap-1 font-mono text-[11px]"
+          title={`Opções — escolhidas ao gerar (${field.options.map((o) => o.label).join(' · ')})`}
+        >
+          <ListChecks className="h-3 w-3" />
+          {`{${field.name}}`}
+          <span className="text-muted-foreground">{field.options.length}</span>
         </Badge>
       ))}
       {ai.map((field) => (
