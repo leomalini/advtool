@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  FileSignature,
   FileText,
   Gavel,
   Landmark,
@@ -88,6 +89,8 @@ import { CrmItemClienteTab } from '@/features/crm/components/CrmItemClienteTab'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
+import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
+import { Can } from '@/components/shared/Can'
 import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
 import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
@@ -454,6 +457,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   /** Parte cujo vínculo com cliente está sendo editado. */
   const [linkingParty, setLinkingParty] = useState<DisplayParty | null>(null)
   const [taskOpen, setTaskOpen] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
   /** Publicação que originou a tarefa, quando houver — ela é dada por tratada
    * ao salvar. Null quando a tarefa nasce do botão "Nova atividade". */
   const [taskSource, setTaskSource] = useState<LegalProcessMovement | null>(null)
@@ -855,6 +859,12 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                     Atualizar dados
                   </Button>
                 )}
+                <Can resource="documentos" action="view">
+                  <Button size="sm" variant="outline" onClick={() => setGenerateOpen(true)}>
+                    <FileSignature className="h-3.5 w-3.5 mr-1.5" />
+                    Gerar documento
+                  </Button>
+                </Can>
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                   <Pencil className="h-3.5 w-3.5 mr-1.5" />
                   Editar
@@ -1501,6 +1511,12 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
           />
         </DialogContent>
       </Dialog>
+
+      <GenerateDocumentDialog
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        processId={processoId}
+      />
     </div>
   )
 }

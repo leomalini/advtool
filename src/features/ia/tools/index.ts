@@ -8,6 +8,7 @@ import { createProcessTools } from './read/processes'
 import { createPublicationTools } from './read/publications'
 import { createTeamTools } from './read/team'
 import type { ToolClient } from './shared'
+import { createDocxTools } from './docx'
 import { createPdfTools } from './pdf'
 import { createTemplateTools, type TemplateToolsContext } from './templates'
 
@@ -30,6 +31,7 @@ export function createAssistantTools(supabase: ToolClient, context: AssistantToo
     ...createTeamTools(supabase),
     ...createFileTools(supabase, context),
     ...createTemplateTools(supabase, context),
+    ...createDocxTools(supabase, context),
     ...createPdfTools(supabase, context),
     ...actionTools,
   }

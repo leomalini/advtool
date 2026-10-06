@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  APICallError,
-  RetryError,
-  StreamProviderError,
   convertToModelMessages,
   generateId,
   safeValidateUIMessages,
@@ -20,6 +17,7 @@ import {
 } from '@/lib/clientPortal/chat'
 import { getPortalProcesses } from '@/lib/clientPortal/data'
 import { hasVisibleContent } from '@/features/ia/utils/messageContent'
+import { isProviderQuotaError } from '@/features/ia/providerErrors'
 import { createPortalAssistantModel } from '@/features/portal/assistant/model'
 import { buildPortalAssistantPrompt } from '@/features/portal/assistant/prompt'
 import {
@@ -55,22 +53,6 @@ const QUOTA_MESSAGES = {
 
 function unavailable() {
   return NextResponse.json({ error: UNAVAILABLE_MESSAGE }, { status: 503, headers: NO_STORE })
-}
-
-/**
- * A cota do PROVEDOR acabou (429) — não o limite por link, que é conferido
- * antes. No plano gratuito do Gemini são 20 requisições por dia por modelo,
- * somando a equipe e o portal, e cada pergunta gasta umas duas. Dizer isso ao
- * cliente evita que ele insista numa pergunta que não vai passar hoje.
- */
-function isProviderQuotaError(error: unknown): boolean {
-  // Recusa na chamada chega como APICallError (embrulhado em RetryError depois
-  // das novas tentativas); recusa no meio do stream, como StreamProviderError.
-  const cause = RetryError.isInstance(error) ? error.lastError : error
-  return (
-    (APICallError.isInstance(cause) || StreamProviderError.isInstance(cause)) &&
-    cause.statusCode === 429
-  )
 }
 
 /**

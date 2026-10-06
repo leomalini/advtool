@@ -11,9 +11,6 @@ import {
   Settings,
   Plus,
   Pencil,
-  Building2,
-  Upload,
-  Save,
   Palette,
   Sun,
   Moon,
@@ -24,7 +21,6 @@ import {
   Webhook,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
@@ -33,6 +29,7 @@ import { EventTypesManager } from './EventTypesManager'
 import { UsersManager } from './UsersManager'
 import { OabMonitoringManager } from './OabMonitoringManager'
 import { WebhooksManager } from './WebhooksManager'
+import { OfficeSettingsCard } from './OfficeSettingsCard'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -422,79 +419,7 @@ function TabGeral() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-            Informações do Escritório
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Logo */}
-          <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">Logo do Escritório</label>
-            <div className="flex items-center gap-4">
-              <div className="h-16 w-16 rounded-xl border-2 border-dashed border-border flex items-center justify-center bg-muted/30">
-                <Building2 className="h-6 w-6 text-muted-foreground/40" />
-              </div>
-              <Button size="sm" variant="outline">
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                Fazer Upload
-              </Button>
-            </div>
-          </div>
-
-          {/* Nome */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Nome do Escritório</label>
-            <Input
-              defaultValue="Souza & Lima Advogados Associados"
-              className="h-9 text-sm"
-            />
-          </div>
-
-          {/* OABs */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">OAB Principal</label>
-              <Input defaultValue="OAB/SP 123.456" className="h-9 text-sm font-mono" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">OAB Secundária</label>
-              <Input defaultValue="OAB/SP 789.012" className="h-9 text-sm font-mono" />
-            </div>
-          </div>
-
-          {/* Endereço */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Endereço</label>
-            <Input
-              defaultValue="Av. Paulista, 1234 — Sala 810, Bela Vista, São Paulo/SP — 01310-100"
-              className="h-9 text-sm"
-            />
-          </div>
-
-          {/* Email */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">E-mail de Contato</label>
-              <Input defaultValue="contato@souzalima.adv.br" className="h-9 text-sm" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Telefone</label>
-              <Input defaultValue="(11) 3456-7890" className="h-9 text-sm" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Botão Salvar */}
-      <div className="flex justify-end">
-        <Button size="sm">
-          <Save className="h-3.5 w-3.5 mr-1.5" />
-          Salvar Alterações
-        </Button>
-      </div>
+      <OfficeSettingsCard />
     </div>
   )
 }

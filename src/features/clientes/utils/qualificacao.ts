@@ -26,6 +26,14 @@ function agree(sex: ClientSex | null, masculine: string, feminine: string): stri
   return sex === 'feminino' ? feminine : masculine
 }
 
+/** Estado civil no gênero do cliente ("casada"), ou null sem cadastro. */
+export function formatMaritalStatus(
+  client: Pick<ClientWithRelations, 'marital_status' | 'sex'>
+): string | null {
+  if (!client.marital_status) return null
+  return MARITAL_STATUS_FORMS[client.marital_status][client.sex === 'feminino' ? 'f' : 'm']
+}
+
 /**
  * O endereço que vai para a petição.
  *
@@ -40,8 +48,14 @@ export function getPrimaryAddress(
   return addresses.find((a) => a.is_primary) ?? addresses[0] ?? null
 }
 
+/** Partes de endereço que a linha usa — as mesmas no cliente e no escritório. */
+export type AddressLineParts = Pick<
+  ClientAddress,
+  'street' | 'number' | 'complement' | 'neighborhood' | 'city' | 'state' | 'zip'
+>
+
 /** Endereço numa linha só, pulando o que estiver vazio. */
-export function formatAddressLine(address: ClientAddress | null): string {
+export function formatAddressLine(address: AddressLineParts | null): string {
   if (!address) return ''
 
   const street = [address.street, address.number].filter(Boolean).join(', nº ')
@@ -75,9 +89,8 @@ function buildIndividual(client: ClientWithRelations): string {
 
   if (client.nationality?.trim()) parts.push(client.nationality.trim())
 
-  if (client.marital_status) {
-    parts.push(MARITAL_STATUS_FORMS[client.marital_status][sex === 'feminino' ? 'f' : 'm'])
-  }
+  const maritalStatus = formatMaritalStatus(client)
+  if (maritalStatus) parts.push(maritalStatus)
 
   if (client.profession?.trim()) parts.push(client.profession.trim())
 

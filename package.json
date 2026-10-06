@@ -38,6 +38,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
+    "docx-preview": "0.4.1",
     "docxtemplater": "^3.70.1",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.17.0",
