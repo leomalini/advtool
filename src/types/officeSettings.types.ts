@@ -17,12 +17,20 @@ export interface OfficeSettings {
   /** Papel timbrado (.docx) no bucket `attachments`, em `escritorio/…`. */
   letterhead_path: string | null
   letterhead_file_name: string | null
+  /** InfiniteTag da conta que recebe os links de pagamento, sem o `$`
+   * (migration 67). */
+  infinitepay_handle: string | null
   updated_by: string | null
   updated_at: string
 }
 
-/** O que a tela de Configurações grava — o timbrado tem fluxo próprio. */
+/** O que o formulário do escritório grava — timbrado e InfiniteTag têm fluxo
+ * próprio. */
 export type OfficeSettingsInput = Omit<
   OfficeSettings,
-  'letterhead_path' | 'letterhead_file_name' | 'updated_by' | 'updated_at'
+  | 'letterhead_path'
+  | 'letterhead_file_name'
+  | 'infinitepay_handle'
+  | 'updated_by'
+  | 'updated_at'
 >

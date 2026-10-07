@@ -19,6 +19,7 @@ import {
   CalendarDays,
   Newspaper,
   Webhook,
+  CreditCard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -30,6 +31,7 @@ import { UsersManager } from './UsersManager'
 import { OabMonitoringManager } from './OabMonitoringManager'
 import { WebhooksManager } from './WebhooksManager'
 import { OfficeSettingsCard } from './OfficeSettingsCard'
+import { PaymentSettingsCard } from './PaymentSettingsCard'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -214,6 +216,7 @@ type TabValue =
   | 'workflows'
   | 'etiquetas'
   | 'tipos-evento'
+  | 'pagamentos'
   | 'webhooks'
   | 'geral'
 
@@ -221,6 +224,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'geral', label: 'Geral', icon: Settings },
   { value: 'usuarios', label: 'Usuários', icon: Users },
   { value: 'publicacoes', label: 'Publicações', icon: Newspaper },
+  { value: 'pagamentos', label: 'Pagamentos', icon: CreditCard },
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
@@ -426,7 +430,14 @@ function TabGeral() {
 
 // ── Main Component ─────────────────────────────────────────────
 
-export function ConfiguracoesContent({ initialTab }: { initialTab?: string }) {
+export function ConfiguracoesContent({
+  initialTab,
+  paymentsWebhookEndpoint,
+}: {
+  initialTab?: string
+  /** Lido do ambiente no servidor — `APP_PUBLIC_URL` não chega ao navegador. */
+  paymentsWebhookEndpoint: string | null
+}) {
   const { can } = usePermissions()
 
   // A aba Usuários é administração de acesso, não configuração do escritório —
@@ -472,6 +483,9 @@ export function ConfiguracoesContent({ initialTab }: { initialTab?: string }) {
           </TabsContent>
           <TabsContent value="publicacoes">
             <OabMonitoringManager />
+          </TabsContent>
+          <TabsContent value="pagamentos">
+            <PaymentSettingsCard webhookEndpoint={paymentsWebhookEndpoint} />
           </TabsContent>
           <TabsContent value="areas">
             <TabAreas />

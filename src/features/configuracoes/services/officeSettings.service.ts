@@ -28,6 +28,24 @@ export async function saveOfficeSettings(
   return data as OfficeSettings
 }
 
+/**
+ * Troca a conta InfinitePay que recebe os links. Fluxo próprio, fora do
+ * formulário do escritório: mudar para onde o dinheiro vai é decisão à parte,
+ * confirmada na tela, e não deve sair junto com uma correção de endereço.
+ */
+export async function saveInfinitePayHandle(
+  handle: string | null,
+  userId: string,
+): Promise<OfficeSettings> {
+  const { data, error } = await supabase
+    .from('office_settings')
+    .upsert({ id: ROW_ID, infinitepay_handle: handle, updated_by: userId }, { onConflict: 'id' })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as OfficeSettings
+}
+
 /** Falhar aqui deixa um arquivo órfão, bem menos grave que desfazer uma troca
  * que já aconteceu — por isso loga e segue. */
 async function removeLetterheadFile(path: string): Promise<void> {

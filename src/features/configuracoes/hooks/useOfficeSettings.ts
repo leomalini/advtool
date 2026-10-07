@@ -7,6 +7,7 @@ import type { OfficeSettings, OfficeSettingsInput } from '@/types/officeSettings
 import {
   getOfficeSettings,
   removeLetterhead,
+  saveInfinitePayHandle,
   saveOfficeSettings,
   uploadLetterhead,
 } from '../services/officeSettings.service'
@@ -26,7 +27,7 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-/** Os três fluxos gravam a mesma linha: a resposta já é a linha nova, e vai
+/** Todos os fluxos gravam a mesma linha: a resposta já é a linha nova, e vai
  * direto para o cache em vez de pedir de novo. */
 function useOfficeMutation<TInput>(
   mutationFn: (input: TInput, userId: string) => Promise<OfficeSettings>,
@@ -68,4 +69,11 @@ export function useRemoveLetterhead() {
     success: 'Papel timbrado removido.',
     error: 'Erro ao remover o papel timbrado.',
   })
+}
+
+export function useSaveInfinitePayHandle() {
+  return useOfficeMutation(
+    (handle: string | null, userId) => saveInfinitePayHandle(handle, userId),
+    { success: 'Conta da InfinitePay salva.', error: 'Erro ao salvar a conta da InfinitePay.' },
+  )
 }
