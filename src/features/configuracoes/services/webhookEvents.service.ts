@@ -25,6 +25,7 @@ export async function getWebhookEvents(
     .order('received_at', { ascending: false })
     .limit(filters.limit ?? 50)
 
+  if (filters.provider) query = query.eq('provider', filters.provider)
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.isTest !== undefined) query = query.eq('is_test', filters.isTest)
 

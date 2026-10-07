@@ -1,5 +1,17 @@
 /** Espelha `public.webhook_events` (migration 48). */
 
+/**
+ * Quem entregou — a coluna `provider`. Cada integração lê só as próprias
+ * linhas: o alerta de recusas, o reprocessamento e a lista de Configurações são
+ * por provedor, ou a entrega de uma apareceria como se fosse da outra.
+ */
+export const WEBHOOK_PROVIDERS = {
+  buscaProcessos: 'busca_processos',
+  infinitePay: 'infinitepay',
+} as const
+
+export type WebhookProvider = (typeof WEBHOOK_PROVIDERS)[keyof typeof WEBHOOK_PROVIDERS]
+
 export type WebhookEventStatus =
   | 'received'
   | 'processed'
@@ -20,7 +32,7 @@ export interface WebhookEventDestination {
 
 export interface WebhookEvent {
   id: string
-  provider: string
+  provider: WebhookProvider
   event: string | null
   external_id: string | null
   /** Null quando não havia segredo configurado para conferir. */
@@ -44,6 +56,7 @@ export interface WebhookEvent {
 }
 
 export interface WebhookEventFilters {
+  provider?: WebhookProvider
   status?: WebhookEventStatus | null
   /** true = só testes, false = só entregas reais, undefined = tudo. */
   isTest?: boolean

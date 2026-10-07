@@ -1,6 +1,7 @@
 // Server-side. O client é o `service_role` da rota do webhook: quem escreve em
 // `notifications` é sempre o servidor (migration 47).
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { WEBHOOK_PROVIDERS } from '@/types/webhookEvent.types'
 
 /**
  * Aviso de que o webhook está recusando entregas.
@@ -25,10 +26,12 @@ export const WEBHOOKS_SETTINGS_PATH = '/configuracoes?aba=webhooks'
 
 export async function alertOnRejectionStreak(supabase: SupabaseClient): Promise<void> {
   // Só o que a ORIGEM entregou: testes e reprocessamentos não dizem nada sobre
-  // a credencial que a BuscaProcessos está usando.
+  // a credencial que a BuscaProcessos está usando — e entregas de outro
+  // provedor (InfinitePay) interromperiam a sequência ou completariam uma falsa.
   const { data: recent, error } = await supabase
     .from('webhook_events')
     .select('status')
+    .eq('provider', WEBHOOK_PROVIDERS.buscaProcessos)
     .eq('is_test', false)
     .is('replay_of', null)
     .order('received_at', { ascending: false })
@@ -94,6 +97,7 @@ export async function readLastOriginDelivery(
   let { data, error } = await supabase
     .from('webhook_events')
     .select(columns)
+    .eq('provider', WEBHOOK_PROVIDERS.buscaProcessos)
     .eq('is_test', false)
     .is('replay_of', null)
     .order('received_at', { ascending: false })
@@ -103,6 +107,7 @@ export async function readLastOriginDelivery(
     ;({ data, error } = await supabase
       .from('webhook_events')
       .select(columns)
+      .eq('provider', WEBHOOK_PROVIDERS.buscaProcessos)
       .eq('is_test', false)
       .order('received_at', { ascending: false })
       .limit(1))
