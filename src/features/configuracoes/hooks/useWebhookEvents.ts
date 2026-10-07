@@ -14,6 +14,7 @@ import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
 import type { CredentialCheck, CredentialKind } from '@/lib/buscaprocessos/signature'
 import type { OriginDelivery } from '@/lib/buscaprocessos/webhookAlerts'
 import type { PendingCount, ReplayResult } from '@/lib/buscaprocessos/webhookReplay'
+import type { ReprocessResult as InfinitePayReprocessResult } from '@/lib/infinitepay/deliveries'
 
 const supabase = createClient()
 
@@ -119,7 +120,9 @@ export function useRealtimeWebhookEvents(): void {
       .channel('webhook-events-feed')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'webhook_events' },
+        // '*', e não só INSERT: a entrega da InfinitePay é gravada como
+        // `received` e ganha o resultado num UPDATE logo depois (`after()`).
+        { event: '*', schema: 'public', table: 'webhook_events' },
         () => queryClient.invalidateQueries({ queryKey: webhookKeys.all }),
       )
       .subscribe()
@@ -200,6 +203,33 @@ export function useClearTestWebhookEvents() {
       queryClient.invalidateQueries({ queryKey: webhookKeys.all })
       toast.success(
         removed > 0 ? `${removed} evento(s) de teste removido(s).` : 'Nenhum evento de teste.',
+      )
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+}
+
+/** Tenta de novo as entregas da InfinitePay que pararam em erro. */
+export function useReprocessInfinitePayDeliveries() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (): Promise<InfinitePayReprocessResult> => {
+      const res = await fetch('/api/financeiro/infinitepay/reprocessar', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Falha ao reprocessar as entregas.')
+      return json as InfinitePayReprocessResult
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: webhookKeys.all })
+      // Uma entrega reprocessada pode ter dado baixa.
+      queryClient.invalidateQueries({ queryKey: ['payment_charges'] })
+      queryClient.invalidateQueries({ queryKey: ['financial_entries'] })
+      toast.success(
+        result.processed === 0
+          ? 'Nenhuma entrega para reprocessar.'
+          : `${result.processed} entrega(s) reprocessada(s), ${result.settled} com baixa.` +
+              (result.stillFailing > 0 ? ` ${result.stillFailing} ainda com erro.` : ''),
       )
     },
     onError: (error: Error) => toast.error(error.message),

@@ -1,6 +1,7 @@
 // Server-side. O client é o `service_role` da rota de administração: o log e as
 // tabelas de destino só aceitam escrita por ele.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { WEBHOOK_PROVIDERS } from '@/types/webhookEvent.types'
 import { handleBpWebhook, HANDLED_WEBHOOK_EVENTS } from './webhook'
 import { markReplayed, recordWebhookEvent } from './webhookLog'
 import type { BpWebhookPayload } from './types'
@@ -50,6 +51,9 @@ function pendingQuery(supabase: SupabaseClient, columns: string, head = false) {
   return supabase
     .from('webhook_events')
     .select(columns, head ? { count: 'exact', head: true } : undefined)
+    // O filtro por evento já deixaria a InfinitePay de fora (o corpo dela não
+    // tem `event`); o de provedor diz isso sem depender do formato alheio.
+    .eq('provider', WEBHOOK_PROVIDERS.buscaProcessos)
     .eq('status', 'invalid')
     .eq('is_test', false)
     .is('replayed_at', null)

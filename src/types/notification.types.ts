@@ -6,6 +6,10 @@ export type NotificationKind =
   | 'publicacao_nova'
   | 'movimentacao_nova'
   | 'webhook_erro'
+  // Cobrança por link da InfinitePay (migration 67): baixa feita, ou algo que
+  // pede decisão (valor diferente, link cancelado, pagamento em dobro).
+  | 'pagamento_recebido'
+  | 'pagamento_alerta'
   | (string & {})
 
 export interface Notification {

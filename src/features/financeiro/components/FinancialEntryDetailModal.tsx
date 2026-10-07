@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -32,9 +33,16 @@ import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import { useLegalProcess } from '@/features/processos/hooks/useLegalProcesses'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { getCrmItemClientName } from '@/types/crmItem.types'
+import {
+  CHARGE_BLOCK_REASONS,
+  LIVE_CHARGE_STATUSES,
+  summarizePaymentCharges,
+} from '@/types/paymentCharge.types'
 import { useUpdateFinancialEntry, useDeleteFinancialEntry } from '../hooks/useFinancialEntryMutations'
+import { useCancelPaymentLink } from '../hooks/usePaymentChargeMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
+import { PaymentLinkSection } from './PaymentLinkSection'
 import { Can } from '@/components/shared/Can'
 
 interface FinancialEntryDetailModalProps {
@@ -59,8 +67,10 @@ export function FinancialEntryDetailModal({
 }: FinancialEntryDetailModalProps) {
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmMarkPaid, setConfirmMarkPaid] = useState(false)
   const updateEntry = useUpdateFinancialEntry()
   const deleteEntry = useDeleteFinancialEntry()
+  const cancelLink = useCancelPaymentLink()
   const { data: processo } = useLegalProcess(entry?.legal_process_id ?? '')
 
   if (!entry) return null
@@ -83,8 +93,35 @@ export function FinancialEntryDetailModal({
     onClose()
   }
 
+  /** Baixa à mão com link vivo: o link deixa de ser oferecido antes, ou o
+   * banco recusa a baixa (migration 67) — o cliente ainda pagaria de novo. */
+  async function handleCancelLinkAndMarkPaid() {
+    if (!liveChargeId) return
+    try {
+      await cancelLink.mutateAsync(liveChargeId)
+      await updateEntry.mutateAsync({ id: entry!.id, status: 'pago' })
+      setConfirmMarkPaid(false)
+    } catch {
+      // As duas mutações já avisam a falha; o diálogo fica para tentar de novo.
+    }
+  }
+
+  const charges = summarizePaymentCharges(entry.payment_charges)
+  const liveChargeId =
+    entry.payment_charges?.find((charge) => LIVE_CHARGE_STATUSES.includes(charge.status))?.id ??
+    null
+  const chargeLock = charges.paid ? 'paid' : charges.live ? 'live' : null
+
   const isReceita = entry.type === 'receita'
   const isPaid = entry.status === 'pago'
+  // O que o banco recusaria (migration 67) vira aviso no clique, não tentativa.
+  const deleteBlockedBy = charges.paid
+    ? CHARGE_BLOCK_REASONS.deletePaidOnline
+    : charges.live
+      ? CHARGE_BLOCK_REASONS.deleteWithLiveLink
+      : null
+  // Pago pela InfinitePay não volta a pendente por este botão: isso é estorno.
+  const reopenBlockedBy = isPaid && charges.paid ? CHARGE_BLOCK_REASONS.reopenPaidOnline : null
   const situation = getFinancialSituation(entry)
   const overdue = situation === 'vencido'
   const isConditional = entry.settlement_kind === 'conditional'
@@ -134,6 +171,7 @@ export function FinancialEntryDetailModal({
                   }}
                   onSubmit={handleUpdate}
                   isLoading={updateEntry.isPending}
+                  chargeLock={chargeLock}
                 />
               </div>
             </div>
@@ -259,6 +297,9 @@ export function FinancialEntryDetailModal({
                   </p>
                 )}
 
+                {/* Link de pagamento da InfinitePay — só receita (migration 67). */}
+                <PaymentLinkSection entry={entry} />
+
                 {/* Comprovante, nota fiscal, boleto. Pertencem só ao
                     lançamento (migration 63): não levam o cliente nem o
                     processo dele, e saem junto se ele for excluído. */}
@@ -277,10 +318,21 @@ export function FinancialEntryDetailModal({
               {/* Rodapé */}
               <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t bg-background">
                 <Can resource="financeiro" action="delete" fallback={<span />}>
+                  {/* Com link vivo ou pago, o banco recusa a exclusão (migration
+                      67); o clique explica o porquê em vez de tentar. */}
                   <button
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                    onClick={() =>
+                      deleteBlockedBy ? toast.info(deleteBlockedBy) : setConfirmDelete(true)
+                    }
+                    aria-disabled={deleteBlockedBy !== null}
+                    title={deleteBlockedBy ?? undefined}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
+                      'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
+                      'transition-colors aria-disabled:opacity-50',
+                      'aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground'
+                    )}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Excluir
@@ -289,13 +341,27 @@ export function FinancialEntryDetailModal({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      if (reopenBlockedBy) {
+                        toast.info(reopenBlockedBy)
+                        return
+                      }
+                      if (!isPaid && charges.live) {
+                        setConfirmMarkPaid(true)
+                        return
+                      }
                       updateEntry.mutate({
                         id: entry.id,
                         status: isPaid ? 'pendente' : 'pago',
                       })
-                    }
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted/40 transition-colors"
+                    }}
+                    aria-disabled={reopenBlockedBy !== null}
+                    title={reopenBlockedBy ?? undefined}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border',
+                      'text-xs font-medium hover:bg-muted/40 transition-colors',
+                      'aria-disabled:opacity-50 aria-disabled:hover:bg-transparent'
+                    )}
                   >
                     {isPaid ? (
                       <>
@@ -331,6 +397,22 @@ export function FinancialEntryDetailModal({
         description={describeEntryDeletion(entry)}
         isLoading={deleteEntry.isPending}
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={confirmMarkPaid}
+        onOpenChange={setConfirmMarkPaid}
+        title="Cancelar o link e marcar como pago?"
+        description={
+          'Há um link de pagamento em aberto. Para dar baixa à mão, ele deixa de ser ' +
+          'oferecido — mas continua pagável para quem já o recebeu, porque a InfinitePay não ' +
+          'cancela links. Se o cliente pagar por ele, o pagamento entra com alerta.'
+        }
+        confirmLabel="Cancelar link e marcar como pago"
+        cancelLabel="Voltar"
+        loadingLabel="Dando baixa..."
+        isLoading={cancelLink.isPending || updateEntry.isPending}
+        onConfirm={() => void handleCancelLinkAndMarkPaid()}
       />
     </>
   )

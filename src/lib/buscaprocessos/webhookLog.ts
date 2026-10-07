@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { WEBHOOK_PROVIDERS } from '@/types/webhookEvent.types'
 import type { WebhookDestination, WebhookStatus } from './webhook'
 
 /**
@@ -39,7 +40,7 @@ export async function recordWebhookEvent(
   const { data, error } = await supabase
     .from('webhook_events')
     .insert({
-      provider: 'busca_processos',
+      provider: WEBHOOK_PROVIDERS.buscaProcessos,
       event: log.event ?? null,
       external_id: log.externalId ?? null,
       signature_valid: log.signatureValid ?? null,

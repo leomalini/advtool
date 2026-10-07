@@ -20,7 +20,13 @@ const PAGINAS_PUBLICAS = ['/login', '/recuperar-senha']
  * sessão: chamar `getUser()` aqui seria uma ida à rede por requisição para
  * confirmar a ausência já conhecida de um cookie.
  */
-const PREFIXOS_PUBLICOS = ['/acompanhar']
+const PREFIXOS_PUBLICOS = [
+  '/acompanhar',
+  // Retorno do checkout da InfinitePay: quem chega é o cliente que acabou de
+  // pagar, sem sessão. A rota que a página chama confirma o pagamento no
+  // `payment_check` (`/api/pagamento/retorno`).
+  '/pagamento',
+]
 
 /**
  * Checagem OTIMISTA de sessão, conforme o §4.3 do planejamento multiusuário:

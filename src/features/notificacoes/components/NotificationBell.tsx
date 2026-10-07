@@ -5,7 +5,16 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Bell, BrushCleaning, CheckCheck, Gavel, Newspaper, TriangleAlert } from 'lucide-react'
+import {
+  BadgeCheck,
+  Bell,
+  BrushCleaning,
+  CheckCheck,
+  CircleAlert,
+  Gavel,
+  Newspaper,
+  TriangleAlert,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -36,6 +45,8 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   publicacao_nova: Newspaper,
   movimentacao_nova: Gavel,
   webhook_erro: TriangleAlert,
+  pagamento_recebido: BadgeCheck,
+  pagamento_alerta: CircleAlert,
 }
 
 function relativeTime(iso: string): string {

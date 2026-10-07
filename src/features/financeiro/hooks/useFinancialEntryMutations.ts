@@ -8,7 +8,10 @@ import {
   updateFinancialEntry,
   deleteFinancialEntry,
 } from '../services/financialEntries.service'
+import { createPaymentLink } from '../services/paymentCharges.service'
 import { financialEntryKeys } from './useFinancialEntries'
+import { paymentChargeKeys } from './usePaymentCharges'
+import { notifyPaymentLinkError } from './usePaymentChargeMutations'
 import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
 import { useAuth } from '@/hooks/useAuth'
@@ -17,6 +20,7 @@ import type {
   UpdateFinancialEntryInput,
 } from '@/schemas/financialEntry.schema'
 import type { PendingAttachments } from '@/types/document.types'
+import { chargeGuardMessage } from '@/types/paymentCharge.types'
 
 /** Toda superfície que mostra dado financeiro — mesma forma dos invalidadores
  * de evento e tarefa. */
@@ -29,8 +33,13 @@ export function useInvalidateFinancialSurfaces() {
     queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
     // Anexos entram com o lançamento e saem com ele (cascade, migration 63).
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
+    // O link pode nascer junto com o lançamento (migration 67).
+    queryClient.invalidateQueries({ queryKey: paymentChargeKeys.all })
   }
 }
+
+/** O resultado do link gerado junto com o lançamento. */
+type CreatedPaymentLink = { ok: true } | { ok: false; error: unknown }
 
 /** Avisa o que foi anexado — o lançamento em si já foi salvo e tem o próprio
  * toast. */
@@ -53,20 +62,46 @@ export function useCreateFinancialEntry() {
 
   return useMutation({
     // `attachments`: escolhidos no formulário antes de o lançamento existir —
-    // sobem logo depois de ele ser criado.
+    // sobem logo depois de ele ser criado. O link de pagamento, idem.
     mutationFn: async ({
       attachments,
+      generatePaymentLink,
       ...input
-    }: FinancialEntryInput & { attachments?: PendingAttachments }) => {
+    }: FinancialEntryInput & {
+      attachments?: PendingAttachments
+      generatePaymentLink?: boolean
+    }) => {
       const entry = await createFinancialEntry(input, user!.id)
-      if (!attachments) return { total: 0, failed: 0 }
-      const failed = await attachFilesToFinancialEntry(entry.id, attachments, user!.id)
-      return { total: attachments.files.length, failed }
+      const failed = attachments
+        ? await attachFilesToFinancialEntry(entry.id, attachments, user!.id)
+        : 0
+
+      // Falhar aqui não desfaz o lançamento: ele fica salvo, e o link pode ser
+      // gerado de novo pelo detalhe.
+      let paymentLink: CreatedPaymentLink | null = null
+      if (generatePaymentLink) {
+        try {
+          await createPaymentLink(entry.id)
+          paymentLink = { ok: true }
+        } catch (error) {
+          paymentLink = { ok: false, error }
+        }
+      }
+
+      return { entryId: entry.id, total: attachments?.files.length ?? 0, failed, paymentLink }
     },
-    onSuccess: ({ total, failed }) => {
+    onSuccess: ({ total, failed, paymentLink }) => {
       invalidate()
-      toast.success('Lançamento registrado!')
+      toast.success(
+        paymentLink?.ok ? 'Lançamento registrado e link gerado!' : 'Lançamento registrado!',
+      )
       reportAttachments(total, failed)
+      if (paymentLink && !paymentLink.ok) {
+        notifyPaymentLinkError(
+          paymentLink.error,
+          'O lançamento foi salvo, mas o link de pagamento não foi gerado.',
+        )
+      }
     },
     onError: () => toast.error('Erro ao registrar lançamento.'),
   })
@@ -78,7 +113,9 @@ export function useUpdateFinancialEntry() {
   return useMutation({
     mutationFn: (input: UpdateFinancialEntryInput) => updateFinancialEntry(input),
     onSuccess: () => invalidate(),
-    onError: () => toast.error('Erro ao atualizar lançamento.'),
+    // A trava de cobrança (migration 67) já explica em português o que fazer.
+    onError: (error) =>
+      toast.error(chargeGuardMessage(error) ?? 'Erro ao atualizar lançamento.'),
   })
 }
 
@@ -91,6 +128,6 @@ export function useDeleteFinancialEntry() {
       invalidate()
       toast.success('Lançamento removido.')
     },
-    onError: () => toast.error('Erro ao remover lançamento.'),
+    onError: (error) => toast.error(chargeGuardMessage(error) ?? 'Erro ao remover lançamento.'),
   })
 }

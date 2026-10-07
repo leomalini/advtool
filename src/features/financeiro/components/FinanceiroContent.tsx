@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import Link from 'next/link'
 import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from 'recharts'
 import { format, parseISO } from 'date-fns'
@@ -34,6 +35,9 @@ import {
 import { getClientDisplayName } from '@/types/cliente.types'
 import type { PendingAttachments } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
+import { CHARGE_BLOCK_REASONS, summarizePaymentCharges } from '@/types/paymentCharge.types'
+import { usePermissions } from '@/hooks/usePermissions'
+import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import {
   useFinancialEntries,
   useFinancialSummary,
@@ -43,11 +47,12 @@ import {
   useCreateFinancialEntry,
   useUpdateFinancialEntry,
 } from '../hooks/useFinancialEntryMutations'
-import { FinancialEntryForm } from './FinancialEntryForm'
+import { FinancialEntryForm, type FinancialEntrySubmitOptions } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
 import { FinanceiroFilterBar } from './FinanceiroFilterBar'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { AttachmentCountBadge } from './AttachmentCountBadge'
+import { PaymentLinkBadge } from './PaymentLinkBadge'
 import {
   filterFinancialEntries,
   sortByCashFlowDate,
@@ -141,15 +146,21 @@ function ReceivableTile({
   )
 }
 
-export function FinanceiroContent() {
+/** `initialEntryId`: o lançamento que o aviso do sino mandou abrir. */
+export function FinanceiroContent({ initialEntryId }: { initialEntryId?: string }) {
   const { data: entries = [], isLoading } = useFinancialEntries()
   const { data: summary } = useFinancialSummary()
   const { data: cashFlow } = useMonthlyCashFlow(6)
   const createEntry = useCreateFinancialEntry()
   const updateEntry = useUpdateFinancialEntry()
   const [createOpen, setCreateOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialEntryId ?? null)
   const [filters, setFilters] = useState<FinancialFilters>(emptyFinancialFilters)
+  const { can } = usePermissions()
+  const { data: officeSettings } = useOfficeSettings()
+  // Gerar o link junto com o lançamento: só com a conta configurada e para quem
+  // pode criar — a rota confere de novo.
+  const offerPaymentLink = !!officeSettings?.infinitepay_handle && can('financeiro', 'create')
 
   // O detalhe lê da lista viva: guardar o objeto do clique congelaria os
   // valores após uma edição.
@@ -234,9 +245,16 @@ export function FinanceiroContent() {
   const totalReceitas = (cashFlow?.months ?? []).reduce((s, m) => s + m.receita, 0)
   const totalDespesas = (cashFlow?.months ?? []).reduce((s, m) => s + m.despesa, 0)
 
-  async function handleCreate(data: FinancialEntryInput, attachments: PendingAttachments) {
-    await createEntry.mutateAsync({ ...data, attachments })
+  async function handleCreate(
+    data: FinancialEntryInput,
+    attachments: PendingAttachments,
+    { generatePaymentLink }: FinancialEntrySubmitOptions
+  ) {
+    const created = await createEntry.mutateAsync({ ...data, attachments, generatePaymentLink })
     setCreateOpen(false)
+    // Com o link pedido, o próximo passo é mandá-lo: o detalhe abre já com
+    // Copiar e WhatsApp.
+    if (generatePaymentLink) setSelectedId(created.entryId)
   }
 
   return (
@@ -570,6 +588,17 @@ export function FinanceiroContent() {
                   const overdue = situation === 'vencido'
                   const isConditional = entry.settlement_kind === 'conditional'
                   const cashFlowDate = getCashFlowDate(entry)
+                  // Baixa rápida que o banco recusaria (migration 67): com link
+                  // vivo, a baixa cancela o link no detalhe; pago pela
+                  // InfinitePay, reabrir é estorno.
+                  const charges = summarizePaymentCharges(entry.payment_charges)
+                  const toggleBlockedBy = isPaid
+                    ? charges.paid
+                      ? CHARGE_BLOCK_REASONS.reopenPaidOnline
+                      : null
+                    : charges.live
+                      ? CHARGE_BLOCK_REASONS.markPaidWithLiveLink
+                      : null
 
                   return (
                     <div
@@ -593,6 +622,7 @@ export function FinanceiroContent() {
                           <FinancialSituationBadge entry={entry} short bordered />
                           <span className="text-sm truncate">{entry.description}</span>
                           <AttachmentCountBadge count={entry.documents?.length ?? 0} />
+                          <PaymentLinkBadge charges={entry.payment_charges} />
                         </div>
                         {/* A condição é o "vencimento" destes lançamentos —
                             escondê-la deixaria a linha sem dizer o que se
@@ -685,10 +715,18 @@ export function FinanceiroContent() {
                           sem precisar abrir o lançamento. */}
                       <button
                         type="button"
-                        title={isPaid ? 'Reabrir (marcar como pendente)' : 'Marcar como pago'}
+                        title={
+                          toggleBlockedBy ??
+                          (isPaid ? 'Reabrir (marcar como pendente)' : 'Marcar como pago')
+                        }
                         aria-label={isPaid ? 'Reabrir lançamento' : 'Marcar como pago'}
+                        aria-disabled={toggleBlockedBy !== null}
                         onClick={(e) => {
                           e.stopPropagation() // não abre o detalhe
+                          if (toggleBlockedBy) {
+                            toast.info(toggleBlockedBy)
+                            return
+                          }
                           updateEntry.mutate({
                             id: entry.id,
                             status: isPaid ? 'pendente' : 'pago',
@@ -697,6 +735,9 @@ export function FinanceiroContent() {
                         className={cn(
                           'flex h-7 w-7 items-center justify-center rounded-md border transition-all',
                           'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                          'aria-disabled:cursor-not-allowed aria-disabled:border-border',
+                          'aria-disabled:text-muted-foreground/50',
+                          'aria-disabled:hover:bg-transparent',
                           isPaid
                             ? 'border-border text-muted-foreground hover:bg-muted'
                             : 'border-success/40 text-success hover:bg-success/10'
@@ -724,6 +765,7 @@ export function FinanceiroContent() {
             onSubmit={handleCreate}
             isLoading={createEntry.isPending}
             withAttachments
+            offerPaymentLink={offerPaymentLink}
           />
         </DialogContent>
       </Dialog>
@@ -731,7 +773,13 @@ export function FinanceiroContent() {
       <FinancialEntryDetailModal
         entry={selected}
         open={!!selected}
-        onClose={() => setSelectedId(null)}
+        onClose={() => {
+          setSelectedId(null)
+          // Fechou o que o aviso abriu: sem o ?id=, recarregar não reabre o
+          // detalhe. API nativa, que o roteador do Next acompanha sem render
+          // no servidor.
+          if (initialEntryId) window.history.replaceState(null, '', '/financeiro')
+        }}
       />
     </div>
   )

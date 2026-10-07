@@ -28,3 +28,21 @@ export const officeSettingsSchema = z.object({
 })
 
 export type OfficeSettingsFormValues = z.infer<typeof officeSettingsSchema>
+
+/**
+ * A InfiniteTag como o app da InfinitePay mostra (`$escritorio`) ou já sem o
+ * `$` — a API quer sem. '' é "nenhuma conta", e vira null ao gravar.
+ *
+ * Só recusa o que certamente não é uma tag: o formato exato não está
+ * documentado, e o CHECK da migration 67 segue a mesma regra.
+ */
+export const infinitePayHandleSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/^\$+/, ''))
+  .pipe(
+    z
+      .string()
+      .max(60, 'Máximo de 60 caracteres')
+      .regex(/^[^\s$]*$/, 'A InfiniteTag não tem espaços nem "$" no meio.'),
+  )

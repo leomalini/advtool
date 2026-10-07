@@ -47,7 +47,11 @@ import {
   buildWebhookPayload,
   type WebhookScenario,
 } from '@/lib/buscaprocessos/webhookFixtures'
-import type { WebhookEvent, WebhookEventStatus } from '@/types/webhookEvent.types'
+import {
+  WEBHOOK_PROVIDERS,
+  type WebhookEvent,
+  type WebhookEventStatus,
+} from '@/types/webhookEvent.types'
 
 /**
  * Webhooks: o que chegou, para onde foi, e um jeito de provocar a chegada.
@@ -83,6 +87,7 @@ const STATUS_CLASS: Record<WebhookEventStatus, string> = {
 
 const ACTION_LABEL: Record<string, string> = {
   inserted: 'gravada',
+  updated: 'atualizado',
   duplicate: 'já existia (outra fonte)',
   existing_source: 'já existia (mesma fonte)',
   invalid: 'recusada',
@@ -139,10 +144,12 @@ function EndpointPanel() {
         <p className="mt-1 break-all font-mono text-xs">{data.registeredUrl}</p>
       ) : (
         <p className="mt-1 text-sm text-muted-foreground">
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">APP_PUBLIC_URL</code> não está
-          definida com um endereço público em HTTPS. O recebimento continua funcionando se algo
-          chamar a rota, mas a BuscaProcessos não tem para onde entregar — use &ldquo;Buscar
-          publicações&rdquo; enquanto isso.
+          {/* `{' '}` explícito: o SWC do Next 16.2.7 descarta o espaço inicial de
+              texto JSX em várias linhas que contém entidade HTML (&ldquo;). */}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">APP_PUBLIC_URL</code>{' '}
+          não está definida com um endereço público em HTTPS. O recebimento continua
+          funcionando se algo chamar a rota, mas a BuscaProcessos não tem para onde entregar —
+          use &ldquo;Buscar publicações&rdquo; enquanto isso.
         </p>
       )}
 
@@ -581,7 +588,11 @@ function EventRow({ event }: { event: WebhookEvent }) {
 
 function EventsPanel({ isAdmin }: { isAdmin: boolean }) {
   const [onlyTests, setOnlyTests] = useState<boolean | undefined>(undefined)
-  const { data: events = [], isLoading } = useWebhookEvents({ isTest: onlyTests, limit: 50 })
+  const { data: events = [], isLoading } = useWebhookEvents({
+    provider: WEBHOOK_PROVIDERS.buscaProcessos,
+    isTest: onlyTests,
+    limit: 50,
+  })
   const clearTests = useClearTestWebhookEvents()
 
   useRealtimeWebhookEvents()

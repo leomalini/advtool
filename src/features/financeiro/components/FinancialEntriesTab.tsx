@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Check, Plus, Scale, Trash2, Undo2 } from 'lucide-react'
@@ -16,16 +17,20 @@ import {
 } from '@/types/financialEntry.types'
 import type { PendingAttachments } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
+import { CHARGE_BLOCK_REASONS, summarizePaymentCharges } from '@/types/paymentCharge.types'
+import { usePermissions } from '@/hooks/usePermissions'
+import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import { useFinancialEntriesForEntity } from '../hooks/useFinancialEntries'
 import {
   useCreateFinancialEntry,
   useUpdateFinancialEntry,
   useDeleteFinancialEntry,
 } from '../hooks/useFinancialEntryMutations'
-import { FinancialEntryForm } from './FinancialEntryForm'
+import { FinancialEntryForm, type FinancialEntrySubmitOptions } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { AttachmentCountBadge } from './AttachmentCountBadge'
+import { PaymentLinkBadge } from './PaymentLinkBadge'
 import { Can } from '@/components/shared/Can'
 
 interface FinancialEntriesTabProps {
@@ -82,19 +87,29 @@ export function FinancialEntriesTab({
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FinancialEntryWithRelations | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const { can } = usePermissions()
+  const { data: officeSettings } = useOfficeSettings()
+  const offerPaymentLink = !!officeSettings?.infinitepay_handle && can('financeiro', 'create')
 
   // Lê da lista viva para o detalhe não congelar após uma edição.
   const selected = selectedId ? (entries.find((e) => e.id === selectedId) ?? null) : null
 
-  async function handleCreate(data: FinancialEntryInput, attachments: PendingAttachments) {
-    await createEntry.mutateAsync({
+  async function handleCreate(
+    data: FinancialEntryInput,
+    attachments: PendingAttachments,
+    { generatePaymentLink }: FinancialEntrySubmitOptions
+  ) {
+    const created = await createEntry.mutateAsync({
       ...data,
       legal_process_id: lockedLegalProcessId ?? data.legal_process_id,
       crm_item_id: lockedCrmItemId ?? data.crm_item_id,
       client_id: lockedClientId ?? data.client_id,
       attachments,
+      generatePaymentLink,
     })
     setCreateOpen(false)
+    // Link pedido: o detalhe abre já com Copiar e WhatsApp.
+    if (generatePaymentLink) setSelectedId(created.entryId)
   }
 
   if (isLoading) {
@@ -195,6 +210,20 @@ export function FinancialEntriesTab({
               const isPaid = entry.status === 'pago'
               const situation = getFinancialSituation(entry)
               const overdue = situation === 'vencido'
+              // O que o banco recusaria (migration 67) vira aviso no clique.
+              const charges = summarizePaymentCharges(entry.payment_charges)
+              const toggleBlockedBy = isPaid
+                ? charges.paid
+                  ? CHARGE_BLOCK_REASONS.reopenPaidOnline
+                  : null
+                : charges.live
+                  ? CHARGE_BLOCK_REASONS.markPaidWithLiveLink
+                  : null
+              const deleteBlockedBy = charges.paid
+                ? CHARGE_BLOCK_REASONS.deletePaidOnline
+                : charges.live
+                  ? CHARGE_BLOCK_REASONS.deleteWithLiveLink
+                  : null
 
               return (
                 <div
@@ -216,6 +245,7 @@ export function FinancialEntriesTab({
                       <FinancialSituationBadge entry={entry} />
                       <p className="text-sm font-medium truncate">{entry.description}</p>
                       <AttachmentCountBadge count={entry.documents?.length ?? 0} />
+                      <PaymentLinkBadge charges={entry.payment_charges} />
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                       <span>{FINANCIAL_CATEGORY_LABELS[entry.category]}</span>
@@ -240,27 +270,46 @@ export function FinancialEntriesTab({
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         type="button"
-                        title={isPaid ? 'Marcar como pendente' : 'Marcar como pago'}
+                        title={
+                          toggleBlockedBy ?? (isPaid ? 'Marcar como pendente' : 'Marcar como pago')
+                        }
+                        aria-disabled={toggleBlockedBy !== null}
                         onClick={(e) => {
                           e.stopPropagation() // não abre o detalhe
+                          if (toggleBlockedBy) {
+                            toast.info(toggleBlockedBy)
+                            return
+                          }
                           updateEntry.mutate({
                             id: entry.id,
                             status: isPaid ? 'pendente' : 'pago',
                           })
                         }}
-                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        className={cn(
+                          'p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted',
+                          'transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed'
+                        )}
                       >
                         {isPaid ? <Undo2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
                       </button>
                       <Can resource="financeiro" action="delete">
                         <button
                           type="button"
-                          title="Excluir"
+                          title={deleteBlockedBy ?? 'Excluir'}
+                          aria-disabled={deleteBlockedBy !== null}
                           onClick={(e) => {
                             e.stopPropagation()
+                            if (deleteBlockedBy) {
+                              toast.info(deleteBlockedBy)
+                              return
+                            }
                             setPendingDelete(entry)
                           }}
-                          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                          className={cn(
+                            'p-1.5 rounded text-muted-foreground transition-colors',
+                            'hover:text-destructive hover:bg-destructive/10',
+                            'aria-disabled:opacity-50 aria-disabled:cursor-not-allowed'
+                          )}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -287,6 +336,7 @@ export function FinancialEntriesTab({
             isLoading={createEntry.isPending}
             hideLinks
             withAttachments
+            offerPaymentLink={offerPaymentLink}
           />
         </DialogContent>
       </Dialog>

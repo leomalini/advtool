@@ -1,3 +1,5 @@
+import { localAppBaseUrl, publicAppBaseUrl } from '@/lib/appUrl'
+
 /**
  * Onde a BuscaProcessos deve entregar — o NOSSO endpoint de recebimento.
  *
@@ -13,19 +15,15 @@ export const WEBHOOK_PATH = '/api/webhooks/buscaprocessos'
  * Null quando a base não serve — e aí o monitoramento é criado sem entrega
  * automática, o que é honesto, em vez de registrar um endereço inalcançável e
  * dar aparência de funcionamento.
+ *
+ * A API exige HTTPS no webhook — está na descrição do próprio endpoint; um
+ * endereço em HTTP faz o cadastro voltar 422 sem dizer o porquê. E localhost
+ * não é alcançável pela BuscaProcessos. As duas regras moram em
+ * `publicAppBaseUrl`.
  */
 export function webhookUrl(): string | null {
-  const base = process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, '')
-  if (!base) return null
-
-  // A API exige HTTPS no webhook — está na descrição do próprio endpoint. Um
-  // endereço em HTTP faz o cadastro voltar 422 sem dizer o porquê.
-  if (!/^https:\/\//i.test(base)) return null
-
-  // localhost não é alcançável pela BuscaProcessos.
-  if (/^https:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(base)) return null
-
-  return `${base}${WEBHOOK_PATH}`
+  const base = publicAppBaseUrl()
+  return base ? `${base}${WEBHOOK_PATH}` : null
 }
 
 /**
@@ -33,8 +31,6 @@ export function webhookUrl(): string | null {
  * sai daqui mesmo e volta para cá. Null quando `APP_PUBLIC_URL` está vazia.
  */
 export function localWebhookUrl(): string | null {
-  const base = process.env.APP_PUBLIC_URL?.trim().replace(/\/+$/, '')
-  if (!base) return null
-  if (!/^https?:\/\//i.test(base)) return null
-  return `${base}${WEBHOOK_PATH}`
+  const base = localAppBaseUrl()
+  return base ? `${base}${WEBHOOK_PATH}` : null
 }

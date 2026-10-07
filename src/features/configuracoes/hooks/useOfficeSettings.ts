@@ -7,8 +7,10 @@ import type { OfficeSettings, OfficeSettingsInput } from '@/types/officeSettings
 import {
   getOfficeSettings,
   removeLetterhead,
+  saveInfinitePayHandle,
   saveOfficeSettings,
   uploadLetterhead,
+  verifyInfinitePayHandle,
 } from '../services/officeSettings.service'
 
 export const officeSettingsKeys = {
@@ -26,7 +28,7 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-/** Os três fluxos gravam a mesma linha: a resposta já é a linha nova, e vai
+/** Todos os fluxos gravam a mesma linha: a resposta já é a linha nova, e vai
  * direto para o cache em vez de pedir de novo. */
 function useOfficeMutation<TInput>(
   mutationFn: (input: TInput, userId: string) => Promise<OfficeSettings>,
@@ -67,5 +69,21 @@ export function useRemoveLetterhead() {
   return useOfficeMutation((current: OfficeSettings, userId) => removeLetterhead(current, userId), {
     success: 'Papel timbrado removido.',
     error: 'Erro ao remover o papel timbrado.',
+  })
+}
+
+export function useSaveInfinitePayHandle() {
+  return useOfficeMutation(
+    (handle: string | null, userId) => saveInfinitePayHandle(handle, userId),
+    { success: 'Conta da InfinitePay salva.', error: 'Erro ao salvar a conta da InfinitePay.' },
+  )
+}
+
+/** Link de teste para a InfiniteTag. O resultado fica em `data` até a
+ * próxima verificação — é ele que a tela mostra. */
+export function useVerifyInfinitePayHandle() {
+  return useMutation({
+    mutationFn: (handle: string) => verifyInfinitePayHandle(handle),
+    onError: (error) => toast.error(errorMessage(error, 'Não foi possível verificar a conta.')),
   })
 }
