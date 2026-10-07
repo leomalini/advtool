@@ -1,9 +1,9 @@
 # Integração InfinitePay — checkout no Financeiro
 
 > **Status:** plano e decisões técnicas aprovados em 2026-10-06. Spike (Fase 0)
-> feito no mesmo dia, com um Pix real de R$ 1,00. Fases 1, 2 e 3 implementadas
-> na branch `feat/infinitepay-checkout`; migration 67 aplicada. Falta o teste em
-> produção da Fase 3 e a Fase 4 (portal).
+> feito no mesmo dia, com um Pix real de R$ 1,00. Fases 1 a 3 em produção (PR
+> #27); Fase 4 (portal) implementada em 2026-10-07. Pendente: o webhook não
+> chegou no teste em produção — ver "Teste em produção".
 > **Referência:** https://www.infinitepay.io/checkout-documentacao (lida em 2026-10-06).
 
 Cobrar uma receita do Financeiro por link de pagamento da InfinitePay (Pix ou
@@ -451,6 +451,33 @@ Seção Pagamentos no portal; atualizar `docs/portal-cliente.md`.
 
 **Aceite:** o cliente vê as abertas com Pagar e as pagas com comprovante;
 cobrança cancelada não aparece.
+
+**Como ficou (2026-10-07):** `getPortalPayments` (`lib/clientPortal/data.ts`)
+monta as cobranças do cliente campo a campo — abertas com link, e pagas pelo
+pagamento que as quitou (valor da cobrança, sem estorno); cancelada, falha,
+estornada e pagamento de link clonado ficam de fora. Na página, as abertas
+vêm no topo (botão Pagar, numa aba nova) e as pagas depois dos processos, com
+o comprovante. Falha nos pagamentos não derruba o portal (`payments: null`
+vira aviso). O assistente não recebe os pagamentos; o prompt manda indicar a
+seção. Detalhes em `docs/portal-cliente.md`, "Pagamentos".
+
+### Teste em produção (2026-10-07)
+
+Depois do merge (PR #27), o usuário gerou um link de R$ 1,00 numa receita sem
+cliente e pagou via Pix:
+
+- **Baixa: ok.** Cobrança `paid`, transação gravada, lançamento pago. Mas a
+  confirmação veio pelo **retorno do cliente** (`confirmed_via: redirect`).
+- **Webhook: nenhuma entrega.** `webhook_events` não tem linha da InfinitePay,
+  embora o link levasse a `webhook_url` (conferido decodificando o `lenc`) e a
+  rota esteja no ar (GET em produção → `405`, com `X-Matched-Path` certo). A
+  rota grava toda entrega que chega, válida ou não — então o POST não chegou
+  até ela.
+- **Em aberto:** descobrir por quê — logs da Vercel para
+  `/api/webhooks/infinitepay` no horário do pagamento, e o painel da InfinitePay
+  (`app.infinitepay.io/external-checkout`), que pode ter configuração ou log de
+  webhooks. Enquanto isso, a baixa automática depende de o cliente clicar em
+  "Continuar"; quem fecha a aba antes fica para a baixa manual.
 
 **Verificação de cada PR:** `tsc`, lint e build; funções puras rodadas no Node
 pelo loader do scratchpad; telas pela página temporária sob `/acompanhar`. Sem

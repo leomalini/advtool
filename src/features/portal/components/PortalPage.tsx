@@ -12,6 +12,7 @@ import { isNeedsDocument, usePortalData } from '../hooks/usePortal'
 import { PortalAssistant } from './PortalAssistant'
 import { PortalDocumentGate } from './PortalDocumentGate'
 import { PortalProcessCard } from './PortalProcessCard'
+import { PortalOpenPayments, PortalPaidPayments } from './PortalPayments'
 import type { PortalProcess } from '@/types/clientPortal.types'
 
 /** A partir de quantos processos a busca aparece. Abaixo disso a lista inteira
@@ -70,6 +71,10 @@ export function PortalPage({ token }: { token: string }) {
         <h1 className="text-2xl font-semibold leading-tight">{data.client_name}</h1>
       </header>
 
+      {/* Cobrança aberta vem antes dos processos: é a única coisa da página
+          que pede uma ação do cliente. */}
+      <PortalOpenPayments payments={data.payments} />
+
       {data.processes.length === 0 ? (
         <PortalMessage
           icon={<FileQuestion className="size-6" aria-hidden />}
@@ -79,6 +84,8 @@ export function PortalPage({ token }: { token: string }) {
       ) : (
         <ProcessList token={token} processes={data.processes} />
       )}
+
+      <PortalPaidPayments payments={data.payments} />
 
       <footer className="flex flex-col gap-1 border-t pt-4 text-xs text-muted-foreground">
         <p>

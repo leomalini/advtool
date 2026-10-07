@@ -6,16 +6,17 @@ import {
   requirePortalSession,
   touchPortalLink,
 } from '@/lib/clientPortal/access'
-import { getPortalProcesses } from '@/lib/clientPortal/data'
+import { getPortalPayments, getPortalProcesses } from '@/lib/clientPortal/data'
 import { isPortalAssistantEnabled } from '@/features/portal/assistant/model'
 import type { PortalPayload } from '@/types/clientPortal.types'
 
 /**
- * GET /api/portal/<token> — a lista de processos, para quem já provou o
- * documento.
+ * GET /api/portal/<token> — a lista de processos e as cobranças por link, para
+ * quem já provou o documento.
  *
- * É a única rota do produto que responde sem sessão e devolve dado do
- * escritório. Três camadas a separam de um vazamento, nesta ordem:
+ * Responde sem sessão e devolve dado do escritório (a outra rota assim é
+ * `/api/pagamento/retorno`, que mostra só o pagamento recém-feito). Três camadas
+ * a separam de um vazamento, nesta ordem:
  *
  *   1. o token, que precisa existir, não estar revogado nem expirado;
  *   2. o cookie de sessão, que prova que ESTE navegador digitou o documento
@@ -47,10 +48,16 @@ export async function GET(
   const { link, client } = guard
 
   try {
-    const processes = await getPortalProcesses(client.id)
+    const [processes, payments] = await Promise.all([
+      getPortalProcesses(client.id),
+      // Pagamento que não carrega vira aviso na página, não 500: o cliente
+      // veio ver os processos, e eles continuam ali.
+      getPortalPayments(client.id).catch(() => null),
+    ])
     const payload: PortalPayload = {
       client_name: clientDisplayName(client),
       processes,
+      payments,
       generated_at: new Date().toISOString(),
       // Sem processo, o chat não teria sobre o que responder.
       assistant_enabled: processes.length > 0 && isPortalAssistantEnabled(),

@@ -212,7 +212,7 @@ alter table public.profiles add column oab_number text;
 
 ## Fase 3 — Financeiro (lançamentos manuais)
 
-*Escopo confirmado: só lançamentos manuais. Gateway de pagamento (ASAAS/InfinityPay), boleto e DDA ficam para uma fase futura — não fazem parte deste ciclo.*
+*Escopo confirmado: só lançamentos manuais. Gateway de pagamento (ASAAS/InfinityPay), boleto e DDA ficam para uma fase futura — não fazem parte deste ciclo.* (Atualização 2026-10: a cobrança por link da InfinitePay entrou — ver `docs/integracao-infinitepay.md`. ASAAS, boleto e DDA continuam fora.)
 
 ```sql
 -- 20260101000020_financial_entries.sql
@@ -365,7 +365,7 @@ Duas coisas distintas compartilham o nome "BuscaProcessos":
 ## Fora de escopo deste roadmap (decisão explícita)
 
 - Testes automatizados (Vitest/Playwright) — priorizar entrega dos módulos primeiro.
-- Gateway de pagamento no Financeiro (ASAAS/InfinityPay), emissão de boleto, DDA.
+- Gateway de pagamento no Financeiro (ASAAS), emissão de boleto, DDA. A InfinitePay (link de pagamento) entrou em 2026-10 — `docs/integracao-infinitepay.md`.
 - Assinatura eletrônica/DocuSign no Documentos.
 - Multi-tenant/multi-escritório — decisão de negócio já tomada em `docs/PLANEJAMENTO.md`, não reaberta aqui.
 - Motor automático de cálculo de prazos processuais (CPC) e auto-criação de tarefas/eventos a partir de intimações — mencionado nos docs antigos como fase futura; continua futuro, fora deste ciclo.
