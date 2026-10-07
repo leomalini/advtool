@@ -33,7 +33,6 @@ export function useInvalidateEventSurfaces() {
     queryClient.invalidateQueries({ queryKey: eventKeys.all })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.stats })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.upcomingEvents })
-    queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
     // Um evento vinculado "cobre" um prazo próximo: sem isto a pendência
     // continuaria listada mesmo depois de agendado o trabalho.
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })

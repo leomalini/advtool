@@ -19,6 +19,7 @@ import {
   isPendingMonitoring,
 } from '../services/monitoramento.service'
 import { linkPublicationsToProcess } from '@/features/publicacoes/services/publications.service'
+import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { legalProcessKeys } from './useLegalProcesses'
 import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
 import { useAuth } from '@/hooks/useAuth'
@@ -36,6 +37,11 @@ export function useInvalidateLegalProcesses() {
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.all })
     queryClient.invalidateQueries({ queryKey: crmItemKeys.workflow('wf-processos') })
     queryClient.invalidateQueries({ queryKey: crmItemKeys.counts() })
+    // Publicação aponta para processo: cadastrar vincula as órfãs daquele CNJ
+    // (`linkPublicationsToProcess`) e excluir desvincula (`on delete set null`).
+    // Sem isto, a lista de Publicações e a contagem de órfãs do dashboard
+    // seguiam mostrando o vínculo antigo até o próximo refetch.
+    queryClient.invalidateQueries({ queryKey: publicationKeys.all })
   }
 }
 

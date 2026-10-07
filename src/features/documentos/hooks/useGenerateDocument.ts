@@ -5,7 +5,6 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { AI_FILE_TYPES } from '@/features/ia/files/constants'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import type { DocumentTemplate } from '@/types/documentTemplate.types'
 import { downloadBlob } from '@/utils/download'
 import { uploadDocument } from '../services/documents.service'
@@ -136,7 +135,6 @@ export function useGenerateDocument() {
     onSuccess: ({ saved }) => {
       if (saved) {
         queryClient.invalidateQueries({ queryKey: documentKeys.all })
-        queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
         toast.success('Documento gerado e salvo em Documentos.')
       } else {
         toast.success('Documento gerado.')

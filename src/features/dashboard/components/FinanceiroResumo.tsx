@@ -4,15 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrendingUp, TrendingDown, DollarSign, AlertTriangle } from 'lucide-react'
 import { useFinancialSummary } from '@/features/financeiro/hooks/useFinancialEntries'
-
-function formatBRL(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value)
-}
+import { formatWholeBRL } from '../utils/format'
 
 export function FinanceiroResumo() {
   const { data: summary, isLoading } = useFinancialSummary()
@@ -44,7 +36,7 @@ export function FinanceiroResumo() {
                 <TrendingUp className="h-3 w-3 text-success" />
               </div>
               <p className="text-2xl font-bold text-success tabular-nums">
-                {formatBRL(summary.receivedThisMonth)}
+                {formatWholeBRL(summary.receivedThisMonth)}
               </p>
             </div>
 
@@ -54,7 +46,7 @@ export function FinanceiroResumo() {
                 <TrendingDown className="h-3 w-3 text-destructive" />
               </div>
               <p className="text-2xl font-bold text-destructive tabular-nums">
-                {formatBRL(summary.expensesThisMonth)}
+                {formatWholeBRL(summary.expensesThisMonth)}
               </p>
             </div>
 
@@ -67,16 +59,16 @@ export function FinanceiroResumo() {
                 {summary.receivableOverdue > 0 && (
                   <span className="flex items-center gap-1 text-xs text-destructive font-medium">
                     <AlertTriangle className="h-3 w-3" />
-                    {formatBRL(summary.receivableOverdue)} vencido
+                    {formatWholeBRL(summary.receivableOverdue)} vencido
                   </span>
                 )}
               </div>
               <p className="text-2xl font-bold text-warning tabular-nums">
-                {formatBRL(summary.receivableTotal)}
+                {formatWholeBRL(summary.receivableTotal)}
               </p>
               {summary.receivableConditionalCount > 0 && (
                 <p className="text-[11px] text-info mt-1">
-                  {formatBRL(summary.receivableConditional)} em condição especial
+                  {formatWholeBRL(summary.receivableConditional)} em condição especial
                 </p>
               )}
             </div>
