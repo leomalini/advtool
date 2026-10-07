@@ -1,8 +1,9 @@
 # Integração InfinitePay — checkout no Financeiro
 
 > **Status:** plano e decisões técnicas aprovados em 2026-10-06. Spike (Fase 0)
-> feito no mesmo dia, com um Pix real de R$ 1,00. Fase 1 implementada na branch
-> `feat/infinitepay-checkout`; a migration 67 está pronta para aplicar.
+> feito no mesmo dia, com um Pix real de R$ 1,00. Fases 1 e 2 implementadas na
+> branch `feat/infinitepay-checkout`; migration 67 aplicada. A Fase 2 não vai
+> para produção sem a 3 (ver a Fase 2).
 > **Referência:** https://www.infinitepay.io/checkout-documentacao (lida em 2026-10-06).
 
 Cobrar uma receita do Financeiro por link de pagamento da InfinitePay (Pix ou
@@ -175,7 +176,7 @@ cliente paga ─► InfinitePay ─► POST /api/webhooks/infinitepay?t=…
                                       ├ amount ≠ amount_cents da cobrança → alerta, SEM baixa (link clonado)
                                       ├ cobrança → 'paid'
                                       ├ lançamento → 'pago', paid_at = data em America/Sao_Paulo
-                                      └ sino (resource 'financeiro') + atividade
+                                      └ sino (resource 'financeiro')
 ```
 
 - Responde 400 só quando nem a gravação da entrega deu certo: é o único caso em
@@ -314,7 +315,7 @@ PostgREST — e é por esse código que a tela reconhece a trava.
 | `deleteFinancialEntry` | mesma tradução do `PT409` | idem |
 | Tabela de lançamentos | ícone de link aberto / pago online | |
 | `/financeiro` | abrir o detalhe por `?id=` | o aviso do sino precisa apontar para o lançamento; hoje a página não lê parâmetro |
-| `activities` | baixa automática registrada em nome de quem gerou o link | `actor_id` é `NOT NULL` e o webhook não tem usuário |
+| `activities` | nada de cobrança no feed (revisto na Fase 2) | o feed é lido por todos, inclusive quem não vê o Financeiro; o sino respeita a permissão |
 | Route Handlers do Financeiro | helper de permissão por recurso, no padrão de `requireAdminApi` | para API só existe o helper de admin |
 | Telefone | `(11) 98765-4321` → `+5511987654321` | formato da API; `whatsappLink` de `ClienteResumo.tsx` já trata o DDI e pode virar util compartilhado |
 | `.env.example` | documentar que o checkout depende de `APP_PUBLIC_URL` | sem URL pública não há webhook |
@@ -359,10 +360,36 @@ Abrir; opção no formulário; ícones na tabela; travas de valor, exclusão e
 **Aceite:** gerar um link real de R$ 1,00 pela tela; clique duplo não gera dois
 links; editar o valor com link aberto é recusado com explicação.
 
+**Como ficou (2026-10-06):**
+
+- Rotas: `POST /api/financeiro/lancamentos/<id>/link-pagamento`
+  (`financeiro:create`), `POST /api/financeiro/cobrancas/<id>/cancelar`
+  (`financeiro:update`) e `POST /api/financeiro/infinitepay/verificar-conta`
+  (`configuracoes:manage`). Todas conferem a permissão com a sessão
+  (`requireApiPermission`) e gravam pela service_role.
+- O domínio mora em `src/lib/infinitepay/charges.ts` (`issueCharge`,
+  `cancelCharge`, `verifyInfinitePayHandle`); a escolha dos dados do cliente,
+  em `customer.ts`, que a tela também usa para o telefone do WhatsApp.
+- Telefone só vai para o checkout com forma de telefone brasileiro (DDD + celular
+  começando com 9 ou fixo de 2 a 5); DDI que não seja +55 fica de fora. Um
+  número errado faria a InfinitePay recusar o link inteiro.
+- O que o banco recusaria vira **aviso no clique** (`aria-disabled` + toast),
+  e não botão desativado com `title`: no celular não há hover.
+- **Sem registro no feed de atividades.** O feed é lido por qualquer membro,
+  inclusive o perfil sem Financeiro; a trilha fica nas próprias cobranças (quem
+  gerou, quem cancelou, quando) e os avisos vão pelo sino, que respeita a
+  permissão. O feed já mostra o título de lançamentos para esse perfil — tarefa
+  separada.
+- Configurações → Pagamentos ganhou "Verificar conta", que roda sozinho depois
+  de salvar a tag.
+- ⚠️ **Não publicar a Fase 2 sem a 3.** Os links já levam a `webhook_url` e a
+  `redirect_url`, cujas rotas chegam na Fase 3: em produção, o cliente que
+  pagasse voltaria para a tela de login e o aviso de pagamento se perderia.
+
 ### Fase 3 — Confirmação e baixa (PR 3)
 
 Webhook (`?t=` + log + `after()`); `confirmPayment()` idempotente;
-`/pagamento/retorno`; sino; atividade; alertas de divergência (pagamento em
+`/pagamento/retorno`; sino; alertas de divergência (pagamento em
 link cancelado, valor diferente, transação repetida); Reprocessar da
 InfinitePay; Registrar estorno.
 
