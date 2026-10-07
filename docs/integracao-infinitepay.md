@@ -1,9 +1,9 @@
 # Integração InfinitePay — checkout no Financeiro
 
 > **Status:** plano e decisões técnicas aprovados em 2026-10-06. Spike (Fase 0)
-> feito no mesmo dia, com um Pix real de R$ 1,00. Fases 1 e 2 implementadas na
-> branch `feat/infinitepay-checkout`; migration 67 aplicada. A Fase 2 não vai
-> para produção sem a 3 (ver a Fase 2).
+> feito no mesmo dia, com um Pix real de R$ 1,00. Fases 1, 2 e 3 implementadas
+> na branch `feat/infinitepay-checkout`; migration 67 aplicada. Falta o teste em
+> produção da Fase 3 e a Fase 4 (portal).
 > **Referência:** https://www.infinitepay.io/checkout-documentacao (lida em 2026-10-06).
 
 Cobrar uma receita do Financeiro por link de pagamento da InfinitePay (Pix ou
@@ -385,6 +385,7 @@ links; editar o valor com link aberto é recusado com explicação.
 - ⚠️ **Não publicar a Fase 2 sem a 3.** Os links já levam a `webhook_url` e a
   `redirect_url`, cujas rotas chegam na Fase 3: em produção, o cliente que
   pagasse voltaria para a tela de login e o aviso de pagamento se perderia.
+  (Resolvido: a Fase 3 está na mesma branch.)
 
 ### Fase 3 — Confirmação e baixa (PR 3)
 
@@ -398,6 +399,51 @@ data certa; reenviar a mesma entrega → `duplicate`; entrega sem token →
 `invalid`; entrega com token e `transaction_nsu` inventado → `invalid`, sem baixa;
 link clonado (mesmo `order_nsu`, valor menor) pago → transação registrada, alerta
 no sino, lançamento continua pendente.
+
+**Como ficou (2026-10-06):**
+
+- `POST /api/webhooks/infinitepay?t=…`: lê a cobrança pelo `order_nsu`,
+  compara o token em tempo constante, limita a 10 entregas por cobrança por
+  minuto, grava a entrega e responde 200; `processInfinitePayDelivery` roda em
+  `after()` e anota o resultado na mesma linha de `webhook_events`. 400 só
+  quando nem gravar foi possível. Os NOMES dos cabeçalhos ficam gravados — é
+  assim que se descobre se a InfinitePay manda alguma assinatura.
+- `src/lib/infinitepay/confirm.ts` (`confirmPayment`): o mesmo caminho para
+  webhook, retorno e reprocessamento, e idempotente — transação repetida não
+  consulta a InfinitePay de novo, mas completa uma baixa que parou no meio; o
+  sino só toca quando algo mudou na rodada. Decide:
+
+  | Situação | Cobrança | Lançamento | Sino |
+  |---|---|---|---|
+  | Valor igual, link aberto, lançamento pendente | `paid` | `pago`, `paid_at` em America/Sao_Paulo | Pagamento recebido |
+  | Valor diferente (link clonado) | intocada | intocado | Pagamento com valor diferente |
+  | Link cancelado e pago | `paid` | intocado | Pagamento em link cancelado |
+  | Segundo pagamento do mesmo link | intocada | intocado | Pagamento em dobro |
+  | Lançamento já pago à mão | `paid` | intocado | Pagamento em lançamento já pago |
+  | Lançamento excluído | `paid` | — | Pagamento sem lançamento |
+
+  A transação é gravada em todos esses casos: o dinheiro entrou.
+- O comprovante só é guardado se for de `recibo.infinitepay.io`: quem tem o
+  link consegue forjar o corpo e o retorno, e um endereço qualquer viraria link
+  de phishing dentro do sistema. Fora do domínio, vale o endereço derivado do
+  `transaction_nsu`.
+- `/pagamento/retorno` (pública, como `/acompanhar`): a página não toca o
+  banco; quem confirma é `POST /api/pagamento/retorno`, que devolve só valor
+  pago, método, comprovante e o nome do escritório.
+- Avisos no sino com `resource: 'financeiro'` e link `/financeiro?id=<lançamento>`,
+  que abre o detalhe direto.
+- Configurações → Pagamentos: "Avisos de pagamento" (as últimas entregas, ao
+  vivo) e "Reprocessar as que falharam" (`POST /api/financeiro/infinitepay/reprocessar`).
+- Detalhe do lançamento: "Registrar estorno" no pagamento
+  (`POST /api/financeiro/transacoes/<id>/estorno`) — transação, cobrança e
+  lançamento voltam em cascata, só até onde não houver outro pagamento valendo.
+
+**Teste em produção (depois do deploy):** com `APP_PUBLIC_URL` apontando para o
+endereço HTTPS da Vercel, salvar a tag em Configurações → Pagamentos, gerar um
+link de R$ 1,00 numa receita de teste e pagar via Pix. Esperado: página
+"Pagamento confirmado", lançamento Pago com a data de hoje, aviso no sino e a
+entrega `processada` em "Avisos de pagamento". O corpo e os cabeçalhos reais do
+webhook ficam em `webhook_events` para conferir.
 
 ### Fase 4 — Portal (PR 4)
 
