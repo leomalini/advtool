@@ -26,7 +26,8 @@ const ENTRY_SELECT = `
   *,
   client:clients(id, type, name, company_name, trade_name),
   legal_process:legal_processes(id, cnj_number),
-  documents(id)
+  documents(id),
+  payment_charges(id, status)
 `
 
 /** Controles de formulário devolvem '' quando intocados; Postgres rejeita isso

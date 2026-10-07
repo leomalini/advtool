@@ -15,7 +15,12 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { usePermissions } from '@/hooks/usePermissions'
 import { cn } from '@/lib/utils'
 import { infinitePayHandleSchema } from '@/schemas/officeSettings.schema'
-import { useOfficeSettings, useSaveInfinitePayHandle } from '../hooks/useOfficeSettings'
+import {
+  useOfficeSettings,
+  useSaveInfinitePayHandle,
+  useVerifyInfinitePayHandle,
+} from '../hooks/useOfficeSettings'
+import type { InfinitePayVerification } from '../services/officeSettings.service'
 
 interface PaymentSettingsCardProps {
   /** Onde a InfinitePay entrega os pagamentos, montado no servidor a partir de
@@ -32,7 +37,12 @@ interface PaymentSettingsCardProps {
  */
 export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProps) {
   const { data: settings = null, isLoading } = useOfficeSettings()
+  const { can } = usePermissions()
+  const canEdit = can('configuracoes', 'manage')
+  const verify = useVerifyInfinitePayHandle()
   const handle = settings?.infinitepay_handle ?? null
+  // O resultado vale para a tag que foi verificada — trocar a tag o aposenta.
+  const verification = verify.data && verify.variables === handle ? verify.data : null
 
   return (
     <Card>
@@ -52,7 +62,13 @@ export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProp
         ) : (
           // Montado só depois de carregar: o campo nasce com o valor do banco,
           // sem reset em efeito.
-          <HandleForm current={handle} />
+          <HandleForm
+            current={handle}
+            canEdit={canEdit}
+            // Tag nova salva já é conferida: o erro de digitação aparece aqui,
+            // e não no primeiro link de um cliente.
+            onSaved={(saved) => saved && verify.mutate(saved)}
+          />
         )}
 
         <div className="space-y-3 border-t pt-4">
@@ -87,6 +103,15 @@ export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProp
               </>
             )}
           </StatusRow>
+
+          {handle && (
+            <VerificationRow
+              result={verification}
+              pending={verify.isPending}
+              canVerify={canEdit}
+              onVerify={() => verify.mutate(handle)}
+            />
+          )}
         </div>
 
         <p className="text-xs text-muted-foreground">
@@ -122,12 +147,86 @@ function StatusRow({
   )
 }
 
+function VerificationRow({
+  result,
+  pending,
+  canVerify,
+  onVerify,
+}: {
+  result: InfinitePayVerification | null
+  pending: boolean
+  canVerify: boolean
+  onVerify: () => void
+}) {
+  if (pending) {
+    return (
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        Verificando a conta na InfinitePay…
+      </p>
+    )
+  }
+
+  const again = canVerify && (
+    <button type="button" onClick={onVerify} className="underline underline-offset-2">
+      Verificar de novo
+    </button>
+  )
+
+  if (!result) {
+    return canVerify ? (
+      <div className="space-y-1">
+        <Button type="button" size="xs" variant="outline" onClick={onVerify}>
+          Verificar conta
+        </Button>
+        <p className="text-[11px] text-muted-foreground">
+          Gera um link de teste de R$ 1,00 que não vai a ninguém, só para ver se a conta aceita.
+        </p>
+      </div>
+    ) : null
+  }
+
+  if (result.ok) {
+    return (
+      <StatusRow ok title="Conta pronta para gerar links">
+        A InfinitePay aceitou um link de teste para esta conta. {again}
+      </StatusRow>
+    )
+  }
+
+  return (
+    <StatusRow ok={false} title="A conta não aceita links">
+      {result.error}{' '}
+      {result.actionUrl && (
+        <>
+          <a
+            href={result.actionUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2"
+          >
+            Ativar no app da InfinitePay
+          </a>{' '}
+        </>
+      )}
+      {again}
+    </StatusRow>
+  )
+}
+
 /** A troca que espera confirmação. `null` = remover a conta. */
 type PendingChange = { next: string | null }
 
-function HandleForm({ current }: { current: string | null }) {
-  const { can } = usePermissions()
-  const canEdit = can('configuracoes', 'manage')
+function HandleForm({
+  current,
+  canEdit,
+  onSaved,
+}: {
+  current: string | null
+  canEdit: boolean
+  /** Depois de gravar, com a tag nova (null = conta removida). */
+  onSaved: (handle: string | null) => void
+}) {
   const save = useSaveInfinitePayHandle()
   const [value, setValue] = useState(current ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -153,12 +252,13 @@ function HandleForm({ current }: { current: string | null }) {
       setPending({ next })
       return
     }
-    save.mutate(next)
+    save.mutate(next, { onSuccess: () => onSaved(next) })
   }
 
   function confirmChange() {
     if (!pending) return
-    save.mutate(pending.next)
+    const { next } = pending
+    save.mutate(next, { onSuccess: () => onSaved(next) })
     setPending(null)
   }
 

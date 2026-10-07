@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -48,11 +49,31 @@ const SETTLEMENT_KIND_HINTS: Record<FinancialSettlementKind, string> = {
   conditional: 'Depende de um evento',
 }
 
+/** O que o formulário pede além dos campos do lançamento. */
+export interface FinancialEntrySubmitOptions {
+  /** Gerar o link da InfinitePay logo depois de criar — só receita pendente. */
+  generatePaymentLink: boolean
+}
+
+/** Por que valor, tipo e situação estão travados (migration 67). */
+export type FinancialEntryChargeLock = 'live' | 'paid' | null
+
+const CHARGE_LOCK_HINTS: Record<Exclude<FinancialEntryChargeLock, null>, string> = {
+  live:
+    'Há um link de pagamento em aberto: valor, tipo e situação ficam travados. Para mudar, ' +
+    'cancele o link no detalhe do lançamento.',
+  paid: 'Pago pela InfinitePay: valor, tipo e situação ficam travados.',
+}
+
 interface FinancialEntryFormProps {
   defaultValues?: Partial<FinancialEntryInput>
   /** `attachments`: documentos escolhidos no formulário, para subir depois de
    * salvar. Vazio quando `withAttachments` não está ligado. */
-  onSubmit: (data: FinancialEntryInput, attachments: PendingAttachments) => void
+  onSubmit: (
+    data: FinancialEntryInput,
+    attachments: PendingAttachments,
+    options: FinancialEntrySubmitOptions,
+  ) => void
   isLoading?: boolean
   /** Aberto de dentro de um caso/processo/cliente: o vínculo já está decidido,
    * então a seção de vínculos não é oferecida. */
@@ -60,6 +81,12 @@ interface FinancialEntryFormProps {
   /** Só na criação. Ao editar, o lançamento já existe e a seção Documentos do
    * detalhe envia direto. */
   withAttachments?: boolean
+  /** Só na criação, e só com a conta da InfinitePay configurada: oferece gerar
+   * o link de pagamento junto. */
+  offerPaymentLink?: boolean
+  /** Ao editar um lançamento com link vivo ou pago: o banco recusaria mudar
+   * valor, tipo e situação, então a tela nem oferece. */
+  chargeLock?: FinancialEntryChargeLock
 }
 
 export function FinancialEntryForm({
@@ -68,12 +95,16 @@ export function FinancialEntryForm({
   isLoading,
   hideLinks,
   withAttachments,
+  offerPaymentLink,
+  chargeLock = null,
 }: FinancialEntryFormProps) {
   const { data: processos = [] } = useLegalProcesses()
   const [attachments, setAttachments] = useState<PendingAttachments>({
     files: [],
     category: 'comprovante',
   })
+  const [generatePaymentLink, setGeneratePaymentLink] = useState(false)
+  const locked = chargeLock !== null
   const {
     register,
     handleSubmit,
@@ -108,15 +139,33 @@ export function FinancialEntryForm({
     !!linkedProcessoId &&
     !!processos.find((p) => p.id === linkedProcessoId)?.crm_item?.client_id
 
+  // Some quando deixa de ser receita pendente, e o envio confere de novo: o
+  // marcado de uma receita não pode virar link de uma despesa trocada depois.
+  const canOfferPaymentLink = !!offerPaymentLink && isReceita && status === 'pendente'
+
   // min-w-0: o DialogContent é um grid, e item de grid não encolhe abaixo do
   // próprio conteúdo. Um cliente ou processo de nome longo (com `truncate`,
   // sem quebra de linha) alargava a coluna até o nome inteiro e estourava o
   // modal. Com ele, o formulário fica na largura do modal e o nome trunca.
   return (
     <form
-      onSubmit={handleSubmit((data) => onSubmit(data, attachments))}
+      onSubmit={handleSubmit((data) =>
+        onSubmit(data, attachments, {
+          generatePaymentLink:
+            !!offerPaymentLink &&
+            data.type === 'receita' &&
+            data.status === 'pendente' &&
+            generatePaymentLink,
+        })
+      )}
       className="space-y-4 min-w-0"
     >
+      {chargeLock && (
+        <p className="rounded-md border border-info/30 bg-info/5 px-3 py-2 text-xs text-info">
+          {CHARGE_LOCK_HINTS[chargeLock]}
+        </p>
+      )}
+
       {/* Tipo — receita/despesa muda o sinal do valor em toda a UI */}
       <div className="space-y-2">
         <Label>Tipo *</Label>
@@ -129,9 +178,11 @@ export function FinancialEntryForm({
                 <button
                   key={t}
                   type="button"
+                  disabled={locked}
                   onClick={() => field.onChange(t)}
                   className={cn(
                     'rounded-lg border px-3 py-2 text-sm font-medium transition-all',
+                    'disabled:cursor-not-allowed disabled:opacity-60',
                     field.value === t
                       ? t === 'receita'
                         ? 'border-success bg-success/10 text-success'
@@ -165,6 +216,7 @@ export function FinancialEntryForm({
               <CurrencyInput
                 value={typeof field.value === 'number' ? field.value : undefined}
                 onChange={(v) => field.onChange(v ?? '')}
+                disabled={locked}
               />
             )}
           />
@@ -275,7 +327,7 @@ export function FinancialEntryForm({
             name="status"
             control={control}
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select value={field.value} onValueChange={field.onChange} disabled={locked}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -349,6 +401,25 @@ export function FinancialEntryForm({
                 Definido pelo processo vinculado.
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {canOfferPaymentLink && (
+        <div className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5">
+          <Checkbox
+            id="generate-payment-link"
+            checked={generatePaymentLink}
+            onCheckedChange={(checked) => setGeneratePaymentLink(checked === true)}
+            className="mt-0.5"
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="generate-payment-link" className="text-sm font-normal">
+              Gerar link de pagamento ao salvar
+            </Label>
+            <p className="text-[11px] text-muted-foreground">
+              Link da InfinitePay (Pix ou cartão), pronto para copiar ou mandar pelo WhatsApp.
+            </p>
           </div>
         </div>
       )}

@@ -46,6 +46,32 @@ export async function saveInfinitePayHandle(
   return data as OfficeSettings
 }
 
+/** O que a InfinitePay respondeu a um link de teste para a tag. */
+export type InfinitePayVerification =
+  | { ok: true }
+  | { ok: false; error: string; code: string | null; actionUrl: string | null }
+
+/**
+ * Confere se a InfiniteTag aceita link de pagamento — pela rota, porque quem
+ * fala com a InfinitePay é o servidor. Tag errada e conta sem checkout ativado
+ * voltam como `ok: false`, com o atalho para ativar; falha de rede é exceção.
+ */
+export async function verifyInfinitePayHandle(handle: string): Promise<InfinitePayVerification> {
+  const response = await fetch('/api/financeiro/infinitepay/verificar-conta', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ handle }),
+  })
+  const body = (await response.json().catch(() => null)) as
+    | (InfinitePayVerification & { error?: string })
+    | null
+
+  if (!response.ok || !body) {
+    throw new Error(body?.error ?? 'Não foi possível verificar a conta agora.')
+  }
+  return body
+}
+
 /** Falhar aqui deixa um arquivo órfão, bem menos grave que desfazer uma troca
  * que já aconteceu — por isso loga e segue. */
 async function removeLetterheadFile(path: string): Promise<void> {

@@ -10,6 +10,7 @@ import {
   saveInfinitePayHandle,
   saveOfficeSettings,
   uploadLetterhead,
+  verifyInfinitePayHandle,
 } from '../services/officeSettings.service'
 
 export const officeSettingsKeys = {
@@ -76,4 +77,13 @@ export function useSaveInfinitePayHandle() {
     (handle: string | null, userId) => saveInfinitePayHandle(handle, userId),
     { success: 'Conta da InfinitePay salva.', error: 'Erro ao salvar a conta da InfinitePay.' },
   )
+}
+
+/** Link de teste para a InfiniteTag. O resultado fica em `data` até a
+ * próxima verificação — é ele que a tela mostra. */
+export function useVerifyInfinitePayHandle() {
+  return useMutation({
+    mutationFn: (handle: string) => verifyInfinitePayHandle(handle),
+    onError: (error) => toast.error(errorMessage(error, 'Não foi possível verificar a conta.')),
+  })
 }

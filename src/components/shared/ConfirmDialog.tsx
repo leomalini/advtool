@@ -18,6 +18,8 @@ interface ConfirmDialogProps {
   description: string
   confirmLabel?: string
   cancelLabel?: string
+  /** O texto do botão enquanto `isLoading` — o padrão é o da exclusão. */
+  loadingLabel?: string
   isLoading?: boolean
   onConfirm: () => void
   /** Extra detail under the description — e.g. what else the deletion affects. */
@@ -32,6 +34,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'Excluir',
   cancelLabel = 'Cancelar',
+  loadingLabel = 'Excluindo...',
   isLoading = false,
   onConfirm,
   children,
@@ -56,7 +59,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={isLoading}>
-            {isLoading ? 'Excluindo...' : confirmLabel}
+            {isLoading ? loadingLabel : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

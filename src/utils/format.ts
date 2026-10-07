@@ -48,6 +48,29 @@ export function formatPhone(value: string): string {
     .replace(/(\d{5})(\d{4})$/, '$1-$2')
 }
 
+/**
+ * Telefone brasileiro em E.164 (`+5511987654321`) — o formato que a API da
+ * InfinitePay pede e que o `wa.me` usa sem o `+`.
+ *
+ * Aceita qualquer máscara, com ou sem o 55. Devolve null para o que não tem
+ * forma de telefone brasileiro: DDD com dois dígitos de 1 a 9, seguido de
+ * celular (9 dígitos começando com 9) ou fixo (8 dígitos começando de 2 a 5).
+ * Contar dígitos não basta — `1 (212) 555-0100` tem 11 e viraria um celular de
+ * São José dos Campos. Melhor não pré-preencher que mandar um número errado: a
+ * InfinitePay recusaria o link inteiro.
+ */
+export function toBrazilianE164(value: string): string | null {
+  const trimmed = value.trim()
+  // DDI explícito que não é o do Brasil: número estrangeiro.
+  if (trimmed.startsWith('+') && !trimmed.replace(/[\s().-]/g, '').startsWith('+55')) return null
+
+  let digits = trimmed.replace(/\D/g, '')
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) {
+    digits = digits.slice(2)
+  }
+  return /^[1-9]{2}(9\d{8}|[2-5]\d{7})$/.test(digits) ? `+55${digits}` : null
+}
+
 export function formatCEP(value: string): string {
   return value
     .replace(/\D/g, '')

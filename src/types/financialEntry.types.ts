@@ -1,4 +1,5 @@
 import type { Profile } from './common.types'
+import type { PaymentChargeSummary } from './paymentCharge.types'
 
 export type FinancialEntryType = 'receita' | 'despesa'
 export type FinancialEntryCategory = 'honorario' | 'custas' | 'pericia' | 'outros'
@@ -71,6 +72,9 @@ export interface FinancialEntryWithRelations extends FinancialEntry {
   /** Só os ids dos anexos: as listas mostram quantos são; o detalhe busca o
    * resto. */
   documents?: { id: string }[]
+  /** Id e situação dos links de pagamento (migration 67): o ícone da linha e
+   * as travas de valor e baixa. O detalhe busca o resto. */
+  payment_charges?: PaymentChargeSummary[]
   creator?: Profile
 }
 
