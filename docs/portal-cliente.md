@@ -14,7 +14,8 @@ sem módulos. Uma rota, somente leitura:
 | Uma página, alimentada por Route Handlers | Uma plataforma com login e navegação |
 | Somente leitura | Canal de mensagens, upload ou assinatura |
 | Token por **cliente** | Token por processo |
-| Processos + andamento publicado | Documentos, financeiro, audiências, partes |
+| Processos + andamento publicado | Documentos, audiências, partes |
+| Cobranças com link de pagamento (abertas e pagas) | Financeiro do cliente (contrato, parcelas sem link, despesas) |
 | Chat com IA sobre o que a página mostra | Canal com o escritório |
 
 Processo novo do mesmo cliente entra sozinho no link que ele já tem — não há
@@ -97,6 +98,32 @@ trigger não roda no UPDATE, de propósito — senão o clique se desfaria.
 O texto do tribunal aparece **como é**, sem paráfrase: o cliente eventualmente
 compara com o site do tribunal, e uma reescrita que divirja vira desconfiança.
 O escritório controla o que aparece, não a redação.
+
+## Pagamentos (cobranças por link da InfinitePay)
+
+Decidido em 2026-10-06, junto com a integração (`docs/integracao-infinitepay.md`):
+o portal mostra **só o que o escritório mandou cobrar por link**.
+
+- **Em aberto**, no topo da página — é a única coisa que pede uma ação do
+  cliente: descrição, valor, vencimento (vencido em vermelho) e o botão
+  **Pagar**, que abre o checkout da InfinitePay numa aba nova. A volta do
+  pagamento cai em `/pagamento/retorno`, não no portal: a `redirect_url` fica
+  registrada na InfinitePay, e o token do portal nela seria entregar o link de
+  acompanhamento a terceiros.
+- **Realizados**, depois dos processos: descrição, data, método, valor pago
+  (com os juros do parcelamento) e o comprovante. Até 20, do mais recente.
+- **Não aparecem:** lançamento sem link, link cancelado, falho ou estornado, e
+  o pagamento de link clonado (valor diferente) — para o cliente, a cobrança
+  continua aberta.
+
+O vínculo é o do lançamento (`financial_entries.client_id`). O payload é montado
+campo a campo em `getPortalPayments` (`lib/clientPortal/data.ts`), e uma falha
+ali não derruba a página: `payments: null` vira um aviso curto e os processos
+continuam aparecendo.
+
+O assistente **não** recebe pagamentos — valor e vencimento são o tipo de coisa
+que um modelo não pode errar. Perguntado, ele indica a seção Pagamentos sem
+comentar valores (regra 5 do prompt).
 
 ## Assistente de dúvidas (IA)
 
@@ -184,6 +211,7 @@ e não limita nada.
 | Cookie de sessão | `src/lib/clientPortal/session.ts` |
 | Validação + log | `src/lib/clientPortal/access.ts` |
 | Payload | `src/lib/clientPortal/data.ts` |
+| Pagamentos (seções da página) | `getPortalPayments` em `data.ts` + `src/features/portal/components/PortalPayments.tsx` |
 | Rotas públicas | `src/app/api/portal/[token]/{route.ts,verificar/route.ts,processos/[processId]/route.ts}` |
 | Rota do escritório | `src/app/api/clientes/[id]/portal-link/route.ts` |
 | Página | `src/app/acompanhar/[token]/page.tsx` + `src/features/portal/` |
@@ -197,9 +225,10 @@ requisição, que atrás de proxy pode ser o endereço interno do container.
 
 ## Fora de escopo (decisão explícita desta v1)
 
-Documentos, financeiro, próxima audiência e qualquer canal de contato na
-página. Entram quando houver demanda real — cada um aumenta a superfície de
-dado sensível numa rota anônima, que é o oposto do que esta v1 otimiza.
+Documentos, o financeiro além das cobranças por link, próxima audiência e
+qualquer canal de contato na página. Entram quando houver demanda real — cada
+um aumenta a superfície de dado sensível numa rota anônima, que é o oposto do
+que esta v1 otimiza.
 
-O assistente de dúvidas não abre nenhum desses: ele lê o mesmo recorte da
-página e não leva mensagem ao escritório.
+O assistente de dúvidas não abre nenhum desses: ele lê o recorte dos processos
+e não leva mensagem ao escritório.
