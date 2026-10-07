@@ -37,3 +37,20 @@ export async function generateWebhookToken(): Promise<GeneratedWebhookToken> {
 export function looksLikeWebhookToken(value: string): boolean {
   return /^[A-Za-z0-9_-]{43}$/.test(value)
 }
+
+/**
+ * O token da URL é o desta cobrança? Comparação em tempo constante: o tempo da
+ * resposta não pode ir revelando o hash caractere a caractere.
+ */
+export async function matchesWebhookToken(token: string, expectedHash: string): Promise<boolean> {
+  if (!looksLikeWebhookToken(token)) return false
+
+  const actual = await hashWebhookToken(token)
+  if (actual.length !== expectedHash.length) return false
+
+  let difference = 0
+  for (let index = 0; index < actual.length; index++) {
+    difference |= actual.charCodeAt(index) ^ expectedHash.charCodeAt(index)
+  }
+  return difference === 0
+}

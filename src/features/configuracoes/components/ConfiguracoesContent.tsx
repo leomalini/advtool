@@ -32,6 +32,7 @@ import { OabMonitoringManager } from './OabMonitoringManager'
 import { WebhooksManager } from './WebhooksManager'
 import { OfficeSettingsCard } from './OfficeSettingsCard'
 import { PaymentSettingsCard } from './PaymentSettingsCard'
+import { InfinitePayDeliveries } from './InfinitePayDeliveries'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -485,7 +486,10 @@ export function ConfiguracoesContent({
             <OabMonitoringManager />
           </TabsContent>
           <TabsContent value="pagamentos">
-            <PaymentSettingsCard webhookEndpoint={paymentsWebhookEndpoint} />
+            <div className="space-y-5">
+              <PaymentSettingsCard webhookEndpoint={paymentsWebhookEndpoint} />
+              <InfinitePayDeliveries />
+            </div>
           </TabsContent>
           <TabsContent value="areas">
             <TabAreas />

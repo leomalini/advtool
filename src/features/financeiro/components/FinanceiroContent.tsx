@@ -146,14 +146,15 @@ function ReceivableTile({
   )
 }
 
-export function FinanceiroContent() {
+/** `initialEntryId`: o lançamento que o aviso do sino mandou abrir. */
+export function FinanceiroContent({ initialEntryId }: { initialEntryId?: string }) {
   const { data: entries = [], isLoading } = useFinancialEntries()
   const { data: summary } = useFinancialSummary()
   const { data: cashFlow } = useMonthlyCashFlow(6)
   const createEntry = useCreateFinancialEntry()
   const updateEntry = useUpdateFinancialEntry()
   const [createOpen, setCreateOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialEntryId ?? null)
   const [filters, setFilters] = useState<FinancialFilters>(emptyFinancialFilters)
   const { can } = usePermissions()
   const { data: officeSettings } = useOfficeSettings()
@@ -772,7 +773,13 @@ export function FinanceiroContent() {
       <FinancialEntryDetailModal
         entry={selected}
         open={!!selected}
-        onClose={() => setSelectedId(null)}
+        onClose={() => {
+          setSelectedId(null)
+          // Fechou o que o aviso abriu: sem o ?id=, recarregar não reabre o
+          // detalhe. API nativa, que o roteador do Next acompanha sem render
+          // no servidor.
+          if (initialEntryId) window.history.replaceState(null, '', '/financeiro')
+        }}
       />
     </div>
   )

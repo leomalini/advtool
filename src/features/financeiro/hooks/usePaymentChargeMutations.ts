@@ -6,6 +6,7 @@ import {
   PaymentLinkError,
   cancelPaymentLink,
   createPaymentLink,
+  refundPaymentTransaction,
 } from '../services/paymentCharges.service'
 import { financialEntryKeys } from './useFinancialEntries'
 import { paymentChargeKeys } from './usePaymentCharges'
@@ -57,5 +58,21 @@ export function useCancelPaymentLink() {
     mutationFn: (chargeId: string) => cancelPaymentLink(chargeId),
     onSettled: () => invalidate(),
     onError: (error) => notifyPaymentLinkError(error, 'Não foi possível cancelar o link.'),
+  })
+}
+
+export function useRefundPaymentTransaction() {
+  const invalidate = useInvalidatePaymentSurfaces()
+
+  return useMutation({
+    mutationFn: (transactionId: string) => refundPaymentTransaction(transactionId),
+    onSettled: () => invalidate(),
+    onSuccess: ({ entryReopened }) =>
+      toast.success(
+        entryReopened
+          ? 'Estorno registrado. O lançamento voltou a pendente.'
+          : 'Estorno registrado.',
+      ),
+    onError: (error) => notifyPaymentLinkError(error, 'Não foi possível registrar o estorno.'),
   })
 }

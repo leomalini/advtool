@@ -25,7 +25,7 @@ export type WebhookEventStatus =
 export interface WebhookEventDestination {
   table: string
   id: string | null
-  action: 'inserted' | 'duplicate' | 'existing_source' | 'invalid'
+  action: 'inserted' | 'updated' | 'duplicate' | 'existing_source' | 'invalid'
   link?: string | null
   detail?: string
 }

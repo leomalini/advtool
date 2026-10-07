@@ -151,3 +151,25 @@ export const CHARGE_BLOCK_REASONS = {
   deleteWithLiveLink: 'Há um link de pagamento em aberto: cancele o link antes de excluir.',
   deletePaidOnline: 'Pago pela InfinitePay: o lançamento não sai do Financeiro.',
 } as const
+
+/**
+ * O que a página de retorno (`/pagamento/retorno`) recebe da rota. O mínimo,
+ * porque a URL pode ser encaminhada: nada do cliente nem do lançamento.
+ */
+export type PaymentReturnResult =
+  | {
+      status: 'confirmed'
+      /** O que o cliente pagou, juros do parcelamento incluídos. */
+      paidAmountCents: number | null
+      captureMethod: string | null
+      installments: number | null
+      receiptUrl: string | null
+      officeName: string | null
+    }
+  | {
+      /** `pending`: a InfinitePay ou o banco falharam agora — a baixa chega
+       * pelo webhook. `not_found`: não é pagamento de cobrança nossa. */
+      status: 'pending' | 'not_found'
+      receiptUrl: string | null
+      officeName: string | null
+    }

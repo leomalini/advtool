@@ -14,6 +14,7 @@ import {
   Loader2,
   MessageCircle,
   Receipt,
+  Undo2,
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -34,7 +35,11 @@ import {
   type PaymentTransaction,
 } from '@/types/paymentCharge.types'
 import { usePaymentChargesForEntry } from '../hooks/usePaymentCharges'
-import { useCancelPaymentLink, useCreatePaymentLink } from '../hooks/usePaymentChargeMutations'
+import {
+  useCancelPaymentLink,
+  useCreatePaymentLink,
+  useRefundPaymentTransaction,
+} from '../hooks/usePaymentChargeMutations'
 import { buildPaymentMessage, buildWhatsAppUrl } from '../utils/paymentLinkMessage'
 
 /** `creating` há mais que isso travou no meio da geração: oferece cancelar. */
@@ -356,9 +361,15 @@ function TransactionCard({
   charge: PaymentChargeWithTransactions
   transaction: PaymentTransaction
 }) {
+  const { can } = usePermissions()
+  const refund = useRefundPaymentTransaction()
+  const [confirmingRefund, setConfirmingRefund] = useState(false)
+
   // Valor de um link clonado com o mesmo `order_nsu`: pagamento real, mas não
   // o desta cobrança — não dá baixa (ver "O que o spike mostrou" no plano).
   const divergent = transaction.amount_cents !== charge.amount_cents
+  // Cancelado e pago assim mesmo: a baixa ficou para o escritório decidir.
+  const paidAfterCancel = !divergent && charge.canceled_at !== null
   const installments = transaction.installments ?? 1
 
   return (
@@ -398,21 +409,76 @@ function TransactionCard({
           do parcelamento.
         </p>
       )}
+      {paidAfterCancel && (
+        <p className="text-xs text-warning">
+          O link tinha sido cancelado quando foi pago: a baixa não foi automática. Decida entre
+          estorno e baixa manual.
+        </p>
+      )}
       {transaction.refunded_at && (
         <p className="text-xs text-muted-foreground">
           Estorno registrado em {formatMoment(transaction.refunded_at)}.
         </p>
       )}
-      {transaction.receipt_url && (
-        <a
-          href={transaction.receipt_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-        >
-          <Receipt className="h-3 w-3" aria-hidden />
-          Comprovante
-        </a>
+
+      {confirmingRefund ? (
+        // Confirmação embutida, como a do cancelamento: sem segundo modal.
+        <div className="space-y-2 rounded-md bg-destructive/5 p-2.5">
+          <p className="text-xs">
+            Registre só depois de estornar no app da InfinitePay — o sistema não estorna, só
+            anota. Se este pagamento tinha dado baixa, o lançamento volta a pendente.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="xs"
+              variant="destructive"
+              disabled={refund.isPending}
+              onClick={() =>
+                refund.mutate(transaction.id, { onSettled: () => setConfirmingRefund(false) })
+              }
+            >
+              {refund.isPending && <Loader2 className="animate-spin" />}
+              Registrar estorno
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={refund.isPending}
+              onClick={() => setConfirmingRefund(false)}
+            >
+              Voltar
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {transaction.receipt_url && (
+            <a
+              href={transaction.receipt_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Receipt className="h-3 w-3" aria-hidden />
+              Comprovante
+            </a>
+          )}
+          {!transaction.refunded_at && can('financeiro', 'update') && (
+            <button
+              type="button"
+              onClick={() => setConfirmingRefund(true)}
+              className={cn(
+                'inline-flex items-center gap-1 text-xs text-muted-foreground',
+                'hover:text-destructive',
+              )}
+            >
+              <Undo2 className="h-3 w-3" aria-hidden />
+              Registrar estorno
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

@@ -16,7 +16,7 @@ import { CHECKOUT_NOT_ENABLED, type CreateLinkRequest } from './schemas'
 import { generateWebhookToken } from './token'
 import { infinitePayWebhookUrl } from './urls'
 
-/** Para onde o cliente volta depois de pagar (página pública, Fase 3). */
+/** Para onde o cliente volta depois de pagar (página pública). */
 export const PAYMENT_RETURN_PATH = '/pagamento/retorno'
 
 /** Violação de índice único: o segundo link vivo do mesmo lançamento. */
@@ -262,4 +262,100 @@ export async function verifyInfinitePayHandle(
     }
     return failure(502, error.message, error.code)
   }
+}
+
+// ── Registrar estorno ───────────────────────────────────────────────────────
+
+export type RefundResult = { ok: true; entryReopened: boolean } | ChargeFailure
+
+/**
+ * Registra um estorno feito no app da InfinitePay — a API não estorna, então o
+ * sistema só anota o que já aconteceu lá.
+ *
+ * Em cascata, e só até onde ainda for verdade:
+ *
+ *   1. a transação ganha `refunded_at`;
+ *   2. a cobrança `paid` vira `refunded`, se não sobrou outro pagamento do
+ *      valor dela sem estorno;
+ *   3. o lançamento `pago` volta a `pendente`, se não sobrou outra cobrança
+ *      paga — a ordem é a que a trava da migration 67 aceita.
+ *
+ * Estornar um pagamento que nunca deu baixa (valor diferente, link cancelado)
+ * para no passo 1.
+ */
+export async function refundTransaction(
+  supabase: SupabaseClient,
+  input: { transactionId: string; userId: string },
+): Promise<RefundResult> {
+  const { data: refunded, error } = await supabase
+    .from('payment_transactions')
+    .update({ refunded_at: new Date().toISOString(), refunded_by: input.userId })
+    .eq('id', input.transactionId)
+    .is('refunded_at', null)
+    .select('id, charge_id')
+  if (error) throw error
+
+  const transaction = ((refunded ?? []) as { id: string; charge_id: string }[])[0]
+  if (!transaction) {
+    const { data: current, error: currentError } = await supabase
+      .from('payment_transactions')
+      .select('id')
+      .eq('id', input.transactionId)
+      .maybeSingle()
+    if (currentError) throw currentError
+    return current
+      ? failure(409, 'O estorno deste pagamento já foi registrado.')
+      : failure(404, 'Pagamento não encontrado.')
+  }
+
+  const { data: chargeRow, error: chargeError } = await supabase
+    .from('payment_charges')
+    .select('id, status, amount_cents, financial_entry_id')
+    .eq('id', transaction.charge_id)
+    .single()
+  if (chargeError) throw chargeError
+  const charge = chargeRow as {
+    id: string
+    status: PaymentChargeStatus
+    amount_cents: number
+    financial_entry_id: string | null
+  }
+
+  if (charge.status !== 'paid') return { ok: true, entryReopened: false }
+
+  const { count: stillPaid, error: paidError } = await supabase
+    .from('payment_transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('charge_id', charge.id)
+    .eq('amount_cents', charge.amount_cents)
+    .is('refunded_at', null)
+  if (paidError) throw paidError
+  if ((stillPaid ?? 0) > 0) return { ok: true, entryReopened: false }
+
+  const { error: refundError } = await supabase
+    .from('payment_charges')
+    .update({ status: 'refunded' })
+    .eq('id', charge.id)
+    .eq('status', 'paid')
+  if (refundError) throw refundError
+
+  if (!charge.financial_entry_id) return { ok: true, entryReopened: false }
+
+  const { count: otherPaid, error: otherError } = await supabase
+    .from('payment_charges')
+    .select('id', { count: 'exact', head: true })
+    .eq('financial_entry_id', charge.financial_entry_id)
+    .eq('status', 'paid')
+  if (otherError) throw otherError
+  if ((otherPaid ?? 0) > 0) return { ok: true, entryReopened: false }
+
+  const { data: reopened, error: reopenError } = await supabase
+    .from('financial_entries')
+    .update({ status: 'pendente', paid_at: null })
+    .eq('id', charge.financial_entry_id)
+    .eq('status', 'pago')
+    .select('id')
+  if (reopenError) throw reopenError
+
+  return { ok: true, entryReopened: (reopened ?? []).length > 0 }
 }

@@ -77,3 +77,25 @@ export function cancelPaymentLink(chargeId: string): Promise<PaymentCharge> {
     'Não foi possível cancelar o link de pagamento.',
   )
 }
+
+/**
+ * Registra um estorno já feito no app da InfinitePay. `entryReopened`: o
+ * lançamento voltou a pendente, porque era este pagamento que o quitava.
+ */
+export async function refundPaymentTransaction(
+  transactionId: string,
+): Promise<{ entryReopened: boolean }> {
+  const response = await fetch(
+    `/api/financeiro/transacoes/${encodeURIComponent(transactionId)}/estorno`,
+    { method: 'POST' },
+  )
+  const body = (await response.json().catch(() => null)) as {
+    entryReopened?: boolean
+    error?: string
+  } | null
+
+  if (!response.ok || typeof body?.entryReopened !== 'boolean') {
+    throw new PaymentLinkError(body?.error ?? 'Não foi possível registrar o estorno.', null, null)
+  }
+  return { entryReopened: body.entryReopened }
+}

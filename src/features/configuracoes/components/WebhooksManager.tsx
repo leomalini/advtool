@@ -87,6 +87,7 @@ const STATUS_CLASS: Record<WebhookEventStatus, string> = {
 
 const ACTION_LABEL: Record<string, string> = {
   inserted: 'gravada',
+  updated: 'atualizado',
   duplicate: 'já existia (outra fonte)',
   existing_source: 'já existia (mesma fonte)',
   invalid: 'recusada',
