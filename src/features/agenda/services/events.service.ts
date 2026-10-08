@@ -297,7 +297,8 @@ export function eventToFormValues(event: CalendarEvent): Partial<EventFormInput>
 const EVENT_SELECT = `
   *,
   assignee:profiles!events_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
-  assignees:event_assignees(profile:profiles(id, full_name, avatar_url, role, created_at))
+  assignees:event_assignees(profile:profiles(id, full_name, avatar_url, role, created_at)),
+  client:clients(id, type, name, company_name, trade_name)
 `
 
 /** O que `syncNextDeadline` precisa ler de volta depois de gravar. */

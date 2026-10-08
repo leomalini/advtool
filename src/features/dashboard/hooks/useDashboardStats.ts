@@ -6,7 +6,6 @@ import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { taskKeys } from '@/features/tarefas/hooks/useTasks'
 import {
   getDashboardStats,
-  getUpcomingEvents,
   getCasesByLegalArea,
   getUpcomingDeadlines,
   getWorkloadByAssignee,
@@ -38,8 +37,6 @@ import {
  */
 export const dashboardKeys = {
   stats: ['dashboard-stats'] as const,
-  /** Prefix — covers every `limit` variant. */
-  upcomingEvents: ['dashboard-upcoming-events'] as const,
   casesByArea: ['dashboard-cases-by-area'] as const,
   /** Prefix — covers every `limit` variant. */
   upcomingDeadlines: ['dashboard-upcoming-deadlines'] as const,
@@ -61,14 +58,6 @@ export function useDashboardStats() {
   return useQuery({
     queryKey: dashboardKeys.stats,
     queryFn: getDashboardStats,
-    refetchInterval: 60_000,
-  })
-}
-
-export function useUpcomingEvents(limit = 6) {
-  return useQuery({
-    queryKey: [...dashboardKeys.upcomingEvents, limit],
-    queryFn: () => getUpcomingEvents(limit),
     refetchInterval: 60_000,
   })
 }

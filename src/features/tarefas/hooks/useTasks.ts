@@ -23,19 +23,27 @@ export const taskKeys = {
   range: (fromDay: string, toDay: string) => ['tasks', 'range', fromDay, toDay] as const,
 }
 
-export function useTasks() {
+/** `refetchInterval`: o dashboard fica aberto o dia todo e repergunta a cada
+ * minuto; as outras telas atualizam pelas mutações. */
+export function useTasks(options: { refetchInterval?: number } = {}) {
   return useQuery({
     queryKey: taskKeys.all,
     queryFn: getTasks,
+    refetchInterval: options.refetchInterval,
   })
 }
 
 /** Tarefas com data entre `fromDay` e `toDay` (yyyy-MM-dd), para a Agenda. */
-export function useTasksInRange(fromDay: string, toDay: string, options: { enabled?: boolean } = {}) {
+export function useTasksInRange(
+  fromDay: string,
+  toDay: string,
+  options: { enabled?: boolean; refetchInterval?: number } = {}
+) {
   return useQuery({
     queryKey: taskKeys.range(fromDay, toDay),
     queryFn: () => getTasksInRange(fromDay, toDay),
     enabled: options.enabled ?? true,
+    refetchInterval: options.refetchInterval,
   })
 }
 
