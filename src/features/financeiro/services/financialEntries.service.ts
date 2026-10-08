@@ -19,6 +19,7 @@ import type {
   FinancialEntryInput,
   UpdateFinancialEntryInput,
 } from '@/schemas/financialEntry.schema'
+import { summarizePaymentCharges, type PaymentChargeSummary } from '@/types/paymentCharge.types'
 
 const supabase = createClient()
 
@@ -195,6 +196,14 @@ export async function deleteFinancialEntry(id: string): Promise<void> {
 export interface FinancialSummary {
   /** Recebido no mês corrente (status pago). */
   receivedThisMonth: number
+  /**
+   * A parte do recebido no mês que entrou por link da InfinitePay: as MESMAS
+   * linhas de `receivedThisMonth`, as que têm uma cobrança `paid`. Valor do
+   * lançamento (bruto, decisão 5 da integração), não o que o cliente pagou com
+   * juros — assim os dois números nunca discordam.
+   */
+  receivedViaInfinitePay: number
+  receivedViaInfinitePayCount: number
   /** Despesas do mês corrente. */
   expensesThisMonth: number
   /** A receber — TUDO: receitas não pagas, com ou sem data. */
@@ -216,6 +225,11 @@ type AggregateRow = Pick<
 
 const AGGREGATE_SELECT = 'type, amount, status, settlement_kind, due_date, paid_at'
 
+/** O resumo precisa saber se a baixa veio de um link — o fluxo de caixa, não. */
+type SummaryRow = AggregateRow & { payment_charges: Pick<PaymentChargeSummary, 'status'>[] | null }
+
+const SUMMARY_SELECT = `${AGGREGATE_SELECT}, payment_charges(status)`
+
 export async function getFinancialSummary(): Promise<FinancialSummary> {
   const now = new Date()
   const monthStart = toISODate(new Date(now.getFullYear(), now.getMonth(), 1))
@@ -224,12 +238,14 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
   const monthEnd = toISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
   const today = todayISO()
 
-  const { data, error } = await supabase.from('financial_entries').select(AGGREGATE_SELECT)
+  const { data, error } = await supabase.from('financial_entries').select(SUMMARY_SELECT)
 
   if (error) throw error
 
   const summary: FinancialSummary = {
     receivedThisMonth: 0,
+    receivedViaInfinitePay: 0,
+    receivedViaInfinitePayCount: 0,
     expensesThisMonth: 0,
     receivableTotal: 0,
     receivableUpcoming: 0,
@@ -238,7 +254,7 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
     receivableConditionalCount: 0,
   }
 
-  for (const row of (data ?? []) as AggregateRow[]) {
+  for (const row of (data ?? []) as unknown as SummaryRow[]) {
     const amount = Number(row.amount)
     const reference = getCashFlowDate(row)
     const inThisMonth = reference !== null && reference >= monthStart && reference <= monthEnd
@@ -250,7 +266,12 @@ export async function getFinancialSummary(): Promise<FinancialSummary> {
 
     switch (getFinancialSituation(row, today)) {
       case 'pago':
-        if (inThisMonth) summary.receivedThisMonth += amount
+        if (!inThisMonth) break
+        summary.receivedThisMonth += amount
+        if (summarizePaymentCharges(row.payment_charges ?? []).paid) {
+          summary.receivedViaInfinitePay += amount
+          summary.receivedViaInfinitePayCount += 1
+        }
         break
       case 'a_vencer':
         summary.receivableUpcoming += amount

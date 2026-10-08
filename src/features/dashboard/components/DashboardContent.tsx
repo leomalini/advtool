@@ -10,7 +10,7 @@ import { TasksCard } from "./TasksCard";
 import { PrazosCard } from "./PrazosCard";
 import { AreasChart } from "./AreasChart";
 import { AdvogadosCard } from "./AdvogadosCard";
-import { FinanceiroResumo } from "./FinanceiroResumo";
+import { FinanceCard } from "./FinanceCard";
 import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useCurrentProfile } from "@/hooks/useProfiles";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -105,9 +105,11 @@ export function DashboardContent() {
             {can("crm", "view") && <PrazosCard />}
           </DashboardRow>
 
-          {/* ── Financeiro + Áreas + Advogados ── */}
+          {/* ── Financeiro ── */}
+          {can("financeiro", "view") && <FinanceCard />}
+
+          {/* ── Áreas + Advogados ── */}
           <DashboardRow>
-            {can("financeiro", "view") && <FinanceiroResumo />}
             {can("crm", "view") && <AreasChart />}
             {can("crm", "view") && <AdvogadosCard />}
           </DashboardRow>

@@ -23,6 +23,14 @@ export const FINANCIAL_SITUATION_FILTER_LABELS: Record<FinancialSituationFilter,
   pago: 'Pago',
 }
 
+/** `?situacao=` na URL → filtro, só se for uma das situações conhecidas. É o
+ * que o dashboard usa para abrir o Financeiro no recorte de um número. */
+export function parseSituationFilter(value: unknown): FinancialSituationFilter | undefined {
+  return typeof value === 'string' && Object.hasOwn(FINANCIAL_SITUATION_FILTER_LABELS, value)
+    ? (value as FinancialSituationFilter)
+    : undefined
+}
+
 export interface FinancialFilters {
   search: string
   type: FinancialEntryType | null
