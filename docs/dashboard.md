@@ -460,6 +460,40 @@ do PR 2):**
 Pronto quando: os números batem com os da página do Financeiro; sem InfiniteTag
 aparece o atalho para configurar; paralegal não vê o card.
 
+**Como ficou (2026-10-07, branch `feat/dashboard-financeiro`, empilhada na do
+PR 3):**
+
+- `FinanceCard` em linha inteira, três colunas: o mês (recebido, "pela
+  InfinitePay", despesas, resultado, e "A receber" com a barra das três
+  parcelas), as cobranças por link e o fluxo de 6 meses.
+- `getFinancialSummary` ganhou `receivedViaInfinitePay` e
+  `receivedViaInfinitePayCount`: as linhas do recebido no mês que têm cobrança
+  `paid` (`summarizePaymentCharges`), pelo valor do lançamento. A consulta do
+  resumo embute `payment_charges(status)`; a do fluxo de caixa não muda.
+- `getLiveCharges` (links `creating`/`open`, os mais antigos primeiro) e
+  `getRecentPayments(30)` (sem estornados, com a cobrança embutida), sob
+  `paymentChargeKeys`. "Pago num link cancelado" vira alerta na linha.
+- WhatsApp no card abre o contato a escolher (`buildWhatsAppUrl(null, …)`), com
+  a mensagem pronta: o telefone do cliente exige carregar o cadastro de cada um
+  (`useCliente`), o que o detalhe do lançamento já faz.
+- Sem InfiniteTag e sem histórico: convite para configurar — com link só para
+  `configuracoes:manage`. Com histórico, as listas aparecem mesmo sem a tag (os
+  links seguem pagáveis).
+- `/financeiro?situacao=` (`parseSituationFilter` só aceita as situações
+  conhecidas) abre a lista filtrada; o indicador "A receber" e cada parcela da
+  barra usam isso. A `key` da página inclui a situação, para remontar.
+- O flush do sino invalida `financialEntryKeys.all` e `paymentChargeKeys.all`
+  quando chega aviso `pagamento_*` — a baixa acontece no servidor.
+- Saiu o `FinanceiroResumo`.
+- Conferido no banco real, só leitura, pelas funções de verdade: recebido no mês
+  R$ 1 (o Pix de teste), todo pela InfinitePay — bate com a recontagem; "A
+  receber" R$ 2.000 = 400 + 1.000 + 600; 1 link em aberto de R$ 400; 1
+  pagamento recente (Pix, pelo retorno, com comprovante). Telas pela página
+  temporária: três colunas, proporções da barra, links por situação, mensagem
+  do WhatsApp, "gerando o link" sem ações, alerta de link cancelado, gráfico
+  (12 barras), sem conta com e sem `configuracoes:manage`, celular. `tsc`, lint
+  e build ok.
+
 ### PR 5 — Extras
 
 Equipe (sai o `AreasChart` como card próprio), Portal do cliente e Pendências
