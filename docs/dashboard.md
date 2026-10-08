@@ -1,10 +1,11 @@
 # Dashboard — refatoração
 
 > **Status:** plano e decisões aprovados em 2026-10-07 (todas as
-> recomendações, e os quatro extras entram). PR 1 implementado no mesmo dia na
-> branch `feat/dashboard-estrutura` — ver "Como ficou" na fase. O mockup do
-> layout foi mostrado na conversa que gerou este documento; as seções "Layout" e
-> "Cards" descrevem o mesmo desenho.
+> recomendações, e os quatro extras entram). PR 1 commitado na branch
+> `feat/dashboard-estrutura`; PR 2 implementado na `feat/dashboard-monitoramento`,
+> com a migration 68 ainda **não aplicada** — ver "Como ficou" em cada fase. O
+> mockup do layout foi mostrado na conversa que gerou este documento; as seções
+> "Layout" e "Cards" descrevem o mesmo desenho.
 
 O dashboard hoje mostra contadores e um feed de atividades. A proposta é trocar
 por "o que pede ação hoje": o que chegou pelo monitoramento de processos, o que
@@ -169,10 +170,15 @@ N h", do item mais recente do card.
 `webhook_events`):
 
 - `provider = 'busca_processos'`, `is_test = false`: última entrega
-  (`received_at`), entregas em 24 h, recusadas esperando reprocessamento
-  (`status = 'invalid'` e `replayed_at` nulo — já tem índice) e `unmatched` dos
-  últimos 30 dias agrupadas por CNJ (`payload->processo->>numero_unico`),
-  ignorando o CNJ de sonda (só zeros).
+  (`received_at`), entregas em 24 h, recusadas esperando reprocessamento e
+  `unmatched` dos últimos 30 dias agrupadas por CNJ
+  (`payload->processo->>numero_unico`), ignorando o CNJ de sonda (só zeros).
+- Lida por `GET /api/webhooks/health`, e não do navegador: "recusada pendente"
+  é definida no servidor (`countPendingRejections`, que filtra os eventos com
+  tratamento) e aquele módulo arrasta o handler inteiro do webhook. A rota usa
+  o client de sessão — a RLS já é `configuracoes:view` — e reaproveita
+  `readLastOriginDelivery` e `countPendingRejections`, as mesmas funções da aba
+  Webhooks.
 - Processo monitorado sem cadastro aparece com "Cadastrar"; o resto leva a
   `/configuracoes?aba=webhooks`.
 
@@ -364,6 +370,42 @@ receber".
 Pronto quando: as contagens do card batem com uma consulta direta no banco; o
 CNJ órfão leva ao cadastro já preenchido; a faixa não aparece para paralegal e
 finance.
+
+**Como ficou (2026-10-07, branch `feat/dashboard-monitoramento`, empilhada na
+do PR 1):**
+
+- Migration 68 escrita, **não aplicada**. O backfill usa os avisos E os
+  destinos `inserted` de `webhook_events` — o aviso é best-effort. Simulado só
+  para leitura no banco real: as duas fontes dão as mesmas 29 linhas; ficariam
+  29 `webhook`, 87 `sync` (43 em 10/09, 22 em 15/09, 22 em 16/09 — os dias de
+  cadastro) e 0 `manual`.
+- Enquanto a 68 não estiver aplicada, quem rodar esta branch (o `pnpm dev`
+  inclusive) vê "Não foi possível carregar as movimentações" na coluna — a
+  consulta filtra por uma coluna que ainda não existe.
+- `GET /api/webhooks/health` com `requirePermissionApi('configuracoes')` e
+  client de sessão; `readDashboardWebhookHealth` em
+  `lib/buscaprocessos/webhookHealth.ts`. A resposta leva também a janela em dias,
+  para a tela não importar o módulo de servidor por causa de uma constante.
+- Chaves sob `legalProcessKeys.all` (movimentações e saúde — cadastrar pelo
+  "Cadastrar" tira o CNJ da faixa) e sob `publicationKeys.unreadCount()` (a
+  prévia anda junto com o número). O flush do sino já invalida esses prefixos.
+- Movimentações agrupadas por processo (`groupProcessNews`, função pura), com
+  teto de 300 linhas por consulta e aviso se ele for atingido. Na linha, o CNJ
+  ocupa a largura toda; a hora de chegada foi para a linha de apoio.
+- Publicação: link esticado (o título cobre a linha com `::after`) e
+  "Cadastrar" por cima, na linha do aviso — link dentro de link não é HTML
+  válido, e um botão ao lado cortava o CNJ. Só aparece com `processos:create`.
+- Linha com pesos: `lg:col-span-7` + `lg:col-span-5` no `DashboardRow`, que cria
+  só as trilhas que os filhos pedem — sozinho, o card de monitoramento ocupa a
+  linha.
+- Conferido no banco real, só leitura, pelas funções de verdade: última entrega
+  07/10 04h29, 2 entregas em 24 h (recontagem bate), 0 recusadas pendentes,
+  `5018265-22.2026.8.08.0012` com 10 entregas sem destino; 29 movimentações em
+  30 dias viram 2 processos (11 + 18); prévia de publicações com 5, na ordem da
+  fila. Telas pela página temporária: admin com faixa em alerta, advogado com
+  tudo vazio, paralegal (sem faixa, com "Cadastrar") e financeiro (sem faixa,
+  sem "Cadastrar"); desktop, celular, claro e escuro. Rota sem sessão: 401.
+  `tsc`, lint e build ok.
 
 ### PR 3 — Agenda e tarefas
 
