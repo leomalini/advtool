@@ -1,13 +1,18 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
+import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
+import { taskKeys } from '@/features/tarefas/hooks/useTasks'
 import {
   getDashboardStats,
-  getRecentActivities,
   getUpcomingEvents,
   getCasesByLegalArea,
   getUpcomingDeadlines,
   getWorkloadByAssignee,
+  getProcessCounts,
+  getTaskCounts,
+  getUnreadOrphanPublicationCount,
 } from '../services/dashboard.service'
 
 /**
@@ -19,16 +24,25 @@ import {
  * mounted observer. With `staleTime: 60_000` and `refetchOnWindowFocus: false`
  * (see lib/query-client.ts), navigating to the dashboard within a minute of a
  * change shows stale data unless something invalidated it explicitly.
+ *
+ * The indicator counts take the other route: they sit under their domain's
+ * prefix, so the invalidations that domain already does reach them — every
+ * processo mutation invalidates `legalProcessKeys.all`, every task mutation
+ * `taskKeys.all`. Those features don't need to know the dashboard exists.
  */
 export const dashboardKeys = {
   stats: ['dashboard-stats'] as const,
-  activities: ['recent-activities'] as const,
   /** Prefix — covers every `limit` variant. */
   upcomingEvents: ['dashboard-upcoming-events'] as const,
   casesByArea: ['dashboard-cases-by-area'] as const,
   /** Prefix — covers every `limit` variant. */
   upcomingDeadlines: ['dashboard-upcoming-deadlines'] as const,
   workload: ['dashboard-workload'] as const,
+  processCounts: [...legalProcessKeys.all, 'dashboard-counts'] as const,
+  taskCounts: [...taskKeys.all, 'dashboard-counts'] as const,
+  /** Under `unreadCount()` and not just the publications prefix: marking a
+   * publication read invalidates only that key (and the detail). */
+  unreadOrphanPublications: [...publicationKeys.unreadCount(), 'orphans'] as const,
 }
 
 export function useDashboardStats() {
@@ -36,14 +50,6 @@ export function useDashboardStats() {
     queryKey: dashboardKeys.stats,
     queryFn: getDashboardStats,
     refetchInterval: 60_000,
-  })
-}
-
-export function useRecentActivities() {
-  return useQuery({
-    queryKey: dashboardKeys.activities,
-    queryFn: () => getRecentActivities(20),
-    refetchInterval: 30_000,
   })
 }
 
@@ -75,6 +81,30 @@ export function useWorkloadByAssignee() {
   return useQuery({
     queryKey: dashboardKeys.workload,
     queryFn: getWorkloadByAssignee,
+    refetchInterval: 60_000,
+  })
+}
+
+export function useProcessCounts() {
+  return useQuery({
+    queryKey: dashboardKeys.processCounts,
+    queryFn: getProcessCounts,
+    refetchInterval: 60_000,
+  })
+}
+
+export function useTaskCounts() {
+  return useQuery({
+    queryKey: dashboardKeys.taskCounts,
+    queryFn: getTaskCounts,
+    refetchInterval: 60_000,
+  })
+}
+
+export function useUnreadOrphanPublicationCount() {
+  return useQuery({
+    queryKey: dashboardKeys.unreadOrphanPublications,
+    queryFn: getUnreadOrphanPublicationCount,
     refetchInterval: 60_000,
   })
 }

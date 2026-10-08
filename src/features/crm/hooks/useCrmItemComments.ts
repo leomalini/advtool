@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { getCrmItemComments, addCrmItemComment } from '../services/crmItems.service'
 import { crmItemKeys } from './useCrmItems'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { useAuth } from '@/hooks/useAuth'
 
 /** Comments across every crm_item passed in — a página de detalhe do processo lê a união
@@ -31,7 +30,6 @@ export function useAddCrmItemComment(crmItemId: string, entityTitle: string) {
       // Prefix invalidation: the reader's key carries the whole id list, which
       // this writer doesn't know — ['crm_items','comments'] covers every combo.
       queryClient.invalidateQueries({ queryKey: ['crm_items', 'comments'] })
-      queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
     },
     onError: () => toast.error('Erro ao publicar comentário.'),
   })

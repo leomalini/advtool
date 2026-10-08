@@ -44,10 +44,12 @@ export function PrazosCard() {
             : null
           const isCritical = prazoInfo.tone === 'critical'
           // Deadlines live on the crm_item, but when it belongs to a processo
-          // the useful destination is the processo modal.
+          // the useful destination is the processo page. A plain CRM card has
+          // no page of its own (it opens in a modal on the board), and neither
+          // screen reads an `?id=` — that link used to land on the bare list.
           const href = prazo.legal_process_id
-            ? `/processos?id=${prazo.legal_process_id}`
-            : `/crm?id=${prazo.crm_item_id}`
+            ? `/processos/${prazo.legal_process_id}`
+            : '/crm'
 
           return (
             <Link

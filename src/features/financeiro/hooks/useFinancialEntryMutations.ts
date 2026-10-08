@@ -12,7 +12,6 @@ import { createPaymentLink } from '../services/paymentCharges.service'
 import { financialEntryKeys } from './useFinancialEntries'
 import { paymentChargeKeys } from './usePaymentCharges'
 import { notifyPaymentLinkError } from './usePaymentChargeMutations'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
 import { useAuth } from '@/hooks/useAuth'
 import type {
@@ -30,7 +29,6 @@ export function useInvalidateFinancialSurfaces() {
   return () => {
     // Prefixo — alcança forEntity, summary e cashFlow.
     queryClient.invalidateQueries({ queryKey: financialEntryKeys.all })
-    queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
     // Anexos entram com o lançamento e saem com ele (cascade, migration 63).
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
     // O link pode nascer junto com o lançamento (migration 67).

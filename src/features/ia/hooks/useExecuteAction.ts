@@ -12,7 +12,6 @@ import { clientKeys } from '@/features/clientes/hooks/useClientes'
 import { addLegalProcessMovement } from '@/features/processos/services/legalProcesses.service'
 import { useInvalidateLegalProcesses } from '@/features/processos/hooks/useLegalProcessMutations'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { uploadDocument } from '@/features/documentos/services/documents.service'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
 import { createTemplate } from '@/features/documentos/services/templates.service'
@@ -110,7 +109,6 @@ export function useExecuteAction() {
             input.cliente_nome,
           )
           queryClient.invalidateQueries({ queryKey: clientKeys.comments(input.cliente_id) })
-          queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
           return { ok: true, id: comment.id, link: `/clientes/${input.cliente_id}` }
         }
 
@@ -146,7 +144,6 @@ export function useExecuteAction() {
             userId,
           )
           queryClient.invalidateQueries({ queryKey: documentKeys.all })
-          queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
           return {
             ok: true,
             id: document.id,

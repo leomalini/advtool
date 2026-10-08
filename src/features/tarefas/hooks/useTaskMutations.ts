@@ -28,7 +28,6 @@ export function useInvalidateTaskSurfaces() {
     // Prefix — reaches comments() and forEntity() too.
     queryClient.invalidateQueries({ queryKey: taskKeys.all })
     queryClient.invalidateQueries({ queryKey: dashboardKeys.stats })
-    queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
     // Uma tarefa vinculada "cobre" um prazo próximo; concluí-la volta a
     // descobrir o prazo. Nos dois sentidos a pendência precisa recalcular.
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })

@@ -1,10 +1,39 @@
+import type { PostgrestError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-import type { DashboardStats } from '@/types/activity.types'
-import type { Activity } from '@/types/activity.types'
 import type { CalendarEvent } from '@/types/event.types'
 import { startOfWeek, endOfWeek, startOfDay, addDays, format } from 'date-fns'
 
 const supabase = createClient()
+
+/** The header line under the greeting. */
+export interface DashboardStats {
+  /** Hearings scheduled for the current week. */
+  weekly_hearings: number
+  /** Deadlines falling within the next 7 days (overdue ones included). */
+  upcoming_deadlines: number
+}
+
+/** The "Processos ativos" indicator. */
+export interface ProcessCounts {
+  active: number
+  /** Active ones with a BuscaProcessos monitor attached (`monitoring_id`). */
+  monitored: number
+}
+
+/** The "Tarefas atrasadas" indicator. */
+export interface TaskCounts {
+  /** Not done, due before today. */
+  overdue: number
+  /** Not done, due today. */
+  dueToday: number
+}
+
+/** Count of a `head` request. A failed count throws instead of reading as
+ * zero — on the dashboard, a made-up zero is worse than no number at all. */
+function countOf(result: { count: number | null; error: PostgrestError | null }): number {
+  if (result.error) throw result.error
+  return result.count ?? 0
+}
 
 /** A crm_item deadline, flattened with just what the dashboard card renders. */
 export interface UpcomingDeadline {
@@ -36,17 +65,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
   const inSevenDays = format(addDays(now, 7), 'yyyy-MM-dd')
 
-  const [processes, negotiations, tasks, clients, hearings, deadlines] = await Promise.all([
-    supabase.from('legal_processes').select('id', { count: 'exact', head: true }),
-    supabase
-      .from('crm_items')
-      .select('id', { count: 'exact', head: true })
-      .eq('workflow_id', 'wf-negociacao'),
-    supabase
-      .from('tasks')
-      .select('id', { count: 'exact', head: true })
-      .neq('status', 'done'),
-    supabase.from('clients').select('id', { count: 'exact', head: true }),
+  const [hearings, deadlines] = await Promise.all([
     supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
@@ -61,13 +80,63 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   ])
 
   return {
-    legal_processes: processes.count ?? 0,
-    negotiations: negotiations.count ?? 0,
-    pending_tasks: tasks.count ?? 0,
-    active_clients: clients.count ?? 0,
-    weekly_hearings: hearings.count ?? 0,
-    upcoming_deadlines: deadlines.count ?? 0,
+    weekly_hearings: countOf(hearings),
+    upcoming_deadlines: countOf(deadlines),
   }
+}
+
+export async function getProcessCounts(): Promise<ProcessCounts> {
+  const [active, monitored] = await Promise.all([
+    supabase
+      .from('legal_processes')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'ativo'),
+    supabase
+      .from('legal_processes')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'ativo')
+      .not('monitoring_id', 'is', null),
+  ])
+
+  return { active: countOf(active), monitored: countOf(monitored) }
+}
+
+/** Open tasks are not counted on purpose: a recurring series is created with
+ * all its occurrences up front (up to `MAX_OCCURRENCES` in src/lib/recurrence),
+ * so "N abertas" would count next year's ones too. Overdue and today mean the
+ * same with or without series. */
+export async function getTaskCounts(): Promise<TaskCounts> {
+  // `due_date` is a plain date: compared to the local day, as the Agenda does.
+  // Computed here, not by the caller, so the minute refetch picks up midnight.
+  const today = format(new Date(), 'yyyy-MM-dd')
+
+  const [overdue, dueToday] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .neq('status', 'done')
+      .lt('due_date', today),
+    supabase
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .neq('status', 'done')
+      .eq('due_date', today),
+  ])
+
+  return { overdue: countOf(overdue), dueToday: countOf(dueToday) }
+}
+
+/** Unread publications of processos nobody registered — the same queue as
+ * `countUnreadPublications`, narrowed to the orphans. */
+export async function getUnreadOrphanPublicationCount(): Promise<number> {
+  const result = await supabase
+    .from('publications')
+    .select('id', { count: 'exact', head: true })
+    .is('duplicate_of_id', null)
+    .is('read_at', null)
+    .is('legal_process_id', null)
+
+  return countOf(result)
 }
 
 /** Events that haven't ended yet, for the "Próximos Eventos" card. Only events
@@ -174,18 +243,4 @@ export async function getWorkloadByAssignee(): Promise<WorkloadByAssignee> {
     entry.byWorkflow[row.workflow_id] = (entry.byWorkflow[row.workflow_id] ?? 0) + 1
   }
   return workload
-}
-
-export async function getRecentActivities(limit = 20): Promise<Activity[]> {
-  const { data, error } = await supabase
-    .from('activities')
-    .select(`
-      *,
-      actor:profiles!activities_actor_id_fkey(id, full_name, avatar_url, role, created_at)
-    `)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-
-  if (error) throw error
-  return data as Activity[]
 }

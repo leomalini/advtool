@@ -1,5 +1,8 @@
-import type { Profile } from './common.types'
-
+/**
+ * What the services write to `activities` (src/lib/activities.ts). Nothing in
+ * the app reads the table since the dashboard feed was removed — see
+ * docs/dashboard.md, decision 7.
+ */
 export type ActivityType =
   | 'case_created'
   | 'case_moved'
@@ -14,19 +17,14 @@ export type ActivityType =
   | 'event_created'
   | 'attachment_uploaded'
   | 'financial_entry_created'
-  // Administração de acesso (Fase 5 do planejamento multiusuário). Ficam no
-  // mesmo feed dos demais de propósito: quem mexeu no acesso de quem é a
+  // Administração de acesso (Fase 5 do planejamento multiusuário). Ficam na
+  // mesma tabela dos demais de propósito: quem mexeu no acesso de quem é a
   // informação mais sensível que o sistema passa a registrar.
   | 'user_invited'
   | 'user_invite_resent'
   | 'user_role_changed'
   | 'user_deactivated'
   | 'user_reactivated'
-  // Legacy: written before leads became crm_items. Nothing produces these
-  // anymore, but ~half the existing feed rows use them, so they still need
-  // to render readably.
-  | 'lead_created'
-  | 'lead_moved'
 
 /** Mirrors the CHECK constraint on activities.entity_type (migration 15).
  * 'lead' is legacy: the leads table is dead code, but old rows may exist. */
@@ -40,51 +38,3 @@ export type EntityType =
   | 'financial_entry'
   | 'document'
   | 'user'
-
-export const ACTIVITY_LABELS: Record<ActivityType, string> = {
-  case_created: 'criou o caso',
-  case_moved: 'moveu o caso',
-  case_comment: 'comentou no caso',
-  legal_process_created: 'cadastrou o processo',
-  client_created: 'cadastrou o cliente',
-  client_updated: 'atualizou o cliente',
-  client_comment: 'comentou no cliente',
-  task_created: 'criou a tarefa',
-  task_done: 'concluiu a tarefa',
-  task_comment: 'comentou na tarefa',
-  event_created: 'agendou evento',
-  attachment_uploaded: 'enviou anexo para',
-  financial_entry_created: 'lançou',
-  user_invited: 'convidou',
-  user_invite_resent: 'reenviou o convite para',
-  user_role_changed: 'alterou o perfil de',
-  user_deactivated: 'desativou o acesso de',
-  user_reactivated: 'reativou o acesso de',
-  lead_created: 'criou o caso',
-  lead_moved: 'moveu o caso',
-}
-
-export interface Activity {
-  id: string
-  type: ActivityType
-  entity_type: EntityType
-  entity_id: string
-  entity_title: string
-  actor_id: string
-  metadata: Record<string, unknown>
-  created_at: string
-  actor?: Profile
-}
-
-export interface DashboardStats {
-  /** Judicial processes (legal_processes), not generic CRM items. */
-  legal_processes: number
-  /** CRM items still in the negotiation pipeline. */
-  negotiations: number
-  pending_tasks: number
-  active_clients: number
-  /** Hearings scheduled for the current week — shown in the header line. */
-  weekly_hearings: number
-  /** Deadlines falling within the next 7 days (overdue ones included). */
-  upcoming_deadlines: number
-}

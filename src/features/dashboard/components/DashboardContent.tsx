@@ -1,18 +1,18 @@
 "use client";
 
-import { Scale, Briefcase, CheckSquare, Users } from "lucide-react";
-import { MetricCard } from "./MetricCard";
+import { Fragment } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { DashboardMetrics } from "./DashboardMetrics";
+import { DashboardRow } from "./DashboardRow";
 import { PrazosCard } from "./PrazosCard";
 import { AgendaHojeCard } from "./AgendaHojeCard";
 import { AreasChart } from "./AreasChart";
 import { AdvogadosCard } from "./AdvogadosCard";
 import { FinanceiroResumo } from "./FinanceiroResumo";
-import { ActivityFeed } from "./ActivityFeed";
 import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useCurrentProfile } from "@/hooks/useProfiles";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getDisplayName } from "@/utils/profile";
-import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -33,103 +33,79 @@ function pluralize(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
+/**
+ * Every card is gated on the permission of what it reads. Without it the RLS
+ * answers with an empty list, and the card would show zeros — worse than not
+ * showing up, because it reads as "the office has nothing there".
+ */
 export function DashboardContent() {
   const { data: stats } = useDashboardStats();
   const profile = useCurrentProfile();
-  const { can } = usePermissions();
-
-  // Sem `financeiro:view`, a RLS devolve lista vazia e o card mostraria zeros —
-  // pior que ausência, porque parece "o escritório não faturou nada".
-  const showFinanceiro = can("financeiro", "view");
+  const { can, isLoading: permissionsLoading } = usePermissions();
 
   const hoje = new Date();
   const dataFormatada = format(hoje, "EEEE, dd 'de' MMMM 'de' yyyy", {
     locale: ptBR,
   });
 
+  // Each half of the line counts a different table, so each one carries the
+  // permission of its own.
+  const resumoDaSemana = stats
+    ? [
+        can("agenda", "view") &&
+          pluralize(stats.weekly_hearings, "audiência esta semana", "audiências esta semana"),
+        can("crm", "view") &&
+          pluralize(stats.upcoming_deadlines, "prazo próximo", "prazos próximos"),
+      ].filter((frase): frase is string => Boolean(frase))
+    : [];
+
   return (
     <div className="space-y-6">
-      {/* ── Seção 1: Header do dia ── */}
+      {/* ── Cabeçalho do dia ── */}
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">
           {getGreeting()}
           {profile ? `, ${firstName(profile.full_name)}` : ""} 👋
         </h1>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <span className="capitalize">{dataFormatada}</span>
-          {stats && (
-            <>
+          {resumoDaSemana.map((frase) => (
+            <Fragment key={frase}>
               <span className="text-border">·</span>
-              <span>
-                {pluralize(
-                  stats.weekly_hearings,
-                  "audiência esta semana",
-                  "audiências esta semana",
-                )}
-              </span>
-              <span className="text-border">·</span>
-              <span>
-                {pluralize(
-                  stats.upcoming_deadlines,
-                  "prazo próximo",
-                  "prazos próximos",
-                )}
-              </span>
-            </>
-          )}
+              <span>{frase}</span>
+            </Fragment>
+          ))}
         </div>
       </div>
 
-      {/* ── Seção 2: Cards de métricas ── */}
+      {/* ── Indicadores ── */}
       {/* Sem indicador de tendência: não guardamos histórico para comparar
           períodos, e um número inventado aqui seria pior que nenhum. */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MetricCard
-          label="Processos"
-          value={stats?.legal_processes ?? 0}
-          icon={Scale}
-          variant="accent"
-        />
-        <MetricCard
-          label="Em Negociação"
-          value={stats?.negotiations ?? 0}
-          icon={Briefcase}
-          variant="chart2"
-        />
-        <MetricCard
-          label="Tarefas Pendentes"
-          value={stats?.pending_tasks ?? 0}
-          icon={CheckSquare}
-          variant="warning"
-        />
-        <MetricCard
-          label="Clientes"
-          value={stats?.active_clients ?? 0}
-          icon={Users}
-          variant="success"
-        />
-      </div>
+      <DashboardMetrics />
 
-      {/* ── Seção 3: Prazos + Agenda ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <PrazosCard />
-        <AgendaHojeCard />
-      </div>
+      {/* `can()` responde false para tudo enquanto a matriz carrega: segurar as
+          linhas evita os cards sumirem e voltarem. */}
+      {permissionsLoading ? (
+        <DashboardRow>
+          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-xl" />
+        </DashboardRow>
+      ) : (
+        <>
+          {/* ── Prazos + Agenda ── */}
+          <DashboardRow>
+            {can("crm", "view") && <PrazosCard />}
+            {can("agenda", "view") && <AgendaHojeCard />}
+          </DashboardRow>
 
-      {/* ── Seção 4: Áreas + Advogados + Financeiro ── */}
-      <div
-        className={cn(
-          "grid grid-cols-1 gap-4",
-          showFinanceiro ? "lg:grid-cols-3" : "lg:grid-cols-2",
-        )}
-      >
-        <AreasChart />
-        <AdvogadosCard />
-        {showFinanceiro && <FinanceiroResumo />}
-      </div>
-
-      {/* ── Seção 5: Feed de atividades ── */}
-      <ActivityFeed />
+          {/* ── Áreas + Advogados + Financeiro ── */}
+          <DashboardRow>
+            {can("crm", "view") && <AreasChart />}
+            {can("crm", "view") && <AdvogadosCard />}
+            {can("financeiro", "view") && <FinanceiroResumo />}
+          </DashboardRow>
+        </>
+      )}
     </div>
   );
 }

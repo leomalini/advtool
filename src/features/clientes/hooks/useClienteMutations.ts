@@ -9,7 +9,6 @@ import {
   addClientComment,
 } from '../services/clientes.service'
 import { clientKeys } from './useClientes'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { useAuth } from '@/hooks/useAuth'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 
@@ -21,7 +20,6 @@ export function useAddClientComment(clientId: string, entityTitle: string) {
     mutationFn: (content: string) => addClientComment(clientId, content, user!.id, entityTitle),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: clientKeys.comments(clientId) })
-      queryClient.invalidateQueries({ queryKey: dashboardKeys.activities })
     },
     onError: () => toast.error('Erro ao publicar nota.'),
   })
