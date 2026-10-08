@@ -1,11 +1,13 @@
 # Dashboard — refatoração
 
 > **Status:** plano e decisões aprovados em 2026-10-07 (todas as
-> recomendações, e os quatro extras entram). PR 1 commitado na branch
-> `feat/dashboard-estrutura`; PR 2 implementado na `feat/dashboard-monitoramento`,
-> com a migration 68 ainda **não aplicada** — ver "Como ficou" em cada fase. O
-> mockup do layout foi mostrado na conversa que gerou este documento; as seções
-> "Layout" e "Cards" descrevem o mesmo desenho.
+> recomendações, e os quatro extras entram). Os 5 PRs implementados e
+> commitados no mesmo dia, em branches empilhadas (sem push):
+> `feat/dashboard-estrutura` → `-monitoramento` → `-agenda-tarefas` →
+> `-financeiro` → `-extras`. **A migration 68 ainda não foi aplicada** — ela
+> precisa estar no banco antes do merge do PR 2. Ver "Como ficou" em cada fase.
+> O mockup do layout foi mostrado na conversa que gerou este documento; as
+> seções "Layout" e "Cards" descrevem o mesmo desenho.
 
 O dashboard hoje mostra contadores e um feed de atividades. A proposta é trocar
 por "o que pede ação hoje": o que chegou pelo monitoramento de processos, o que
@@ -502,6 +504,32 @@ de cadastro.
 Pronto quando: as contagens do portal batem com `client_portal_access_log` no
 banco; Pendências não aparece para finance (sem `pendencias:view`); a aba de
 áreas mostra o mesmo gráfico de hoje.
+
+**Como ficou (2026-10-07, branch `feat/dashboard-extras`, empilhada na do
+PR 4):**
+
+- `TeamCard` com abas "Pessoas" e "Áreas". `AdvogadosCard` virou
+  `WorkloadList` (só o conteúdo, agora com tarefas abertas e atrasadas por
+  pessoa, pela regra de séries do quadro) e `AreasChart` virou
+  `CasesByAreaChart` (o mesmo gráfico). A aba só monta quando aberta, então a
+  consulta de áreas espera o clique.
+- `PortalCard` (`clientes:view`): acessos liberados em 30 dias, clientes
+  distintos, links ativos (não revogados e não expirados), os 3 últimos acessos
+  e as recusas que importam — documento errado e excesso de tentativas. Token
+  inválido ou revogado fica de fora: é link velho ou varredura (19 no banco em
+  30 dias). Chave própria, com refetch de um minuto: quem grava os acessos é o
+  portal, no servidor.
+- `PendenciesCard` (`pendencias:view`): as mesmas duas consultas da página de
+  Pendências, contadas, com quantas são de severidade alta.
+- Linha final: Equipe 6/12 · Portal 3/12 · Pendências 3/12. Para o perfil
+  finance (sem `pendencias:view`) fica 6/9 · 3/9, sem buraco.
+- `useTasks` aceita `enabled`, para a lista da equipe não buscar tarefas sem
+  `tarefas:view`.
+- Conferido: `getPortalAccessSummary` real batendo com a recontagem (8 acessos,
+  2 clientes, 0 recusas, 2 links ativos). Tela inteira pela página temporária:
+  as cinco linhas nas larguras do plano, abas, perfil finance. `tsc`, lint e
+  build ok (um build falhou uma vez em `next/font/google` com o servidor de dev
+  ligado e passou na repetição, sem mudança de código).
 
 ## Verificação
 
