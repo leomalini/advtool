@@ -8,9 +8,10 @@ import { MonitoringCard } from "./MonitoringCard";
 import { AgendaWeekCard } from "./AgendaWeekCard";
 import { TasksCard } from "./TasksCard";
 import { PrazosCard } from "./PrazosCard";
-import { AreasChart } from "./AreasChart";
-import { AdvogadosCard } from "./AdvogadosCard";
 import { FinanceCard } from "./FinanceCard";
+import { TeamCard } from "./TeamCard";
+import { PortalCard } from "./PortalCard";
+import { PendenciesCard } from "./PendenciesCard";
 import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useCurrentProfile } from "@/hooks/useProfiles";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -108,10 +109,11 @@ export function DashboardContent() {
           {/* ── Financeiro ── */}
           {can("financeiro", "view") && <FinanceCard />}
 
-          {/* ── Áreas + Advogados ── */}
+          {/* ── Equipe + Portal + Pendências ── */}
           <DashboardRow>
-            {can("crm", "view") && <AreasChart />}
-            {can("crm", "view") && <AdvogadosCard />}
+            {can("crm", "view") && <TeamCard className="lg:col-span-6" />}
+            {can("clientes", "view") && <PortalCard className="lg:col-span-3" />}
+            {can("pendencias", "view") && <PendenciesCard className="lg:col-span-3" />}
           </DashboardRow>
         </>
       )}

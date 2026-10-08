@@ -15,6 +15,7 @@ import {
   getWebhookMovements,
   getUnreadPublicationsPreview,
   getWebhookHealth,
+  getPortalAccessSummary,
 } from '../services/dashboard.service'
 
 /**
@@ -52,6 +53,9 @@ export const dashboardKeys = {
   /** Under processos too: registering the processo from the strip's
    * "Cadastrar" has to take it off the strip. */
   webhookHealth: [...legalProcessKeys.all, 'dashboard-webhook-health'] as const,
+  /** Own key: accesses are written by the portal, server-side, so nothing on
+   * this side invalidates them — the minute refetch does. */
+  portalAccess: ['dashboard-portal-access'] as const,
 }
 
 export function useDashboardStats() {
@@ -131,6 +135,14 @@ export function useWebhookHealth() {
   return useQuery({
     queryKey: dashboardKeys.webhookHealth,
     queryFn: getWebhookHealth,
+    refetchInterval: 60_000,
+  })
+}
+
+export function usePortalAccessSummary() {
+  return useQuery({
+    queryKey: dashboardKeys.portalAccess,
+    queryFn: getPortalAccessSummary,
     refetchInterval: 60_000,
   })
 }

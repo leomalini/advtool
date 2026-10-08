@@ -35,6 +35,19 @@ export interface TaskCounts {
   dueToday: number
 }
 
+/** The client columns the lists embed — just enough for a name. */
+interface ClientNameFields {
+  type: 'individual' | 'company'
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
+}
+
+function clientDisplayName(client: ClientNameFields | null): string | null {
+  if (!client) return null
+  return client.type === 'individual' ? client.name : (client.trade_name ?? client.company_name)
+}
+
 /** Count of a `head` request. A failed count throws instead of reading as
  * zero — on the dashboard, a made-up zero is worse than no number at all. */
 function countOf(result: { count: number | null; error: PostgrestError | null }): number {
@@ -273,12 +286,7 @@ export async function getUpcomingDeadlines(limit = 5): Promise<UpcomingDeadline[
     next_deadline: string
     next_task_summary: string | null
     legal_process_id: string | null
-    client: {
-      type: 'individual' | 'company'
-      name: string | null
-      company_name: string | null
-      trade_name: string | null
-    } | null
+    client: ClientNameFields | null
     assigned_profile: { full_name: string } | null
   }
 
@@ -286,11 +294,7 @@ export async function getUpcomingDeadlines(limit = 5): Promise<UpcomingDeadline[
     crm_item_id: row.id,
     legal_process_id: row.legal_process_id,
     title: row.title ?? 'Sem título',
-    client_name: row.client
-      ? row.client.type === 'individual'
-        ? row.client.name
-        : (row.client.trade_name ?? row.client.company_name)
-      : null,
+    client_name: clientDisplayName(row.client),
     legal_area: row.legal_area,
     next_deadline: row.next_deadline,
     next_task_summary: row.next_task_summary,
@@ -313,4 +317,77 @@ export async function getWorkloadByAssignee(): Promise<WorkloadByAssignee> {
     entry.byWorkflow[row.workflow_id] = (entry.byWorkflow[row.workflow_id] ?? 0) + 1
   }
   return workload
+}
+
+// ── Portal do cliente ────────────────────────────────────────────────────────
+
+export const PORTAL_WINDOW_DAYS = 30
+
+/** Right link, wrong document — or too many tries. Someone holding a link and
+ * guessing the document is the attempt worth seeing; an invalid or revoked
+ * token is noise (an old link, a scanner). */
+const REFUSED_OUTCOMES = ['document_mismatch', 'rate_limited'] as const
+
+export interface PortalAccess {
+  clientId: string | null
+  clientName: string | null
+  at: string
+}
+
+export interface PortalAccessSummary {
+  /** Accesses granted in the window. */
+  granted: number
+  /** Distinct clients among them. */
+  clients: number
+  refused: number
+  /** Latest granted accesses, newest first. */
+  recent: PortalAccess[]
+  /** Links that still open: not revoked and not expired. */
+  activeLinks: number
+}
+
+/** Plenty for a month of a small office; the card prints three accesses. */
+const PORTAL_LOG_CAP = 500
+
+export async function getPortalAccessSummary(): Promise<PortalAccessSummary> {
+  const now = new Date()
+  const since = subDays(now, PORTAL_WINDOW_DAYS).toISOString()
+
+  const [log, links] = await Promise.all([
+    supabase
+      .from('client_portal_access_log')
+      .select('outcome, client_id, created_at, client:clients(type, name, company_name, trade_name)')
+      .in('outcome', ['granted', ...REFUSED_OUTCOMES])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(PORTAL_LOG_CAP),
+    supabase
+      .from('client_portal_links')
+      .select('id', { count: 'exact', head: true })
+      .is('revoked_at', null)
+      .or(`expires_at.is.null,expires_at.gt."${now.toISOString()}"`),
+  ])
+
+  if (log.error) throw log.error
+
+  type Row = {
+    outcome: string
+    client_id: string | null
+    created_at: string
+    client: ClientNameFields | null
+  }
+  const rows = (log.data ?? []) as unknown as Row[]
+  const granted = rows.filter((row) => row.outcome === 'granted')
+
+  return {
+    granted: granted.length,
+    clients: new Set(granted.map((row) => row.client_id).filter(Boolean)).size,
+    refused: rows.length - granted.length,
+    recent: granted.slice(0, 3).map((row) => ({
+      clientId: row.client_id,
+      clientName: clientDisplayName(row.client),
+      at: row.created_at,
+    })),
+    activeLinks: countOf(links),
+  }
 }

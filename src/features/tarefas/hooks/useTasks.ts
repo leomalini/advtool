@@ -25,11 +25,12 @@ export const taskKeys = {
 
 /** `refetchInterval`: o dashboard fica aberto o dia todo e repergunta a cada
  * minuto; as outras telas atualizam pelas mutações. */
-export function useTasks(options: { refetchInterval?: number } = {}) {
+export function useTasks(options: { refetchInterval?: number; enabled?: boolean } = {}) {
   return useQuery({
     queryKey: taskKeys.all,
     queryFn: getTasks,
     refetchInterval: options.refetchInterval,
+    enabled: options.enabled ?? true,
   })
 }
 
