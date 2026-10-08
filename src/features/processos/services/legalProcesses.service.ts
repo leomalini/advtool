@@ -728,7 +728,13 @@ export async function addLegalProcessMovement(
 ): Promise<LegalProcessMovement> {
   const { data, error } = await supabase
     .from('legal_process_movements')
-    .insert({ legal_process_id: legalProcessId, description, movement_date: movementDate, source: 'manual' })
+    .insert({
+      legal_process_id: legalProcessId,
+      description,
+      movement_date: movementDate,
+      source: 'manual',
+      received_via: 'manual',
+    })
     .select()
     .single()
 

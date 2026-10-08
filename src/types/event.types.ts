@@ -72,4 +72,14 @@ export interface CalendarEvent extends BaseEntity {
   // Joins
   assignee?: Profile
   assignees?: Profile[]
+  /** Só o que as listas imprimem; nulo quando o evento não tem cliente. */
+  client?: EventClient | null
+}
+
+export interface EventClient {
+  id: string
+  type: 'individual' | 'company'
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
 }

@@ -1,9 +1,16 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-import type { CalendarEvent } from '@/types/event.types'
-import { startOfWeek, endOfWeek, startOfDay, addDays, format } from 'date-fns'
+import type { LegalProcessMovementWithContext } from '@/types/legalProcess.types'
+import type { Publication } from '@/types/publication.types'
+// Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
+// para o navegador.
+import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
+import { startOfWeek, endOfWeek, addDays, subDays, format } from 'date-fns'
 
 const supabase = createClient()
+
+/** How far back the monitoring card looks — docs/dashboard.md, decision 4. */
+export const MONITORING_WINDOW_DAYS = 7
 
 /** The header line under the greeting. */
 export interface DashboardStats {
@@ -26,6 +33,19 @@ export interface TaskCounts {
   overdue: number
   /** Not done, due today. */
   dueToday: number
+}
+
+/** The client columns the lists embed — just enough for a name. */
+interface ClientNameFields {
+  type: 'individual' | 'company'
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
+}
+
+function clientDisplayName(client: ClientNameFields | null): string | null {
+  if (!client) return null
+  return client.type === 'individual' ? client.name : (client.trade_name ?? client.company_name)
 }
 
 /** Count of a `head` request. A failed count throws instead of reading as
@@ -139,28 +159,91 @@ export async function getUnreadOrphanPublicationCount(): Promise<number> {
   return countOf(result)
 }
 
-/** Events that haven't ended yet, for the "Próximos Eventos" card. Only events
- * flagged to show in the agenda — the same filter the calendar page uses.
- *
- * "Not ended", not "not started": filtering on `start_at >= now` dropped an
- * event in progress, and today's all-day events as soon as their start passed.
- * All-day `end_at` is midnight of the last day (inclusive), so those are kept
- * through the whole of that day. */
-export async function getUpcomingEvents(limit = 6): Promise<CalendarEvent[]> {
-  const now = new Date()
-  const nowIso = now.toISOString()
-  const todayStartIso = startOfDay(now).toISOString()
+// ── Monitoramento ────────────────────────────────────────────────────────────
+
+/** A movement as the monitoring card reads it — `raw_data` and the rest of the
+ * row stay behind; the description alone is often a long court text. */
+export type WebhookMovement = Pick<
+  LegalProcessMovementWithContext,
+  'id' | 'legal_process_id' | 'movement_date' | 'title' | 'description' | 'created_at' | 'legal_process'
+>
+
+export interface WebhookMovementsResult {
+  /** Newest arrival first. */
+  movements: WebhookMovement[]
+  /** The cap was hit: the oldest arrivals of the window were left out, so the
+   * counts per processo may be short. */
+  truncated: boolean
+}
+
+/** Plenty for a week of a small office (the busiest processo got 42 in a month
+ * in 2026); the card prints five processos either way. */
+const WEBHOOK_MOVEMENTS_CAP = 300
+
+/** What the monitoring webhook delivered in the window. Only `received_via =
+ * 'webhook'`: registering a processo imports its whole history at once, and
+ * that is not news (migration 68). */
+export async function getWebhookMovements(): Promise<WebhookMovementsResult> {
+  const since = subDays(new Date(), MONITORING_WINDOW_DAYS).toISOString()
 
   const { data, error } = await supabase
-    .from('events')
-    .select('*, assignee:profiles!events_assigned_to_fkey(id, full_name, avatar_url, role, created_at), client:clients(id, type, name, company_name, trade_name)')
-    .eq('show_in_agenda', true)
-    .or(`end_at.gte."${nowIso}",and(all_day.eq.true,end_at.gte."${todayStartIso}")`)
-    .order('start_at')
+    .from('legal_process_movements')
+    .select(`
+      id, legal_process_id, movement_date, title, description, created_at,
+      legal_process:legal_processes(
+        id, cnj_number, court,
+        crm_items:crm_items!crm_items_legal_process_id_fkey(id, workflow_id, title, client:clients(type, name, company_name, trade_name))
+      )
+    `)
+    .eq('received_via', 'webhook')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(WEBHOOK_MOVEMENTS_CAP)
+
+  if (error) throw error
+
+  const movements = (data ?? []) as unknown as WebhookMovement[]
+  return { movements, truncated: movements.length === WEBHOOK_MOVEMENTS_CAP }
+}
+
+export type PublicationPreview = Pick<
+  Publication,
+  | 'id'
+  | 'sequence_number'
+  | 'cnj_number'
+  | 'legal_process_id'
+  | 'diario_sigla'
+  | 'title'
+  | 'publication_date'
+  | 'created_at'
+>
+
+/** The head of the unread queue, in the order `/publicacoes` lists it. */
+export async function getUnreadPublicationsPreview(limit = 5): Promise<PublicationPreview[]> {
+  const { data, error } = await supabase
+    .from('publications')
+    .select('id, sequence_number, cnj_number, legal_process_id, diario_sigla, title, publication_date, created_at')
+    .is('duplicate_of_id', null)
+    .is('read_at', null)
+    .order('publication_date', { ascending: false })
+    .order('sequence_number', { ascending: false })
     .limit(limit)
 
   if (error) throw error
-  return (data ?? []) as unknown as CalendarEvent[]
+  return (data ?? []) as PublicationPreview[]
+}
+
+/** The integration strip, from `GET /api/webhooks/health` — a route because
+ * "pending refusal" is defined server-side, next to the replay. */
+export async function getWebhookHealth(): Promise<DashboardWebhookHealth> {
+  const response = await fetch('/api/webhooks/health')
+  const body: unknown = await response.json().catch(() => null)
+
+  if (!response.ok || body === null) {
+    const message = (body as { error?: string } | null)?.error
+    throw new Error(message ?? 'Não foi possível ler as entregas do webhook.')
+  }
+  return body as DashboardWebhookHealth
 }
 
 /** Case counts per legal area, for the areas chart. Items with no area set
@@ -203,12 +286,7 @@ export async function getUpcomingDeadlines(limit = 5): Promise<UpcomingDeadline[
     next_deadline: string
     next_task_summary: string | null
     legal_process_id: string | null
-    client: {
-      type: 'individual' | 'company'
-      name: string | null
-      company_name: string | null
-      trade_name: string | null
-    } | null
+    client: ClientNameFields | null
     assigned_profile: { full_name: string } | null
   }
 
@@ -216,11 +294,7 @@ export async function getUpcomingDeadlines(limit = 5): Promise<UpcomingDeadline[
     crm_item_id: row.id,
     legal_process_id: row.legal_process_id,
     title: row.title ?? 'Sem título',
-    client_name: row.client
-      ? row.client.type === 'individual'
-        ? row.client.name
-        : (row.client.trade_name ?? row.client.company_name)
-      : null,
+    client_name: clientDisplayName(row.client),
     legal_area: row.legal_area,
     next_deadline: row.next_deadline,
     next_task_summary: row.next_task_summary,
@@ -243,4 +317,77 @@ export async function getWorkloadByAssignee(): Promise<WorkloadByAssignee> {
     entry.byWorkflow[row.workflow_id] = (entry.byWorkflow[row.workflow_id] ?? 0) + 1
   }
   return workload
+}
+
+// ── Portal do cliente ────────────────────────────────────────────────────────
+
+export const PORTAL_WINDOW_DAYS = 30
+
+/** Right link, wrong document — or too many tries. Someone holding a link and
+ * guessing the document is the attempt worth seeing; an invalid or revoked
+ * token is noise (an old link, a scanner). */
+const REFUSED_OUTCOMES = ['document_mismatch', 'rate_limited'] as const
+
+export interface PortalAccess {
+  clientId: string | null
+  clientName: string | null
+  at: string
+}
+
+export interface PortalAccessSummary {
+  /** Accesses granted in the window. */
+  granted: number
+  /** Distinct clients among them. */
+  clients: number
+  refused: number
+  /** Latest granted accesses, newest first. */
+  recent: PortalAccess[]
+  /** Links that still open: not revoked and not expired. */
+  activeLinks: number
+}
+
+/** Plenty for a month of a small office; the card prints three accesses. */
+const PORTAL_LOG_CAP = 500
+
+export async function getPortalAccessSummary(): Promise<PortalAccessSummary> {
+  const now = new Date()
+  const since = subDays(now, PORTAL_WINDOW_DAYS).toISOString()
+
+  const [log, links] = await Promise.all([
+    supabase
+      .from('client_portal_access_log')
+      .select('outcome, client_id, created_at, client:clients(type, name, company_name, trade_name)')
+      .in('outcome', ['granted', ...REFUSED_OUTCOMES])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(PORTAL_LOG_CAP),
+    supabase
+      .from('client_portal_links')
+      .select('id', { count: 'exact', head: true })
+      .is('revoked_at', null)
+      .or(`expires_at.is.null,expires_at.gt."${now.toISOString()}"`),
+  ])
+
+  if (log.error) throw log.error
+
+  type Row = {
+    outcome: string
+    client_id: string | null
+    created_at: string
+    client: ClientNameFields | null
+  }
+  const rows = (log.data ?? []) as unknown as Row[]
+  const granted = rows.filter((row) => row.outcome === 'granted')
+
+  return {
+    granted: granted.length,
+    clients: new Set(granted.map((row) => row.client_id).filter(Boolean)).size,
+    refused: rows.length - granted.length,
+    recent: granted.slice(0, 3).map((row) => ({
+      clientId: row.client_id,
+      clientName: clientDisplayName(row.client),
+      at: row.created_at,
+    })),
+    activeLinks: countOf(links),
+  }
 }

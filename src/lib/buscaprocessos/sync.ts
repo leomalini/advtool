@@ -232,6 +232,10 @@ async function syncMovimentacoes(
         title: mov.classificacao_predita?.nome ?? null,
         kind: 'movimentacao',
         source: 'busca_processos',
+        // Consulta ao cadastrar ou sincronizar. O cadastro importa o histórico
+        // inteiro de uma vez, e isso não é novidade do monitoramento — o
+        // dashboard conta só `webhook` (migration 68).
+        received_via: 'sync',
         external_hash: await movementHash(mov),
         raw_data: mov,
       })),

@@ -84,6 +84,10 @@ export interface LegalProcess {
  * Uma movimentação importada da API continua sendo movimentação. */
 export type MovementKind = 'movimentacao' | 'publicacao'
 
+/** Canal pelo qual a linha entrou — independente de `source`, que é a origem do
+ * dado (migration 68). */
+export type MovementReceivedVia = 'webhook' | 'sync' | 'manual'
+
 export interface LegalProcessMovement {
   id: string
   legal_process_id: string
@@ -104,6 +108,8 @@ export interface LegalProcessMovement {
    * escritório quem decide, ato a ato. */
   hidden_from_client: boolean
   source: 'manual' | 'busca_processos'
+  /** Nula só para um caminho de escrita que não informe — ver a migration 68. */
+  received_via: MovementReceivedVia | null
   raw_data: Record<string, unknown> | null
   created_at: string
 }

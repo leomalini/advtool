@@ -146,8 +146,15 @@ function ReceivableTile({
   )
 }
 
-/** `initialEntryId`: o lançamento que o aviso do sino mandou abrir. */
-export function FinanceiroContent({ initialEntryId }: { initialEntryId?: string }) {
+/** `initialEntryId`: o lançamento que o aviso do sino mandou abrir.
+ * `initialSituation`: o recorte do número clicado no dashboard. */
+export function FinanceiroContent({
+  initialEntryId,
+  initialSituation,
+}: {
+  initialEntryId?: string
+  initialSituation?: FinancialSituationFilter
+}) {
   const { data: entries = [], isLoading } = useFinancialEntries()
   const { data: summary } = useFinancialSummary()
   const { data: cashFlow } = useMonthlyCashFlow(6)
@@ -155,7 +162,10 @@ export function FinanceiroContent({ initialEntryId }: { initialEntryId?: string 
   const updateEntry = useUpdateFinancialEntry()
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(initialEntryId ?? null)
-  const [filters, setFilters] = useState<FinancialFilters>(emptyFinancialFilters)
+  const [filters, setFilters] = useState<FinancialFilters>({
+    ...emptyFinancialFilters,
+    situation: initialSituation ?? null,
+  })
   const { can } = usePermissions()
   const { data: officeSettings } = useOfficeSettings()
   // Gerar o link junto com o lançamento: só com a conta configurada e para quem

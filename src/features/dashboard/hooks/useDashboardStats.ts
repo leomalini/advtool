@@ -6,13 +6,16 @@ import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { taskKeys } from '@/features/tarefas/hooks/useTasks'
 import {
   getDashboardStats,
-  getUpcomingEvents,
   getCasesByLegalArea,
   getUpcomingDeadlines,
   getWorkloadByAssignee,
   getProcessCounts,
   getTaskCounts,
   getUnreadOrphanPublicationCount,
+  getWebhookMovements,
+  getUnreadPublicationsPreview,
+  getWebhookHealth,
+  getPortalAccessSummary,
 } from '../services/dashboard.service'
 
 /**
@@ -25,15 +28,16 @@ import {
  * (see lib/query-client.ts), navigating to the dashboard within a minute of a
  * change shows stale data unless something invalidated it explicitly.
  *
- * The indicator counts take the other route: they sit under their domain's
- * prefix, so the invalidations that domain already does reach them — every
- * processo mutation invalidates `legalProcessKeys.all`, every task mutation
- * `taskKeys.all`. Those features don't need to know the dashboard exists.
+ * The indicator counts and the monitoring card take the other route: they sit
+ * under their domain's prefix, so the invalidations that domain already does
+ * reach them — every processo mutation invalidates `legalProcessKeys.all`,
+ * every task mutation `taskKeys.all`. Those features don't need to know the
+ * dashboard exists. And the bell's Realtime flush (`useRealtimeNotifications`)
+ * invalidates the processos and publications prefixes on every notice, so a
+ * webhook delivery refreshes the monitoring card by itself.
  */
 export const dashboardKeys = {
   stats: ['dashboard-stats'] as const,
-  /** Prefix — covers every `limit` variant. */
-  upcomingEvents: ['dashboard-upcoming-events'] as const,
   casesByArea: ['dashboard-cases-by-area'] as const,
   /** Prefix — covers every `limit` variant. */
   upcomingDeadlines: ['dashboard-upcoming-deadlines'] as const,
@@ -43,20 +47,21 @@ export const dashboardKeys = {
   /** Under `unreadCount()` and not just the publications prefix: marking a
    * publication read invalidates only that key (and the detail). */
   unreadOrphanPublications: [...publicationKeys.unreadCount(), 'orphans'] as const,
+  /** Same reason: the list has to move together with the count above it. */
+  unreadPublicationsPreview: [...publicationKeys.unreadCount(), 'preview'] as const,
+  webhookMovements: [...legalProcessKeys.all, 'dashboard-webhook-movements'] as const,
+  /** Under processos too: registering the processo from the strip's
+   * "Cadastrar" has to take it off the strip. */
+  webhookHealth: [...legalProcessKeys.all, 'dashboard-webhook-health'] as const,
+  /** Own key: accesses are written by the portal, server-side, so nothing on
+   * this side invalidates them — the minute refetch does. */
+  portalAccess: ['dashboard-portal-access'] as const,
 }
 
 export function useDashboardStats() {
   return useQuery({
     queryKey: dashboardKeys.stats,
     queryFn: getDashboardStats,
-    refetchInterval: 60_000,
-  })
-}
-
-export function useUpcomingEvents(limit = 6) {
-  return useQuery({
-    queryKey: [...dashboardKeys.upcomingEvents, limit],
-    queryFn: () => getUpcomingEvents(limit),
     refetchInterval: 60_000,
   })
 }
@@ -105,6 +110,39 @@ export function useUnreadOrphanPublicationCount() {
   return useQuery({
     queryKey: dashboardKeys.unreadOrphanPublications,
     queryFn: getUnreadOrphanPublicationCount,
+    refetchInterval: 60_000,
+  })
+}
+
+export function useWebhookMovements() {
+  return useQuery({
+    queryKey: dashboardKeys.webhookMovements,
+    queryFn: getWebhookMovements,
+    refetchInterval: 60_000,
+  })
+}
+
+export function useUnreadPublicationsPreview() {
+  return useQuery({
+    queryKey: dashboardKeys.unreadPublicationsPreview,
+    queryFn: () => getUnreadPublicationsPreview(),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Only for `configuracoes:view` — the component that calls it is gated. */
+export function useWebhookHealth() {
+  return useQuery({
+    queryKey: dashboardKeys.webhookHealth,
+    queryFn: getWebhookHealth,
+    refetchInterval: 60_000,
+  })
+}
+
+export function usePortalAccessSummary() {
+  return useQuery({
+    queryKey: dashboardKeys.portalAccess,
+    queryFn: getPortalAccessSummary,
     refetchInterval: 60_000,
   })
 }

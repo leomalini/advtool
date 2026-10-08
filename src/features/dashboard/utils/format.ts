@@ -18,3 +18,8 @@ export function formatCount(value: number): string {
 export function formatWholeBRL(value: number): string {
   return wholeCurrencyFormat.format(value)
 }
+
+/** (1, 'entrega', 'entregas') → '1 entrega'; (1200, …) → '1.200 entregas'. */
+export function pluralize(count: number, singular: string, plural: string): string {
+  return `${formatCount(count)} ${count === 1 ? singular : plural}`
+}

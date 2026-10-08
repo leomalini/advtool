@@ -1,10 +1,13 @@
 # Dashboard — refatoração
 
 > **Status:** plano e decisões aprovados em 2026-10-07 (todas as
-> recomendações, e os quatro extras entram). PR 1 implementado no mesmo dia na
-> branch `feat/dashboard-estrutura` — ver "Como ficou" na fase. O mockup do
-> layout foi mostrado na conversa que gerou este documento; as seções "Layout" e
-> "Cards" descrevem o mesmo desenho.
+> recomendações, e os quatro extras entram). Os 5 PRs implementados e
+> commitados no mesmo dia, em branches empilhadas (sem push):
+> `feat/dashboard-estrutura` → `-monitoramento` → `-agenda-tarefas` →
+> `-financeiro` → `-extras`. **A migration 68 ainda não foi aplicada** — ela
+> precisa estar no banco antes do merge do PR 2. Ver "Como ficou" em cada fase.
+> O mockup do layout foi mostrado na conversa que gerou este documento; as
+> seções "Layout" e "Cards" descrevem o mesmo desenho.
 
 O dashboard hoje mostra contadores e um feed de atividades. A proposta é trocar
 por "o que pede ação hoje": o que chegou pelo monitoramento de processos, o que
@@ -169,10 +172,15 @@ N h", do item mais recente do card.
 `webhook_events`):
 
 - `provider = 'busca_processos'`, `is_test = false`: última entrega
-  (`received_at`), entregas em 24 h, recusadas esperando reprocessamento
-  (`status = 'invalid'` e `replayed_at` nulo — já tem índice) e `unmatched` dos
-  últimos 30 dias agrupadas por CNJ (`payload->processo->>numero_unico`),
-  ignorando o CNJ de sonda (só zeros).
+  (`received_at`), entregas em 24 h, recusadas esperando reprocessamento e
+  `unmatched` dos últimos 30 dias agrupadas por CNJ
+  (`payload->processo->>numero_unico`), ignorando o CNJ de sonda (só zeros).
+- Lida por `GET /api/webhooks/health`, e não do navegador: "recusada pendente"
+  é definida no servidor (`countPendingRejections`, que filtra os eventos com
+  tratamento) e aquele módulo arrasta o handler inteiro do webhook. A rota usa
+  o client de sessão — a RLS já é `configuracoes:view` — e reaproveita
+  `readLastOriginDelivery` e `countPendingRejections`, as mesmas funções da aba
+  Webhooks.
 - Processo monitorado sem cadastro aparece com "Cadastrar"; o resto leva a
   `/configuracoes?aba=webhooks`.
 
@@ -365,6 +373,42 @@ Pronto quando: as contagens do card batem com uma consulta direta no banco; o
 CNJ órfão leva ao cadastro já preenchido; a faixa não aparece para paralegal e
 finance.
 
+**Como ficou (2026-10-07, branch `feat/dashboard-monitoramento`, empilhada na
+do PR 1):**
+
+- Migration 68 escrita, **não aplicada**. O backfill usa os avisos E os
+  destinos `inserted` de `webhook_events` — o aviso é best-effort. Simulado só
+  para leitura no banco real: as duas fontes dão as mesmas 29 linhas; ficariam
+  29 `webhook`, 87 `sync` (43 em 10/09, 22 em 15/09, 22 em 16/09 — os dias de
+  cadastro) e 0 `manual`.
+- Enquanto a 68 não estiver aplicada, quem rodar esta branch (o `pnpm dev`
+  inclusive) vê "Não foi possível carregar as movimentações" na coluna — a
+  consulta filtra por uma coluna que ainda não existe.
+- `GET /api/webhooks/health` com `requirePermissionApi('configuracoes')` e
+  client de sessão; `readDashboardWebhookHealth` em
+  `lib/buscaprocessos/webhookHealth.ts`. A resposta leva também a janela em dias,
+  para a tela não importar o módulo de servidor por causa de uma constante.
+- Chaves sob `legalProcessKeys.all` (movimentações e saúde — cadastrar pelo
+  "Cadastrar" tira o CNJ da faixa) e sob `publicationKeys.unreadCount()` (a
+  prévia anda junto com o número). O flush do sino já invalida esses prefixos.
+- Movimentações agrupadas por processo (`groupProcessNews`, função pura), com
+  teto de 300 linhas por consulta e aviso se ele for atingido. Na linha, o CNJ
+  ocupa a largura toda; a hora de chegada foi para a linha de apoio.
+- Publicação: link esticado (o título cobre a linha com `::after`) e
+  "Cadastrar" por cima, na linha do aviso — link dentro de link não é HTML
+  válido, e um botão ao lado cortava o CNJ. Só aparece com `processos:create`.
+- Linha com pesos: `lg:col-span-7` + `lg:col-span-5` no `DashboardRow`, que cria
+  só as trilhas que os filhos pedem — sozinho, o card de monitoramento ocupa a
+  linha.
+- Conferido no banco real, só leitura, pelas funções de verdade: última entrega
+  07/10 04h29, 2 entregas em 24 h (recontagem bate), 0 recusadas pendentes,
+  `5018265-22.2026.8.08.0012` com 10 entregas sem destino; 29 movimentações em
+  30 dias viram 2 processos (11 + 18); prévia de publicações com 5, na ordem da
+  fila. Telas pela página temporária: admin com faixa em alerta, advogado com
+  tudo vazio, paralegal (sem faixa, com "Cadastrar") e financeiro (sem faixa,
+  sem "Cadastrar"); desktop, celular, claro e escuro. Rota sem sessão: 401.
+  `tsc`, lint e build ok.
+
 ### PR 3 — Agenda e tarefas
 
 - Agenda da semana e Minhas tarefas; sai `AgendaHojeCard`.
@@ -372,6 +416,42 @@ finance.
 Pronto quando: evento de vários dias aparece em cada dia; concluir uma tarefa
 no dashboard reflete em `/agenda` e `/tarefas`; editar um evento pelo detalhe
 atualiza o card.
+
+**Como ficou (2026-10-07, branch `feat/dashboard-agenda-tarefas`, empilhada na
+do PR 2):**
+
+- `AgendaWeekCard`: `useEvents` e `useTasksInRange` com as chaves da Agenda, e o
+  mesmo modelo de item (`eventToAgendaItem`/`taskToAgendaItem`,
+  `indexEventsByDay`, `compareDaySegments`). Some o evento que já terminou e a
+  tarefa concluída — a regra do "Próximos 7 dias" da Agenda. Clicar num dia da
+  faixa filtra; "Ver a semana" volta. Até 8 linhas, com "e mais N na Agenda".
+- `TasksCard` (título "Tarefas", porque alterna Minhas · Escritório):
+  `useTasks`, o cache do quadro, com `collapseRecurringTasks` — de uma série,
+  só as atrasadas e a próxima pendente — e `isTaskOverdue`, as regras do quadro.
+  Até 6 linhas, atrasadas primeiro; as sem data só entram na contagem.
+- Concluir pelo card tira a tarefa da lista na hora e mostra "Tarefa
+  concluída · Desfazer" (`useCompleteTask`). Desfazer devolve para "A Fazer",
+  como desmarcar na Agenda. Sem `tarefas:update` o círculo é só ícone.
+- Linhas com botão esticado: o título cobre a linha com `::after` e o círculo
+  de concluir fica por cima — botão dentro de botão não é HTML válido.
+- Os detalhes (`EventDetailModal`, `TaskDetailModal`) abrem no próprio
+  dashboard.
+- `useEvents`, `useTasks` e `useTasksInRange` ganharam `refetchInterval`
+  opcional: o dashboard repergunta a cada minuto, como o card antigo fazia; as
+  outras telas seguem atualizando só pelas mutações.
+- `EVENT_SELECT` passou a embutir o cliente (`CalendarEvent.client`), para o
+  card mostrar de quem é o compromisso sem uma consulta paralela. Nenhuma
+  escrita reaproveita o objeto lido (todas montam o payload do formulário).
+- Saíram `AgendaHojeCard`, `getUpcomingEvents`, `useUpcomingEvents` e
+  `dashboardKeys.upcomingEvents` (com a invalidação em `useEventMutations`).
+- O `EEE` do ptBR devolve o nome inteiro do dia ("quarta"); a faixa usa as três
+  primeiras letras.
+- Conferido: `getEvents` real com o cliente embutido (12 eventos em ±60 dias; o
+  único com `client_id` veio com o cliente); 14 tarefas, 9 de série. Telas pela
+  página temporária: layout 7/5, faixa (contagem, "+1", rótulos acessíveis),
+  filtro por dia, Minhas/Escritório, detalhes abrindo e fechando, círculo por
+  cima do botão esticado, financeiro sem círculo clicável, estados vazios e
+  celular (sete dias de 36 px, sem rolagem lateral). `tsc`, lint e build ok.
 
 ### PR 4 — Financeiro e InfinitePay
 
@@ -382,6 +462,40 @@ atualiza o card.
 Pronto quando: os números batem com os da página do Financeiro; sem InfiniteTag
 aparece o atalho para configurar; paralegal não vê o card.
 
+**Como ficou (2026-10-07, branch `feat/dashboard-financeiro`, empilhada na do
+PR 3):**
+
+- `FinanceCard` em linha inteira, três colunas: o mês (recebido, "pela
+  InfinitePay", despesas, resultado, e "A receber" com a barra das três
+  parcelas), as cobranças por link e o fluxo de 6 meses.
+- `getFinancialSummary` ganhou `receivedViaInfinitePay` e
+  `receivedViaInfinitePayCount`: as linhas do recebido no mês que têm cobrança
+  `paid` (`summarizePaymentCharges`), pelo valor do lançamento. A consulta do
+  resumo embute `payment_charges(status)`; a do fluxo de caixa não muda.
+- `getLiveCharges` (links `creating`/`open`, os mais antigos primeiro) e
+  `getRecentPayments(30)` (sem estornados, com a cobrança embutida), sob
+  `paymentChargeKeys`. "Pago num link cancelado" vira alerta na linha.
+- WhatsApp no card abre o contato a escolher (`buildWhatsAppUrl(null, …)`), com
+  a mensagem pronta: o telefone do cliente exige carregar o cadastro de cada um
+  (`useCliente`), o que o detalhe do lançamento já faz.
+- Sem InfiniteTag e sem histórico: convite para configurar — com link só para
+  `configuracoes:manage`. Com histórico, as listas aparecem mesmo sem a tag (os
+  links seguem pagáveis).
+- `/financeiro?situacao=` (`parseSituationFilter` só aceita as situações
+  conhecidas) abre a lista filtrada; o indicador "A receber" e cada parcela da
+  barra usam isso. A `key` da página inclui a situação, para remontar.
+- O flush do sino invalida `financialEntryKeys.all` e `paymentChargeKeys.all`
+  quando chega aviso `pagamento_*` — a baixa acontece no servidor.
+- Saiu o `FinanceiroResumo`.
+- Conferido no banco real, só leitura, pelas funções de verdade: recebido no mês
+  R$ 1 (o Pix de teste), todo pela InfinitePay — bate com a recontagem; "A
+  receber" R$ 2.000 = 400 + 1.000 + 600; 1 link em aberto de R$ 400; 1
+  pagamento recente (Pix, pelo retorno, com comprovante). Telas pela página
+  temporária: três colunas, proporções da barra, links por situação, mensagem
+  do WhatsApp, "gerando o link" sem ações, alerta de link cancelado, gráfico
+  (12 barras), sem conta com e sem `configuracoes:manage`, celular. `tsc`, lint
+  e build ok.
+
 ### PR 5 — Extras
 
 Equipe (sai o `AreasChart` como card próprio), Portal do cliente e Pendências
@@ -390,6 +504,32 @@ de cadastro.
 Pronto quando: as contagens do portal batem com `client_portal_access_log` no
 banco; Pendências não aparece para finance (sem `pendencias:view`); a aba de
 áreas mostra o mesmo gráfico de hoje.
+
+**Como ficou (2026-10-07, branch `feat/dashboard-extras`, empilhada na do
+PR 4):**
+
+- `TeamCard` com abas "Pessoas" e "Áreas". `AdvogadosCard` virou
+  `WorkloadList` (só o conteúdo, agora com tarefas abertas e atrasadas por
+  pessoa, pela regra de séries do quadro) e `AreasChart` virou
+  `CasesByAreaChart` (o mesmo gráfico). A aba só monta quando aberta, então a
+  consulta de áreas espera o clique.
+- `PortalCard` (`clientes:view`): acessos liberados em 30 dias, clientes
+  distintos, links ativos (não revogados e não expirados), os 3 últimos acessos
+  e as recusas que importam — documento errado e excesso de tentativas. Token
+  inválido ou revogado fica de fora: é link velho ou varredura (19 no banco em
+  30 dias). Chave própria, com refetch de um minuto: quem grava os acessos é o
+  portal, no servidor.
+- `PendenciesCard` (`pendencias:view`): as mesmas duas consultas da página de
+  Pendências, contadas, com quantas são de severidade alta.
+- Linha final: Equipe 6/12 · Portal 3/12 · Pendências 3/12. Para o perfil
+  finance (sem `pendencias:view`) fica 6/9 · 3/9, sem buraco.
+- `useTasks` aceita `enabled`, para a lista da equipe não buscar tarefas sem
+  `tarefas:view`.
+- Conferido: `getPortalAccessSummary` real batendo com a recontagem (8 acessos,
+  2 clientes, 0 recusas, 2 links ativos). Tela inteira pela página temporária:
+  as cinco linhas nas larguras do plano, abas, perfil finance. `tsc`, lint e
+  build ok (um build falhou uma vez em `next/font/google` com o servidor de dev
+  ligado e passou na repetição, sem mudança de código).
 
 ## Verificação
 

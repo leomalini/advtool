@@ -4,15 +4,19 @@ import { Fragment } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardMetrics } from "./DashboardMetrics";
 import { DashboardRow } from "./DashboardRow";
+import { MonitoringCard } from "./MonitoringCard";
+import { AgendaWeekCard } from "./AgendaWeekCard";
+import { TasksCard } from "./TasksCard";
 import { PrazosCard } from "./PrazosCard";
-import { AgendaHojeCard } from "./AgendaHojeCard";
-import { AreasChart } from "./AreasChart";
-import { AdvogadosCard } from "./AdvogadosCard";
-import { FinanceiroResumo } from "./FinanceiroResumo";
+import { FinanceCard } from "./FinanceCard";
+import { TeamCard } from "./TeamCard";
+import { PortalCard } from "./PortalCard";
+import { PendenciesCard } from "./PendenciesCard";
 import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useCurrentProfile } from "@/hooks/useProfiles";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getDisplayName } from "@/utils/profile";
+import { pluralize } from "../utils/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -27,10 +31,6 @@ function getGreeting(): string {
  * Goes through getDisplayName because seeded profiles may hold an e-mail. */
 function firstName(fullName: string): string {
   return getDisplayName(fullName).trim().split(/\s+/)[0];
-}
-
-function pluralize(n: number, singular: string, plural: string): string {
-  return `${n} ${n === 1 ? singular : plural}`;
 }
 
 /**
@@ -92,17 +92,28 @@ export function DashboardContent() {
         </DashboardRow>
       ) : (
         <>
-          {/* ── Prazos + Agenda ── */}
+          {/* ── Monitoramento + Agenda ── */}
           <DashboardRow>
-            {can("crm", "view") && <PrazosCard />}
-            {can("agenda", "view") && <AgendaHojeCard />}
+            {(can("processos", "view") || can("publicacoes", "view")) && (
+              <MonitoringCard className="lg:col-span-7" />
+            )}
+            {can("agenda", "view") && <AgendaWeekCard className="lg:col-span-5" />}
           </DashboardRow>
 
-          {/* ── Áreas + Advogados + Financeiro ── */}
+          {/* ── Tarefas + Prazos ── */}
           <DashboardRow>
-            {can("crm", "view") && <AreasChart />}
-            {can("crm", "view") && <AdvogadosCard />}
-            {can("financeiro", "view") && <FinanceiroResumo />}
+            {can("tarefas", "view") && <TasksCard />}
+            {can("crm", "view") && <PrazosCard />}
+          </DashboardRow>
+
+          {/* ── Financeiro ── */}
+          {can("financeiro", "view") && <FinanceCard />}
+
+          {/* ── Equipe + Portal + Pendências ── */}
+          <DashboardRow>
+            {can("crm", "view") && <TeamCard className="lg:col-span-6" />}
+            {can("clientes", "view") && <PortalCard className="lg:col-span-3" />}
+            {can("pendencias", "view") && <PendenciesCard className="lg:col-span-3" />}
           </DashboardRow>
         </>
       )}
