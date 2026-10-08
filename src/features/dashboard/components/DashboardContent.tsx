@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardMetrics } from "./DashboardMetrics";
 import { DashboardRow } from "./DashboardRow";
+import { MonitoringCard } from "./MonitoringCard";
 import { PrazosCard } from "./PrazosCard";
 import { AgendaHojeCard } from "./AgendaHojeCard";
 import { AreasChart } from "./AreasChart";
@@ -13,6 +14,7 @@ import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useCurrentProfile } from "@/hooks/useProfiles";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getDisplayName } from "@/utils/profile";
+import { pluralize } from "../utils/format";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -27,10 +29,6 @@ function getGreeting(): string {
  * Goes through getDisplayName because seeded profiles may hold an e-mail. */
 function firstName(fullName: string): string {
   return getDisplayName(fullName).trim().split(/\s+/)[0];
-}
-
-function pluralize(n: number, singular: string, plural: string): string {
-  return `${n} ${n === 1 ? singular : plural}`;
 }
 
 /**
@@ -92,17 +90,30 @@ export function DashboardContent() {
         </DashboardRow>
       ) : (
         <>
-          {/* ── Prazos + Agenda ── */}
+          {/* ── Monitoramento + Agenda ── */}
           <DashboardRow>
-            {can("crm", "view") && <PrazosCard />}
-            {can("agenda", "view") && <AgendaHojeCard />}
+            {(can("processos", "view") || can("publicacoes", "view")) && (
+              <MonitoringCard className="lg:col-span-7" />
+            )}
+            {can("agenda", "view") && (
+              // Invólucro só enquanto este card não aceita `className` — a
+              // agenda da semana o substitui (docs/dashboard.md, PR 3).
+              <div className="grid lg:col-span-5">
+                <AgendaHojeCard />
+              </div>
+            )}
           </DashboardRow>
 
-          {/* ── Áreas + Advogados + Financeiro ── */}
+          {/* ── Prazos + Financeiro ── */}
+          <DashboardRow>
+            {can("crm", "view") && <PrazosCard />}
+            {can("financeiro", "view") && <FinanceiroResumo />}
+          </DashboardRow>
+
+          {/* ── Áreas + Advogados ── */}
           <DashboardRow>
             {can("crm", "view") && <AreasChart />}
             {can("crm", "view") && <AdvogadosCard />}
-            {can("financeiro", "view") && <FinanceiroResumo />}
           </DashboardRow>
         </>
       )}
