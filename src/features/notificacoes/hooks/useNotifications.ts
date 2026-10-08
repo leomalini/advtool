@@ -8,6 +8,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
+import { financialEntryKeys } from '@/features/financeiro/hooks/useFinancialEntries'
+import { paymentChargeKeys } from '@/features/financeiro/hooks/usePaymentCharges'
 import {
   getRecentNotifications,
   countUnreadNotifications,
@@ -151,6 +153,13 @@ export function useRealtimeNotifications(): void {
       queryClient.invalidateQueries({ queryKey: notificationKeys.all })
       queryClient.invalidateQueries({ queryKey: publicationKeys.all })
       queryClient.invalidateQueries({ queryKey: legalProcessKeys.all })
+      // A baixa pela InfinitePay acontece no servidor (webhook ou retorno do
+      // cliente): o aviso é o único sinal que a tela recebe. Só quem vê o
+      // Financeiro recebe esses avisos — a RLS de `notifications` é por linha.
+      if (batch.some((n) => n.kind === 'pagamento_recebido' || n.kind === 'pagamento_alerta')) {
+        queryClient.invalidateQueries({ queryKey: financialEntryKeys.all })
+        queryClient.invalidateQueries({ queryKey: paymentChargeKeys.all })
+      }
 
       if (batch.length === 1) {
         const [notification] = batch

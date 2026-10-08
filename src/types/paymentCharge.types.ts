@@ -100,6 +100,15 @@ export interface PaymentChargeWithTransactions extends PaymentCharge {
   transactions: PaymentTransaction[]
 }
 
+/** Um pagamento com o bastante da cobrança para a lista do dashboard dizer de
+ * quê e de quem foi. */
+export interface RecentPayment extends PaymentTransaction {
+  charge: Pick<
+    PaymentCharge,
+    'id' | 'financial_entry_id' | 'description' | 'customer_name' | 'status' | 'canceled_at'
+  > | null
+}
+
 /** O que a lista de lançamentos embute de cada cobrança: o bastante para o
  * ícone da linha e para as travas. */
 export interface PaymentChargeSummary {

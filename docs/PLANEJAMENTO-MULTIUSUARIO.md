@@ -72,7 +72,7 @@ Recurso × ação. Ações: `view`, `create`, `update`, `delete`, `manage`.
 | `configuracoes` | manage² | view | — | — |
 | `usuarios` | manage | — | — | — |
 
-¹ O card `FinanceiroResumo` do Dashboard é condicionado a `financeiro:view`, não ao recurso `dashboard`.
+¹ O card financeiro do Dashboard (`FinanceCard`, que substituiu o `FinanceiroResumo` em 2026-10 — ver `docs/dashboard.md`) é condicionado a `financeiro:view`, não ao recurso `dashboard`. Desde a mesma refatoração, todo card do Dashboard é condicionado à permissão do que lê.
 ² `configuracoes:manage` cobre workflows, tipos de evento, áreas jurídicas e etiquetas.
 
 **Regra de leitura da matriz**: ausência de linha = negado. Não existe "herança" entre

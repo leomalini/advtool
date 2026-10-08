@@ -103,7 +103,7 @@ function ReceivableMetric() {
       hintTone={overdue > 0 ? 'danger' : 'muted'}
       icon={Wallet}
       variant="success"
-      href="/financeiro"
+      href="/financeiro?situacao=a_receber"
     />
   )
 }
