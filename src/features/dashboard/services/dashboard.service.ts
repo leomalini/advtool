@@ -1,9 +1,17 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import type { CalendarEvent } from '@/types/event.types'
-import { startOfWeek, endOfWeek, startOfDay, addDays, format } from 'date-fns'
+import type { LegalProcessMovementWithContext } from '@/types/legalProcess.types'
+import type { Publication } from '@/types/publication.types'
+// Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
+// para o navegador.
+import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
+import { startOfWeek, endOfWeek, startOfDay, addDays, subDays, format } from 'date-fns'
 
 const supabase = createClient()
+
+/** How far back the monitoring card looks — docs/dashboard.md, decision 4. */
+export const MONITORING_WINDOW_DAYS = 7
 
 /** The header line under the greeting. */
 export interface DashboardStats {
@@ -137,6 +145,93 @@ export async function getUnreadOrphanPublicationCount(): Promise<number> {
     .is('legal_process_id', null)
 
   return countOf(result)
+}
+
+// ── Monitoramento ────────────────────────────────────────────────────────────
+
+/** A movement as the monitoring card reads it — `raw_data` and the rest of the
+ * row stay behind; the description alone is often a long court text. */
+export type WebhookMovement = Pick<
+  LegalProcessMovementWithContext,
+  'id' | 'legal_process_id' | 'movement_date' | 'title' | 'description' | 'created_at' | 'legal_process'
+>
+
+export interface WebhookMovementsResult {
+  /** Newest arrival first. */
+  movements: WebhookMovement[]
+  /** The cap was hit: the oldest arrivals of the window were left out, so the
+   * counts per processo may be short. */
+  truncated: boolean
+}
+
+/** Plenty for a week of a small office (the busiest processo got 42 in a month
+ * in 2026); the card prints five processos either way. */
+const WEBHOOK_MOVEMENTS_CAP = 300
+
+/** What the monitoring webhook delivered in the window. Only `received_via =
+ * 'webhook'`: registering a processo imports its whole history at once, and
+ * that is not news (migration 68). */
+export async function getWebhookMovements(): Promise<WebhookMovementsResult> {
+  const since = subDays(new Date(), MONITORING_WINDOW_DAYS).toISOString()
+
+  const { data, error } = await supabase
+    .from('legal_process_movements')
+    .select(`
+      id, legal_process_id, movement_date, title, description, created_at,
+      legal_process:legal_processes(
+        id, cnj_number, court,
+        crm_items:crm_items!crm_items_legal_process_id_fkey(id, workflow_id, title, client:clients(type, name, company_name, trade_name))
+      )
+    `)
+    .eq('received_via', 'webhook')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(WEBHOOK_MOVEMENTS_CAP)
+
+  if (error) throw error
+
+  const movements = (data ?? []) as unknown as WebhookMovement[]
+  return { movements, truncated: movements.length === WEBHOOK_MOVEMENTS_CAP }
+}
+
+export type PublicationPreview = Pick<
+  Publication,
+  | 'id'
+  | 'sequence_number'
+  | 'cnj_number'
+  | 'legal_process_id'
+  | 'diario_sigla'
+  | 'title'
+  | 'publication_date'
+  | 'created_at'
+>
+
+/** The head of the unread queue, in the order `/publicacoes` lists it. */
+export async function getUnreadPublicationsPreview(limit = 5): Promise<PublicationPreview[]> {
+  const { data, error } = await supabase
+    .from('publications')
+    .select('id, sequence_number, cnj_number, legal_process_id, diario_sigla, title, publication_date, created_at')
+    .is('duplicate_of_id', null)
+    .is('read_at', null)
+    .order('publication_date', { ascending: false })
+    .order('sequence_number', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return (data ?? []) as PublicationPreview[]
+}
+
+/** The integration strip, from `GET /api/webhooks/health` — a route because
+ * "pending refusal" is defined server-side, next to the replay. */
+export async function getWebhookHealth(): Promise<DashboardWebhookHealth> {
+  const response = await fetch('/api/webhooks/health')
+  const body: unknown = await response.json().catch(() => null)
+
+  if (!response.ok || body === null) {
+    const message = (body as { error?: string } | null)?.error
+    throw new Error(message ?? 'Não foi possível ler as entregas do webhook.')
+  }
+  return body as DashboardWebhookHealth
 }
 
 /** Events that haven't ended yet, for the "Próximos Eventos" card. Only events

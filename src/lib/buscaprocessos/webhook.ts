@@ -308,6 +308,8 @@ async function saveMovimentacao(
         title: movimentacao.classificacao_predita?.nome ?? null,
         kind: 'movimentacao',
         source: 'busca_processos',
+        // O que o dashboard conta como novidade do monitoramento (migration 68).
+        received_via: 'webhook',
         external_hash: externalHash,
         raw_data: movimentacao,
       },
