@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Kanban, List } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
 import { CasoModal } from "./CasoModal";
 import { CasoForm } from "./CasoForm";
 import { useCrmUiStore } from "../stores/casos.store";
-import { useCrmItems, useCrmItemCounts } from "../hooks/useCrmItems";
+import { useCrmItem, useCrmItems, useCrmItemCounts } from "../hooks/useCrmItems";
 import { useCreateCrmItem, useUpdateCrmItem } from "../hooks/useCrmItemMutations";
 import { useWorkflows } from "../hooks/useWorkflows";
 import type { CrmItemInput } from "@/schemas/crmItem.schema";
@@ -24,8 +24,17 @@ import { Can } from '@/components/shared/Can'
 
 type ViewMode = "kanban" | "table";
 
-export function CrmWorkboard() {
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState("wf-negociacao");
+const DEFAULT_WORKFLOW_ID = "wf-negociacao";
+
+/** `initialItemId`: o card que o `?id=` da URL mandou abrir (a lista de casos
+ * do cliente linka para cá). */
+export function CrmWorkboard({ initialItemId }: { initialItemId?: string }) {
+  const { data: initialItem } = useCrmItem(initialItemId ?? "");
+  // O fluxo escolhido nas abas; até alguém escolher, o do card pedido pela URL.
+  // Derivado, e não copiado para o estado num efeito: o card chega depois do
+  // primeiro render, e a escolha do usuário continua valendo por cima dele.
+  const [pickedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const selectedWorkflowId = pickedWorkflowId ?? initialItem?.workflow_id ?? DEFAULT_WORKFLOW_ID;
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [filters, setFilters] = useState<CrmFilters>(emptyCrmFilters);
@@ -51,6 +60,22 @@ export function CrmWorkboard() {
 
   const createCase = useCreateCrmItem(selectedWorkflowId);
   const updateCase = useUpdateCrmItem(selectedCaseId ?? "", selectedWorkflowId);
+
+  // Abre o card da URL uma vez só: depois de fechado, uma edição que devolva o
+  // card com outros dados não pode reabri-lo. O modal vive num store externo,
+  // por isso o efeito — não é estado do React a sincronizar.
+  const openedFromUrl = useRef(false);
+  useEffect(() => {
+    if (!initialItem || openedFromUrl.current) return;
+    openedFromUrl.current = true;
+    openModal(initialItem.id);
+  }, [initialItem, openModal]);
+
+  function handleCloseModal() {
+    closeModal();
+    // Sem isto, recarregar a página reabriria o card.
+    if (initialItemId) window.history.replaceState(null, "", "/crm");
+  }
 
   async function handleCreateSubmit(data: CrmItemInput) {
     await createCase.mutateAsync(data);
@@ -178,7 +203,7 @@ export function CrmWorkboard() {
         <CasoModal
           caso={selectedCase}
           open={modalOpen && !editModalOpen}
-          onClose={closeModal}
+          onClose={handleCloseModal}
           onEdit={handleEditOpen}
         />
       )}
