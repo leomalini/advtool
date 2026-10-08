@@ -655,7 +655,7 @@ export function FinanceiroContent({ initialEntryId }: { initialEntryId?: string 
 
                       {entry.legal_process ? (
                         <Link
-                          href={`/processos?id=${entry.legal_process.id}`}
+                          href={`/processos/${entry.legal_process.id}`}
                           onClick={(e) => e.stopPropagation()}
                           className="text-xs font-mono text-muted-foreground truncate hover:text-foreground hover:underline"
                           title={entry.legal_process.cnj_number ?? undefined}

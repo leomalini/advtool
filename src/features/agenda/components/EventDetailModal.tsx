@@ -197,7 +197,7 @@ export function EventDetailModal({
               {linkedProcesso && (
                 <InfoRow icon={<Gavel className="h-4 w-4 text-muted-foreground/60" />}>
                   <Link
-                    href={`/processos?id=${linkedProcesso.id}`}
+                    href={`/processos/${linkedProcesso.id}`}
                     className="group block"
                   >
                     <p className="text-sm group-hover:underline">

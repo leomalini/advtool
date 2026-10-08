@@ -166,7 +166,7 @@ function ProcessoPendencyCard({ pendency }: { pendency: ProcessoPendency }) {
           exigir qualquer aba (cadastrar CNJ, criar tarefa, vincular cliente),
           então o destino certo é o próprio processo. */}
       <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 shrink-0">
-        <Link href={`/processos?id=${pendency.legalProcessId}`}>
+        <Link href={`/processos/${pendency.legalProcessId}`}>
           Abrir
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>

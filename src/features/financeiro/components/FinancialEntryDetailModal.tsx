@@ -280,7 +280,7 @@ export function FinancialEntryDetailModal({
 
                 {processo && (
                   <InfoRow icon={<Gavel className="h-4 w-4 text-muted-foreground/60" />}>
-                    <Link href={`/processos?id=${processo.id}`} className="group block">
+                    <Link href={`/processos/${processo.id}`} className="group block">
                       <p className="text-sm group-hover:underline">
                         {getCrmItemClientName(processo.crm_item)}
                       </p>

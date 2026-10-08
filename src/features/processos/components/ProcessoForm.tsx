@@ -857,7 +857,7 @@ export function ProcessoForm({
                               {getCrmItemClientName(duplicateProcess.crm_item) ? ` para ${getCrmItemClientName(duplicateProcess.crm_item)}` : ''}.
                             </p>
                             <Link
-                              href={`/processos?id=${duplicateProcess.id}`}
+                              href={`/processos/${duplicateProcess.id}`}
                               className="inline-flex items-center gap-1 text-xs font-semibold text-destructive hover:underline mt-0.5"
                             >
                               Ver processo existente

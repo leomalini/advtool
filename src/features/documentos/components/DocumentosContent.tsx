@@ -257,7 +257,7 @@ export function DocumentosContent() {
 
                       {legalProcess ? (
                         <Link
-                          href={`/processos?id=${legalProcess.id}`}
+                          href={`/processos/${legalProcess.id}`}
                           className="text-xs font-mono text-muted-foreground truncate hover:text-foreground hover:underline"
                         >
                           {legalProcess.cnj_number ?? 'Sem CNJ'}
