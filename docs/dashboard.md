@@ -415,6 +415,42 @@ Pronto quando: evento de vários dias aparece em cada dia; concluir uma tarefa
 no dashboard reflete em `/agenda` e `/tarefas`; editar um evento pelo detalhe
 atualiza o card.
 
+**Como ficou (2026-10-07, branch `feat/dashboard-agenda-tarefas`, empilhada na
+do PR 2):**
+
+- `AgendaWeekCard`: `useEvents` e `useTasksInRange` com as chaves da Agenda, e o
+  mesmo modelo de item (`eventToAgendaItem`/`taskToAgendaItem`,
+  `indexEventsByDay`, `compareDaySegments`). Some o evento que já terminou e a
+  tarefa concluída — a regra do "Próximos 7 dias" da Agenda. Clicar num dia da
+  faixa filtra; "Ver a semana" volta. Até 8 linhas, com "e mais N na Agenda".
+- `TasksCard` (título "Tarefas", porque alterna Minhas · Escritório):
+  `useTasks`, o cache do quadro, com `collapseRecurringTasks` — de uma série,
+  só as atrasadas e a próxima pendente — e `isTaskOverdue`, as regras do quadro.
+  Até 6 linhas, atrasadas primeiro; as sem data só entram na contagem.
+- Concluir pelo card tira a tarefa da lista na hora e mostra "Tarefa
+  concluída · Desfazer" (`useCompleteTask`). Desfazer devolve para "A Fazer",
+  como desmarcar na Agenda. Sem `tarefas:update` o círculo é só ícone.
+- Linhas com botão esticado: o título cobre a linha com `::after` e o círculo
+  de concluir fica por cima — botão dentro de botão não é HTML válido.
+- Os detalhes (`EventDetailModal`, `TaskDetailModal`) abrem no próprio
+  dashboard.
+- `useEvents`, `useTasks` e `useTasksInRange` ganharam `refetchInterval`
+  opcional: o dashboard repergunta a cada minuto, como o card antigo fazia; as
+  outras telas seguem atualizando só pelas mutações.
+- `EVENT_SELECT` passou a embutir o cliente (`CalendarEvent.client`), para o
+  card mostrar de quem é o compromisso sem uma consulta paralela. Nenhuma
+  escrita reaproveita o objeto lido (todas montam o payload do formulário).
+- Saíram `AgendaHojeCard`, `getUpcomingEvents`, `useUpcomingEvents` e
+  `dashboardKeys.upcomingEvents` (com a invalidação em `useEventMutations`).
+- O `EEE` do ptBR devolve o nome inteiro do dia ("quarta"); a faixa usa as três
+  primeiras letras.
+- Conferido: `getEvents` real com o cliente embutido (12 eventos em ±60 dias; o
+  único com `client_id` veio com o cliente); 14 tarefas, 9 de série. Telas pela
+  página temporária: layout 7/5, faixa (contagem, "+1", rótulos acessíveis),
+  filtro por dia, Minhas/Escritório, detalhes abrindo e fechando, círculo por
+  cima do botão esticado, financeiro sem círculo clicável, estados vazios e
+  celular (sete dias de 36 px, sem rolagem lateral). `tsc`, lint e build ok.
+
 ### PR 4 — Financeiro e InfinitePay
 
 - `receivedViaInfinitePay` no resumo; consultas de cobranças em aberto e

@@ -5,8 +5,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardMetrics } from "./DashboardMetrics";
 import { DashboardRow } from "./DashboardRow";
 import { MonitoringCard } from "./MonitoringCard";
+import { AgendaWeekCard } from "./AgendaWeekCard";
+import { TasksCard } from "./TasksCard";
 import { PrazosCard } from "./PrazosCard";
-import { AgendaHojeCard } from "./AgendaHojeCard";
 import { AreasChart } from "./AreasChart";
 import { AdvogadosCard } from "./AdvogadosCard";
 import { FinanceiroResumo } from "./FinanceiroResumo";
@@ -95,23 +96,18 @@ export function DashboardContent() {
             {(can("processos", "view") || can("publicacoes", "view")) && (
               <MonitoringCard className="lg:col-span-7" />
             )}
-            {can("agenda", "view") && (
-              // Invólucro só enquanto este card não aceita `className` — a
-              // agenda da semana o substitui (docs/dashboard.md, PR 3).
-              <div className="grid lg:col-span-5">
-                <AgendaHojeCard />
-              </div>
-            )}
+            {can("agenda", "view") && <AgendaWeekCard className="lg:col-span-5" />}
           </DashboardRow>
 
-          {/* ── Prazos + Financeiro ── */}
+          {/* ── Tarefas + Prazos ── */}
           <DashboardRow>
+            {can("tarefas", "view") && <TasksCard />}
             {can("crm", "view") && <PrazosCard />}
-            {can("financeiro", "view") && <FinanceiroResumo />}
           </DashboardRow>
 
-          {/* ── Áreas + Advogados ── */}
+          {/* ── Financeiro + Áreas + Advogados ── */}
           <DashboardRow>
+            {can("financeiro", "view") && <FinanceiroResumo />}
             {can("crm", "view") && <AreasChart />}
             {can("crm", "view") && <AdvogadosCard />}
           </DashboardRow>

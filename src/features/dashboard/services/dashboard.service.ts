@@ -1,12 +1,11 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-import type { CalendarEvent } from '@/types/event.types'
 import type { LegalProcessMovementWithContext } from '@/types/legalProcess.types'
 import type { Publication } from '@/types/publication.types'
 // Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
 // para o navegador.
 import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
-import { startOfWeek, endOfWeek, startOfDay, addDays, subDays, format } from 'date-fns'
+import { startOfWeek, endOfWeek, addDays, subDays, format } from 'date-fns'
 
 const supabase = createClient()
 
@@ -232,30 +231,6 @@ export async function getWebhookHealth(): Promise<DashboardWebhookHealth> {
     throw new Error(message ?? 'Não foi possível ler as entregas do webhook.')
   }
   return body as DashboardWebhookHealth
-}
-
-/** Events that haven't ended yet, for the "Próximos Eventos" card. Only events
- * flagged to show in the agenda — the same filter the calendar page uses.
- *
- * "Not ended", not "not started": filtering on `start_at >= now` dropped an
- * event in progress, and today's all-day events as soon as their start passed.
- * All-day `end_at` is midnight of the last day (inclusive), so those are kept
- * through the whole of that day. */
-export async function getUpcomingEvents(limit = 6): Promise<CalendarEvent[]> {
-  const now = new Date()
-  const nowIso = now.toISOString()
-  const todayStartIso = startOfDay(now).toISOString()
-
-  const { data, error } = await supabase
-    .from('events')
-    .select('*, assignee:profiles!events_assigned_to_fkey(id, full_name, avatar_url, role, created_at), client:clients(id, type, name, company_name, trade_name)')
-    .eq('show_in_agenda', true)
-    .or(`end_at.gte."${nowIso}",and(all_day.eq.true,end_at.gte."${todayStartIso}")`)
-    .order('start_at')
-    .limit(limit)
-
-  if (error) throw error
-  return (data ?? []) as unknown as CalendarEvent[]
 }
 
 /** Case counts per legal area, for the areas chart. Items with no area set

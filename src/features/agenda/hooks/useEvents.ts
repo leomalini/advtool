@@ -15,10 +15,13 @@ export const eventKeys = {
     ['events', 'entity', legalProcessId ?? '-', crmItemIds.join(','), clientId ?? '-'] as const,
 }
 
-export function useEvents(from?: string, to?: string) {
+/** `refetchInterval`: o dashboard fica aberto o dia todo e repergunta a cada
+ * minuto; a Agenda atualiza pelas mutações. */
+export function useEvents(from?: string, to?: string, options: { refetchInterval?: number } = {}) {
   return useQuery({
     queryKey: from && to ? eventKeys.range(from, to) : eventKeys.all,
     queryFn: () => getEvents(from, to),
+    refetchInterval: options.refetchInterval,
   })
 }
 
