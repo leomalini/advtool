@@ -2,8 +2,9 @@
 
 import { Fragment } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { DashboardMetrics } from "./DashboardMetrics";
-import { DashboardRow } from "./DashboardRow";
+import { DashboardColumns } from "./DashboardColumns";
 import { MonitoringCard } from "./MonitoringCard";
 import { AgendaWeekCard } from "./AgendaWeekCard";
 import { TasksCard } from "./TasksCard";
@@ -17,6 +18,7 @@ import { useCurrentProfile } from "@/hooks/useProfiles";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getDisplayName } from "@/utils/profile";
 import { pluralize } from "../utils/format";
+import { ENTER_ANIMATION, enterDelay } from "../utils/motion";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -33,10 +35,19 @@ function firstName(fullName: string): string {
   return getDisplayName(fullName).trim().split(/\s+/)[0];
 }
 
+/** The cards a role can see, in the order of the column. */
+function visible(cards: (React.ReactElement | false)[]): React.ReactElement[] {
+  return cards.filter((card): card is React.ReactElement => card !== false);
+}
+
 /**
  * Every card is gated on the permission of what it reads. Without it the RLS
  * answers with an empty list, and the card would show zeros — worse than not
  * showing up, because it reads as "the office has nothing there".
+ *
+ * Each card carries two placement classes: `order-*`, its position when the
+ * two columns collapse into one (phone), and the entrance delay — staggered
+ * by its place in the column.
  */
 export function DashboardContent() {
   const { data: stats } = useDashboardStats();
@@ -59,10 +70,32 @@ export function DashboardContent() {
       ].filter((frase): frase is string => Boolean(frase))
     : [];
 
+  const main = visible([
+    (can("processos", "view") || can("publicacoes", "view")) && (
+      <MonitoringCard key="monitoring" className={cn("order-3", enterDelay(2))} />
+    ),
+    can("tarefas", "view") && <TasksCard key="tasks" className={cn("order-4", enterDelay(3))} />,
+    can("financeiro", "view") && (
+      <FinanceCard key="finance" className={cn("order-5", enterDelay(4))} />
+    ),
+  ]);
+
+  const aside = visible([
+    can("agenda", "view") && (
+      <AgendaWeekCard key="agenda" className={cn("order-1", enterDelay(2))} />
+    ),
+    can("crm", "view") && <PrazosCard key="deadlines" className={cn("order-2", enterDelay(3))} />,
+    can("pendencias", "view") && (
+      <PendenciesCard key="pendencies" className={cn("order-6", enterDelay(4))} />
+    ),
+    can("clientes", "view") && <PortalCard key="portal" className={cn("order-7", enterDelay(5))} />,
+    can("crm", "view") && <TeamCard key="team" className={cn("order-8", enterDelay(5))} />,
+  ]);
+
   return (
-    <div className="space-y-6">
+    <div className="@container/dashboard space-y-4">
       {/* ── Cabeçalho do dia ── */}
-      <div className="space-y-1">
+      <div className={cn("space-y-1 pb-2", ENTER_ANIMATION)}>
         <h1 className="text-2xl font-bold tracking-tight">
           {getGreeting()}
           {profile ? `, ${firstName(profile.full_name)}` : ""} 👋
@@ -81,41 +114,17 @@ export function DashboardContent() {
       {/* ── Indicadores ── */}
       {/* Sem indicador de tendência: não guardamos histórico para comparar
           períodos, e um número inventado aqui seria pior que nenhum. */}
-      <DashboardMetrics />
+      <DashboardMetrics className={cn(ENTER_ANIMATION, enterDelay(1))} />
 
       {/* `can()` responde false para tudo enquanto a matriz carrega: segurar as
-          linhas evita os cards sumirem e voltarem. */}
+          colunas evita os cards sumirem e voltarem. */}
       {permissionsLoading ? (
-        <DashboardRow>
-          <Skeleton className="h-72 rounded-xl" />
-          <Skeleton className="h-72 rounded-xl" />
-        </DashboardRow>
+        <DashboardColumns
+          main={[<Skeleton key="a" className="h-80 rounded-xl" />, <Skeleton key="b" className="h-64 rounded-xl" />]}
+          aside={[<Skeleton key="c" className="h-64 rounded-xl" />]}
+        />
       ) : (
-        <>
-          {/* ── Monitoramento + Agenda ── */}
-          <DashboardRow>
-            {(can("processos", "view") || can("publicacoes", "view")) && (
-              <MonitoringCard className="lg:col-span-7" />
-            )}
-            {can("agenda", "view") && <AgendaWeekCard className="lg:col-span-5" />}
-          </DashboardRow>
-
-          {/* ── Tarefas + Prazos ── */}
-          <DashboardRow>
-            {can("tarefas", "view") && <TasksCard />}
-            {can("crm", "view") && <PrazosCard />}
-          </DashboardRow>
-
-          {/* ── Financeiro ── */}
-          {can("financeiro", "view") && <FinanceCard />}
-
-          {/* ── Equipe + Portal + Pendências ── */}
-          <DashboardRow>
-            {can("crm", "view") && <TeamCard className="lg:col-span-6" />}
-            {can("clientes", "view") && <PortalCard className="lg:col-span-3" />}
-            {can("pendencias", "view") && <PendenciesCard className="lg:col-span-3" />}
-          </DashboardRow>
-        </>
+        <DashboardColumns main={main} aside={aside} />
       )}
     </div>
   );

@@ -69,73 +69,99 @@ export function WorkloadList() {
     return (
       <div className="space-y-3">
         {Array.from({ length: 2 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 w-full rounded-lg" />
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
         ))}
       </div>
     )
   }
 
   if (stats.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">Ninguém cadastrado.</p>
+    return <p className="py-2 text-sm text-muted-foreground">Ninguém cadastrado.</p>
   }
 
   return (
-    <ul className="space-y-5">
-      {stats.map(({ profile, total, processos, negociacao, tasks: load }) => {
-        const nome = getDisplayName(profile.full_name)
-        const progresso = Math.round((total / maxTotal) * 100)
+    <div className="space-y-3">
+      <ul className="space-y-3.5">
+        {stats.map(({ profile, total, processos, negociacao, tasks: load }) => {
+          const nome = getDisplayName(profile.full_name)
+          // The bar is the person's share of the busiest person's load, split
+          // by what the cases are: a full bar is the heaviest desk.
+          const others = Math.max(total - processos - negociacao, 0)
 
-        return (
-          <li key={profile.id} className="space-y-2">
-            <div className="flex items-center gap-2.5">
+          return (
+            <li
+              key={profile.id}
+              className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5"
+            >
               <div
                 className={cn(
-                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white text-xs font-bold',
+                  'row-span-2 flex size-8 shrink-0 items-center justify-center self-start rounded-full text-[11px] font-bold text-white',
                   getAvatarTone(profile.id)
                 )}
               >
                 {getInitials(nome)}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium leading-none">{nome}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{nome}</p>
+                <p className="truncate text-xs text-muted-foreground">
                   {profile.oab_number ? `OAB ${profile.oab_number}` : '—'}
                 </p>
               </div>
-              <span className="text-base font-bold tabular-nums">{total}</span>
-            </div>
-
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="text-right">
+                <p className="text-sm font-semibold tabular-nums">
+                  {pluralize(total, 'caso', 'casos')}
+                </p>
+                {showTasks && (
+                  <p className="text-xs whitespace-nowrap text-muted-foreground">
+                    {pluralize(load.open, 'tarefa', 'tarefas')}
+                    {load.overdue > 0 && (
+                      <span className="font-medium text-destructive">
+                        {' · '}
+                        {pluralize(load.overdue, 'atrasada', 'atrasadas')}
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
               <div
-                className="h-full rounded-full bg-accent-foreground transition-all duration-500"
-                style={{ width: `${progresso}%` }}
-              />
-            </div>
+                className="col-span-2 flex h-1.5 gap-0.5"
+                title={`${processos} em processo · ${negociacao} em negociação`}
+              >
+                {total === 0 ? (
+                  <span className="h-full w-full rounded-full bg-muted" />
+                ) : (
+                  <>
+                    {[
+                      { value: processos, className: 'bg-chart-1' },
+                      { value: negociacao, className: 'bg-chart-2' },
+                      { value: others, className: 'bg-muted-foreground/40' },
+                    ]
+                      .filter((part) => part.value > 0)
+                      .map((part) => (
+                        <span
+                          key={part.className}
+                          className={cn('h-full first:rounded-l-full last:rounded-r-full', part.className)}
+                          style={{ width: `${(part.value / maxTotal) * 100}%` }}
+                        />
+                      ))}
+                  </>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
 
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-info" />
-                {processos} em processo
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-chart-2" />
-                {negociacao} em negociação
-              </span>
-              {showTasks && (
-                <span>
-                  {pluralize(load.open, 'tarefa aberta', 'tarefas abertas')}
-                  {load.overdue > 0 && (
-                    <span className="font-medium text-destructive">
-                      {' · '}
-                      {pluralize(load.overdue, 'atrasada', 'atrasadas')}
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-          </li>
-        )
-      })}
-    </ul>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="size-2.5 rounded-[2px] bg-chart-1" />
+          Em processo
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="size-2.5 rounded-[2px] bg-chart-2" />
+          Em negociação
+        </span>
+      </div>
+    </div>
   )
 }

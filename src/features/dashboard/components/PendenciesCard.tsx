@@ -1,16 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { ClipboardList } from 'lucide-react'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CircleAlert, CircleCheck, ClipboardList } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useClientesPendencies } from '@/features/clientes/hooks/useClientes'
 import { useLegalProcessesPendencies } from '@/features/processos/hooks/useLegalProcesses'
 import { formatCount, pluralize } from '../utils/format'
+import { CardLink } from './CardLink'
+import { DashboardCard } from './DashboardCard'
+import { EmptyLine } from './EmptyLine'
 
-interface PendencyLineProps {
+interface PendencyTileProps {
   label: string
   total: number | undefined
   /** Issues with `severity: 'high'` — what blocks the work or may cost a deadline. */
@@ -19,24 +21,30 @@ interface PendencyLineProps {
   isLoading: boolean
 }
 
-function PendencyLine({ label, total, high, highLabel, isLoading }: PendencyLineProps) {
-  if (isLoading) return <Skeleton className="h-10 w-full rounded-lg" />
+function PendencyTile({ label, total, high, highLabel, isLoading }: PendencyTileProps) {
+  if (isLoading) return <Skeleton className="h-[72px] w-full rounded-lg" />
 
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        {high > 0 && <p className="text-[11px] text-destructive">{highLabel}</p>}
-      </div>
+    <Link
+      href="/pendencias"
+      className="block rounded-lg bg-muted/60 px-3 py-2.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <span
         className={cn(
-          'text-lg font-bold tabular-nums',
-          total ? 'text-foreground' : 'text-muted-foreground'
+          'block text-xl leading-tight font-bold',
+          !total && 'text-muted-foreground'
         )}
       >
         {total === undefined ? '—' : formatCount(total)}
       </span>
-    </div>
+      <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+      {high > 0 && (
+        <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-destructive">
+          <CircleAlert aria-hidden className="size-3 shrink-0" />
+          {highLabel}
+        </span>
+      )}
+    </Link>
   )
 }
 
@@ -59,47 +67,42 @@ export function PendenciesCard({ className }: PendenciesCardProps) {
     (!showClients || clients.data?.length === 0) && (!showProcesses || processes.data?.length === 0)
 
   return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <ClipboardList className="h-4 w-4 text-warning" />
-          Pendências de cadastro
-        </CardTitle>
-        <CardAction>
-          <Link
-            href="/pendencias"
-            className="text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Ver
-          </Link>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {allClear ? (
-          <p className="text-sm text-muted-foreground">Cadastros em dia.</p>
-        ) : (
-          <>
-            {showClients && (
-              <PendencyLine
-                label="Clientes"
-                total={clients.data?.length}
-                high={clientHigh}
-                highLabel={`${pluralize(clientHigh, 'trava', 'travam')} o trabalho`}
-                isLoading={clients.isLoading}
-              />
-            )}
-            {showProcesses && (
-              <PendencyLine
-                label="Processos"
-                total={processes.data?.length}
-                high={processHigh}
-                highLabel={`${pluralize(processHigh, 'pode', 'podem')} custar um prazo`}
-                isLoading={processes.isLoading}
-              />
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <DashboardCard
+      icon={ClipboardList}
+      tone="warning"
+      title="Pendências de cadastro"
+      action={allClear ? undefined : <CardLink href="/pendencias">Ver</CardLink>}
+      className={className}
+    >
+      {allClear ? (
+        <EmptyLine
+          icon={CircleCheck}
+          tone="success"
+          title="Cadastros em dia"
+          description="Nenhum dado faltando em clientes e processos."
+        />
+      ) : (
+        <div className={cn('grid gap-2 px-2 pb-1', showClients && showProcesses && 'grid-cols-2')}>
+          {showClients && (
+            <PendencyTile
+              label={clients.data?.length === 1 ? 'cliente' : 'clientes'}
+              total={clients.data?.length}
+              high={clientHigh}
+              highLabel={`${pluralize(clientHigh, 'trava', 'travam')} o trabalho`}
+              isLoading={clients.isLoading}
+            />
+          )}
+          {showProcesses && (
+            <PendencyTile
+              label={processes.data?.length === 1 ? 'processo' : 'processos'}
+              total={processes.data?.length}
+              high={processHigh}
+              highLabel={`${pluralize(processHigh, 'pode', 'podem')} custar um prazo`}
+              isLoading={processes.isLoading}
+            />
+          )}
+        </div>
+      )}
+    </DashboardCard>
   )
 }

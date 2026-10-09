@@ -13,8 +13,7 @@ import {
   startOfDay,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { AlertCircle, CalendarDays } from 'lucide-react'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { AlertCircle, CalendarCheck, CalendarDays } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { getAvatarTone, getDisplayName, getInitials } from '@/utils/profile'
@@ -47,6 +46,9 @@ import { useTasksInRange } from '@/features/tarefas/hooks/useTasks'
 import { TaskDetailModal } from '@/features/tarefas/components/TaskDetailModal'
 import { useCompleteTask } from '../hooks/useCompleteTask'
 import { pluralize } from '../utils/format'
+import { CardLink } from './CardLink'
+import { DashboardCard } from './DashboardCard'
+import { EmptyLine } from './EmptyLine'
 
 const DAYS = 7
 const MAX_DOTS = 3
@@ -110,7 +112,7 @@ function AgendaRow({ segment, eventTypes, onOpen, onToggleTask }: AgendaRowProps
     'relative flex items-start gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/50 ' +
     'has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring'
   const titleClass =
-    'block w-full truncate text-left text-sm font-medium after:absolute after:inset-0 ' +
+    'block w-full truncate text-left text-sm font-semibold after:absolute after:inset-0 ' +
     'focus-visible:outline-none'
 
   if (item.kind === 'task') {
@@ -123,7 +125,7 @@ function AgendaRow({ segment, eventTypes, onOpen, onToggleTask }: AgendaRowProps
           <button type="button" onClick={() => onOpen(item)} className={titleClass}>
             {item.title}
           </button>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground">
             {['Tarefa', time].filter(Boolean).join(' · ')}
           </p>
         </div>
@@ -150,10 +152,10 @@ function AgendaRow({ segment, eventTypes, onOpen, onToggleTask }: AgendaRowProps
         <button type="button" onClick={() => onOpen(item)} className={titleClass}>
           {event.title}
         </button>
-        <p className="truncate text-[11px] text-muted-foreground">{meta}</p>
+        <p className="truncate text-xs text-muted-foreground">{meta}</p>
       </div>
       {event.fatal_deadline && (
-        <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+        <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-semibold text-destructive">
           <AlertCircle className="h-3 w-3" />
           Prazo fatal
         </span>
@@ -249,136 +251,129 @@ export function AgendaWeekCard({ className }: AgendaWeekCardProps) {
   }
 
   return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-accent-foreground" />
-          Agenda da semana
-        </CardTitle>
-        <CardAction>
-          <Link
-            href="/agenda"
-            className="text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Abrir agenda
-          </Link>
-        </CardAction>
-      </CardHeader>
+    <DashboardCard
+      icon={CalendarDays}
+      tone="accent"
+      title="Agenda da semana"
+      action={<CardLink href="/agenda">Abrir agenda</CardLink>}
+      className={className}
+      bodyClassName="space-y-2 px-2 pb-2"
+    >
+      <div className="grid grid-cols-7 gap-1 px-2" role="group" aria-label="Próximos 7 dias">
+        {days.map((day) => {
+          const key = format(day, 'yyyy-MM-dd')
+          const segments = segmentsOf(key)
+          const active = selectedDay === key
 
-      <CardContent className="space-y-3">
-        <div className="grid grid-cols-7 gap-1" role="group" aria-label="Próximos 7 dias">
-          {days.map((day) => {
-            const key = format(day, 'yyyy-MM-dd')
-            const segments = segmentsOf(key)
-            const active = selectedDay === key
-
-            return (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={active}
-                aria-label={`${format(day, "EEEE, dd 'de' MMMM", { locale: ptBR })}: ${pluralize(
-                  segments.length,
-                  'compromisso',
-                  'compromissos'
-                )}`}
-                onClick={() => setSelectedDay(active ? null : key)}
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={active}
+              aria-label={`${format(day, "EEEE, dd 'de' MMMM", { locale: ptBR })}: ${pluralize(
+                segments.length,
+                'compromisso',
+                'compromissos'
+              )}`}
+              onClick={() => setSelectedDay(active ? null : key)}
+              className={cn(
+                'flex flex-col items-center gap-1 rounded-lg border py-1.5 transition-colors',
+                'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                active ? 'border-foreground/40 bg-muted/60' : 'border-transparent',
+                !active && isToday(day) && 'border-border'
+              )}
+            >
+              {/* Três letras: o `EEE` do ptBR devolve o nome inteiro ("quarta"),
+                  que não cabe em sete colunas. */}
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {format(day, 'EEEE', { locale: ptBR }).slice(0, 3)}
+              </span>
+              <span
                 className={cn(
-                  'flex flex-col items-center gap-1 rounded-lg border py-1.5 transition-colors',
-                  'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  active ? 'border-foreground/40 bg-muted/60' : 'border-transparent',
-                  !active && isToday(day) && 'border-border'
+                  'text-sm font-semibold tabular-nums',
+                  isToday(day) && 'text-accent-foreground'
                 )}
               >
-                {/* Três letras: o `EEE` do ptBR devolve o nome inteiro ("quarta"),
-                    que não cabe em sete colunas. */}
-                <span className="text-[10px] uppercase text-muted-foreground">
-                  {format(day, 'EEEE', { locale: ptBR }).slice(0, 3)}
-                </span>
-                <span
-                  className={cn(
-                    'text-sm font-semibold tabular-nums',
-                    isToday(day) && 'text-accent-foreground'
-                  )}
-                >
-                  {format(day, 'dd')}
-                </span>
-                <span className="flex h-2 items-center gap-0.5">
-                  {segments.slice(0, MAX_DOTS).map((segment) => (
-                    <ItemDot key={segment.item.id} item={segment.item} eventTypes={eventTypes} />
-                  ))}
-                  {segments.length > MAX_DOTS && (
-                    <span className="text-[9px] leading-none text-muted-foreground">
-                      +{segments.length - MAX_DOTS}
-                    </span>
-                  )}
-                </span>
-              </button>
-            )
-          })}
+                {format(day, 'dd')}
+              </span>
+              <span className="flex h-2 items-center gap-0.5">
+                {segments.slice(0, MAX_DOTS).map((segment) => (
+                  <ItemDot key={segment.item.id} item={segment.item} eventTypes={eventTypes} />
+                ))}
+                {segments.length > MAX_DOTS && (
+                  <span className="text-[9px] leading-none text-muted-foreground">
+                    +{segments.length - MAX_DOTS}
+                  </span>
+                )}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {isLoading && (
+        <div className="space-y-2 px-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full rounded-lg" />
+          ))}
         </div>
+      )}
 
-        {isLoading && (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full rounded-lg" />
+      {isError && (
+        <p className="px-2 py-3 text-sm text-muted-foreground">
+          Não foi possível carregar a agenda.
+        </p>
+      )}
+
+      {!isLoading && !isError && groups.length === 0 && (
+        <EmptyLine
+          icon={CalendarCheck}
+          tone="success"
+          title={selectedDay ? 'Dia livre' : 'Semana livre'}
+          description={selectedDay ? 'Nada marcado neste dia.' : 'Nada nos próximos 7 dias.'}
+        />
+      )}
+
+      {groups.map((group) => (
+        <section key={group.key} className="space-y-0.5">
+          <h3 className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {dayHeading(group.day)}
+          </h3>
+          <ul>
+            {group.segments.map((segment) => (
+              <li key={`${segment.item.id}-${segment.dayKey}`}>
+                <AgendaRow
+                  segment={segment}
+                  eventTypes={eventTypes}
+                  onOpen={openItem}
+                  onToggleTask={
+                    canToggleTasks ? (item) => completeTask(item.task) : undefined
+                  }
+                />
+              </li>
             ))}
-          </div>
-        )}
+          </ul>
+        </section>
+      ))}
 
-        {isError && (
-          <p className="px-2 py-4 text-sm text-muted-foreground">
-            Não foi possível carregar a agenda.
-          </p>
-        )}
-
-        {!isLoading && !isError && groups.length === 0 && (
-          <p className="px-2 py-4 text-sm text-muted-foreground">
-            {selectedDay ? 'Nada neste dia.' : 'Nada nos próximos 7 dias.'}
-          </p>
-        )}
-
-        {groups.map((group) => (
-          <section key={group.key} className="space-y-0.5">
-            <h3 className="px-2 text-xs font-semibold text-muted-foreground">
-              {dayHeading(group.day)}
-            </h3>
-            <ul>
-              {group.segments.map((segment) => (
-                <li key={`${segment.item.id}-${segment.dayKey}`}>
-                  <AgendaRow
-                    segment={segment}
-                    eventTypes={eventTypes}
-                    onOpen={openItem}
-                    onToggleTask={
-                      canToggleTasks ? (item) => completeTask(item.task) : undefined
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-
-        {(hidden > 0 || selectedDay) && (
-          <div className="flex flex-wrap items-center gap-x-3 px-2 text-xs text-muted-foreground">
-            {hidden > 0 && (
-              <Link href="/agenda" className="hover:text-foreground hover:underline">
-                e mais {pluralize(hidden, 'compromisso', 'compromissos')} na Agenda
-              </Link>
-            )}
-            {selectedDay && (
-              <button
-                type="button"
-                onClick={() => setSelectedDay(null)}
-                className="font-medium text-foreground hover:underline"
-              >
-                Ver a semana
-              </button>
-            )}
-          </div>
-        )}
-      </CardContent>
+      {(hidden > 0 || selectedDay) && (
+        <div className="flex flex-wrap items-center gap-x-3 px-2 pb-1 text-xs text-muted-foreground">
+          {hidden > 0 && (
+            <Link href="/agenda" className="hover:text-foreground hover:underline">
+              e mais {pluralize(hidden, 'compromisso', 'compromissos')} na Agenda
+            </Link>
+          )}
+          {selectedDay && (
+            <button
+              type="button"
+              onClick={() => setSelectedDay(null)}
+              className="font-medium text-foreground hover:underline"
+            >
+              Ver a semana
+            </button>
+          )}
+        </div>
+      )}
 
       <EventDetailModal
         event={selectedEvent}
@@ -390,6 +385,6 @@ export function AgendaWeekCard({ className }: AgendaWeekCardProps) {
         open={!!selectedTask}
         onClose={() => setSelectedTaskId(null)}
       />
-    </Card>
+    </DashboardCard>
   )
 }

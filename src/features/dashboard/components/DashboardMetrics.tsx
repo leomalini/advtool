@@ -2,6 +2,7 @@
 
 import { AlarmClock, Briefcase, Newspaper, Scale, Wallet } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useCrmItemCounts } from '@/features/crm/hooks/useCrmItems'
 import { useFinancialSummary } from '@/features/financeiro/hooks/useFinancialEntries'
@@ -129,14 +130,14 @@ function NegotiationsMetric() {
  * when the tile renders — a role without the permission doesn't fetch a count
  * the RLS would answer with zero.
  */
-export function DashboardMetrics() {
+export function DashboardMetrics({ className }: { className?: string }) {
   const { can, isLoading } = usePermissions()
 
   // `can()` answers false for everything while the matrix loads; rendering then
   // would flash "Em negociação" before "A receber" shows up.
   if (isLoading) {
     return (
-      <DashboardRow className="grid-cols-2">
+      <DashboardRow className={cn('grid-cols-2', className)}>
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-44 rounded-xl" />
         ))}
@@ -145,7 +146,7 @@ export function DashboardMetrics() {
   }
 
   return (
-    <DashboardRow className="grid-cols-2">
+    <DashboardRow className={cn('grid-cols-2', className)}>
       {can('processos', 'view') && <ProcessesMetric />}
       {can('publicacoes', 'view') && <PublicationsMetric />}
       {can('tarefas', 'view') && <OverdueTasksMetric />}
