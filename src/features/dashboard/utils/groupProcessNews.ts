@@ -17,11 +17,28 @@ export interface ProcessNews {
   /** Movements that arrived in the window. */
   count: number
   /** The newest arrival — the one the row describes. */
-  latest: {
-    /** `title` when the origin classified the act; otherwise the description,
-     * which is always the case for what the webhook delivers today. */
-    text: string
-    receivedAt: string
+  latest: ProcessNewsItem
+  /** The newest few, `latest` first — the preview on hover. */
+  recent: ProcessNewsItem[]
+}
+
+export interface ProcessNewsItem {
+  /** `title` when the origin classified the act; otherwise the description,
+   * which is always the case for what the webhook delivers today. */
+  text: string
+  /** The act's own date ('yyyy-MM-dd'), as the court dated it. */
+  actDate: string
+  receivedAt: string
+}
+
+/** How many acts the hover preview lists. */
+const RECENT_PER_PROCESS = 3
+
+function newsItem(movement: WebhookMovement): ProcessNewsItem {
+  return {
+    text: movement.title?.trim() || movement.description,
+    actDate: movement.movement_date,
+    receivedAt: movement.created_at,
   }
 }
 
@@ -46,6 +63,7 @@ export function groupProcessNews(movements: readonly WebhookMovement[]): Process
     const existing = groups.get(movement.legal_process_id)
     if (existing) {
       existing.count += 1
+      if (existing.recent.length < RECENT_PER_PROCESS) existing.recent.push(newsItem(movement))
       continue
     }
 
@@ -63,10 +81,8 @@ export function groupProcessNews(movements: readonly WebhookMovement[]): Process
       court: process.court,
       clientName: clientName(master?.client ?? null),
       count: 1,
-      latest: {
-        text: movement.title?.trim() || movement.description,
-        receivedAt: movement.created_at,
-      },
+      latest: newsItem(movement),
+      recent: [newsItem(movement)],
     })
   }
 

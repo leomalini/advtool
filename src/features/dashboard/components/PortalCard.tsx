@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import { format, parseISO } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import { Globe, ShieldAlert } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatRelative } from '@/utils/date'
@@ -9,6 +11,7 @@ import { PORTAL_WINDOW_DAYS } from '../services/dashboard.service'
 import { formatCount, pluralize } from '../utils/format'
 import { DashboardCard } from './DashboardCard'
 import { EmptyLine } from './EmptyLine'
+import { MiniColumns } from './MicroCharts'
 
 interface PortalCardProps {
   className?: string
@@ -46,13 +49,26 @@ export function PortalCard({ className }: PortalCardProps) {
 
       {data && !quiet && (
         <div className="space-y-2">
-          <div className="px-2">
-            <p className="text-2xl font-bold tracking-tight">{formatCount(data.granted)}</p>
-            <p className="text-xs text-muted-foreground">
-              {data.granted === 1 ? 'acesso' : 'acessos'} em {PORTAL_WINDOW_DAYS} dias ·{' '}
-              {pluralize(data.clients, 'cliente', 'clientes')} ·{' '}
-              {pluralize(data.activeLinks, 'link ativo', 'links ativos')}
-            </p>
+          <div className="flex items-end justify-between gap-4 px-2">
+            <div className="min-w-0">
+              <p className="text-2xl font-bold tracking-tight">{formatCount(data.granted)}</p>
+              <p className="text-xs text-muted-foreground">
+                {data.granted === 1 ? 'acesso' : 'acessos'} em {PORTAL_WINDOW_DAYS} dias ·{' '}
+                {pluralize(data.clients, 'cliente', 'clientes')}
+                <br />
+                {pluralize(data.activeLinks, 'link ativo', 'links ativos')}
+              </p>
+            </div>
+            <div className="w-32 shrink-0 pb-1">
+              <MiniColumns
+                label={`Acessos por dia, ${PORTAL_WINDOW_DAYS} dias`}
+                columns={data.daily.map((day) => ({
+                  key: day.day,
+                  value: day.count,
+                  label: `${format(parseISO(day.day), 'EEE, dd/MM', { locale: ptBR })}: ${pluralize(day.count, 'acesso', 'acessos')}`,
+                }))}
+              />
+            </div>
           </div>
 
           {data.refused > 0 && (

@@ -26,12 +26,26 @@ interface SegmentedControlProps<T extends string> {
   kind?: 'tabs' | 'radio'
   /** Required for `tabs`: prefix of the tab and panel ids. */
   id?: string
+  /**
+   * In a narrow card (container under `@md`), the options split the width in
+   * equal columns, the count above the label — three tabs with counts don't
+   * fit in a row on a phone, and a scrolling strip hides the last one.
+   */
+  stackOnNarrow?: boolean
 }
 
 const COUNT_TONES = {
   info: 'bg-info/12 text-info',
   warning: 'bg-warning/12 text-warning',
 } as const
+
+/** `stackOnNarrow`: equal columns, count above label. Up here and not inline:
+ * Tailwind's class scanner lost these strings when they came after the
+ * `buttons.current[index]` of the ref callback below. */
+const STACKED_LIST = '@max-md:grid @max-md:w-full @max-md:auto-cols-fr @max-md:grid-flow-col'
+const STACKED_OPTION =
+  '@max-md:h-auto @max-md:min-w-0 @max-md:flex-col @max-md:gap-0.5 @max-md:px-1 @max-md:py-1.5'
+const STACKED_COUNT = '@max-md:order-first'
 
 /**
  * The dashboard's small switch: a muted track with the chosen option raised.
@@ -45,6 +59,7 @@ export function SegmentedControl<T extends string>({
   onChange,
   kind = 'radio',
   id,
+  stackOnNarrow = false,
 }: SegmentedControlProps<T>) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([])
 
@@ -61,7 +76,10 @@ export function SegmentedControl<T extends string>({
     <div
       role={kind === 'tabs' ? 'tablist' : 'radiogroup'}
       aria-label={label}
-      className="flex max-w-full gap-0.5 overflow-x-auto rounded-lg bg-muted p-[3px] no-scrollbar"
+      className={cn(
+        'flex max-w-full gap-0.5 overflow-x-auto rounded-lg bg-muted p-[3px] no-scrollbar',
+        stackOnNarrow && STACKED_LIST
+      )}
     >
       {options.map((option, index) => {
         const selected = option.value === value
@@ -85,7 +103,8 @@ export function SegmentedControl<T extends string>({
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               selected
                 ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
-                : 'text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+              stackOnNarrow && STACKED_OPTION
             )}
           >
             {option.label}
@@ -93,7 +112,8 @@ export function SegmentedControl<T extends string>({
               <span
                 className={cn(
                   'rounded-full px-1.5 text-[11px] leading-4 font-bold tabular-nums',
-                  option.countTone ? COUNT_TONES[option.countTone] : 'bg-foreground/8 text-muted-foreground'
+                  option.countTone ? COUNT_TONES[option.countTone] : 'bg-foreground/8 text-muted-foreground',
+                  stackOnNarrow && STACKED_COUNT
                 )}
               >
                 {option.count}

@@ -251,13 +251,20 @@ export type PublicationPreview = Pick<
   | 'created_at'
 >
 
-/** The head of the unread queue, in the order `/publicacoes` lists it. */
-export async function getUnreadPublicationsPreview(limit = 5): Promise<PublicationPreview[]> {
-  const { data, error } = await supabase
+/** The head of the unread queue, in the order `/publicacoes` lists it —
+ * or only its orphans (no processo registered for the CNJ). */
+export async function getUnreadPublicationsPreview({
+  limit = 5,
+  orphansOnly = false,
+}: { limit?: number; orphansOnly?: boolean } = {}): Promise<PublicationPreview[]> {
+  let query = supabase
     .from('publications')
     .select('id, sequence_number, cnj_number, legal_process_id, diario_sigla, title, publication_date, created_at')
     .is('duplicate_of_id', null)
     .is('read_at', null)
+  if (orphansOnly) query = query.is('legal_process_id', null)
+
+  const { data, error } = await query
     .order('publication_date', { ascending: false })
     .order('sequence_number', { ascending: false })
     .limit(limit)
@@ -377,6 +384,8 @@ export interface PortalAccessSummary {
   recent: PortalAccess[]
   /** Links that still open: not revoked and not expired. */
   activeLinks: number
+  /** Granted accesses per local day over the window, today last. */
+  daily: DailyCount[]
 }
 
 /** Plenty for a month of a small office; the card prints three accesses. */
@@ -412,6 +421,16 @@ export async function getPortalAccessSummary(): Promise<PortalAccessSummary> {
   const rows = (log.data ?? []) as unknown as Row[]
   const granted = rows.filter((row) => row.outcome === 'granted')
 
+  const perDay = new Map<string, number>()
+  for (const row of granted) {
+    const day = format(parseISO(row.created_at), 'yyyy-MM-dd')
+    perDay.set(day, (perDay.get(day) ?? 0) + 1)
+  }
+  const daily = Array.from({ length: PORTAL_WINDOW_DAYS }, (_, index) => {
+    const day = format(subDays(now, PORTAL_WINDOW_DAYS - 1 - index), 'yyyy-MM-dd')
+    return { day, count: perDay.get(day) ?? 0 }
+  })
+
   return {
     granted: granted.length,
     clients: new Set(granted.map((row) => row.client_id).filter(Boolean)).size,
@@ -422,5 +441,6 @@ export async function getPortalAccessSummary(): Promise<PortalAccessSummary> {
       at: row.created_at,
     })),
     activeLinks: countOf(links),
+    daily,
   }
 }

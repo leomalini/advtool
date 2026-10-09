@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { CircleCheck, Flag, ListChecks } from 'lucide-react'
+import { ChevronDown, CircleCheck, Flag, ListChecks } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { getDisplayName } from '@/utils/profile'
@@ -154,6 +154,7 @@ export function TasksCard({ className }: TasksCardProps) {
   const completeTask = useCompleteTask()
 
   const [scope, setScope] = useState<Scope>('mine')
+  const [expanded, setExpanded] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -172,8 +173,8 @@ export function TasksCard({ className }: TasksCardProps) {
     upcoming: dated.filter((row) => row.dueDate > today && row.dueDate <= horizon).sort(byDue),
   }
 
-  // Up to ROWS rows in total, the late ones first.
-  let budget = ROWS
+  // Up to ROWS rows in total, the late ones first — all of them once expanded.
+  let budget = expanded ? Infinity : ROWS
   let hidden = 0
   const groups: { key: GroupKey; total: number; rows: DatedTask[] }[] = []
   for (const key of ['overdue', 'today', 'upcoming'] as const) {
@@ -193,14 +194,16 @@ export function TasksCard({ className }: TasksCardProps) {
       label="De quem"
       options={SCOPE_OPTIONS}
       value={scope}
-      onChange={setScope}
+      onChange={(next) => {
+        setScope(next)
+        setExpanded(false)
+      }}
     />
   )
 
-  const footerNotes = [
-    hidden > 0 && `e mais ${pluralize(hidden, 'tarefa', 'tarefas')}`,
-    undatedCount > 0 && pluralize(undatedCount, 'sem data', 'sem data'),
-  ].filter((note): note is string => Boolean(note))
+  const shownCount = groups.reduce((sum, group) => sum + group.rows.length, 0)
+  const toggleLabel =
+    hidden > 0 ? `Mostrar mais ${formatCount(hidden)}` : expanded && shownCount > ROWS ? 'Mostrar menos' : null
 
   return (
     <DashboardCard
@@ -211,7 +214,23 @@ export function TasksCard({ className }: TasksCardProps) {
       className={className}
       footer={
         <>
-          <span>{footerNotes.join(' · ')}</span>
+          <span className="flex items-center gap-3">
+            {toggleLabel && (
+              <button
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setExpanded(!expanded)}
+                className="inline-flex items-center gap-1 rounded-sm font-semibold text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {toggleLabel}
+                <ChevronDown
+                  aria-hidden
+                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+                />
+              </button>
+            )}
+            {undatedCount > 0 && <span>{pluralize(undatedCount, 'sem data', 'sem data')}</span>}
+          </span>
           <CardLink href="/tarefas" strong>
             Ver quadro
           </CardLink>

@@ -48,6 +48,7 @@ export const dashboardKeys = {
   unreadOrphanPublications: [...publicationKeys.unreadCount(), 'orphans'] as const,
   /** Same reason: the list has to move together with the count above it. */
   unreadPublicationsPreview: [...publicationKeys.unreadCount(), 'preview'] as const,
+  unreadOrphanPublicationsPreview: [...publicationKeys.unreadCount(), 'orphans-preview'] as const,
   /** Arrivals, not the queue: reading one doesn't change them, a new one does. */
   publicationsPerDay: [...publicationKeys.all, 'dashboard-per-day'] as const,
   webhookMovements: [...legalProcessKeys.all, 'dashboard-webhook-movements'] as const,
@@ -99,19 +100,27 @@ export function useTaskCounts() {
   })
 }
 
-export function useUnreadOrphanPublicationCount() {
+/** `enabled` lets a card call the hook unconditionally and read only with the
+ * permission of the table behind it. */
+interface QueryToggle {
+  enabled?: boolean
+}
+
+export function useUnreadOrphanPublicationCount({ enabled }: QueryToggle = {}) {
   return useQuery({
     queryKey: dashboardKeys.unreadOrphanPublications,
     queryFn: getUnreadOrphanPublicationCount,
     refetchInterval: 60_000,
+    enabled,
   })
 }
 
-export function useWebhookMovements() {
+export function useWebhookMovements({ enabled }: QueryToggle = {}) {
   return useQuery({
     queryKey: dashboardKeys.webhookMovements,
     queryFn: getWebhookMovements,
     refetchInterval: 60_000,
+    enabled,
   })
 }
 
@@ -123,11 +132,18 @@ export function usePublicationsPerDay() {
   })
 }
 
-export function useUnreadPublicationsPreview() {
+/** The head of the unread queue — or of its orphans, for the "Sem processo" tab. */
+export function useUnreadPublicationsPreview({
+  orphansOnly = false,
+  enabled,
+}: QueryToggle & { orphansOnly?: boolean } = {}) {
   return useQuery({
-    queryKey: dashboardKeys.unreadPublicationsPreview,
-    queryFn: () => getUnreadPublicationsPreview(),
+    queryKey: orphansOnly
+      ? dashboardKeys.unreadOrphanPublicationsPreview
+      : dashboardKeys.unreadPublicationsPreview,
+    queryFn: () => getUnreadPublicationsPreview({ orphansOnly }),
     refetchInterval: 60_000,
+    enabled,
   })
 }
 

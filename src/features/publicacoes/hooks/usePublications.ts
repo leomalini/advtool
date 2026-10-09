@@ -8,6 +8,7 @@ import {
   getPublicationQueue,
   countUnreadPublications,
   markPublicationRead,
+  markPublicationUnread,
   setPublicationHandled,
   updatePublicationFields,
 } from '../services/publications.service'
@@ -47,10 +48,12 @@ export function usePublicationQueue(onlyUnread: boolean) {
   })
 }
 
-export function useUnreadPublicationCount() {
+/** `enabled`: o card do dashboard chama no topo e só lê com `publicacoes:view`. */
+export function useUnreadPublicationCount(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: publicationKeys.unreadCount(),
     queryFn: countUnreadPublications,
+    enabled: options.enabled,
   })
 }
 
@@ -70,6 +73,21 @@ export function useMarkPublicationRead() {
       queryClient.invalidateQueries({ queryKey: publicationKeys.detail(id) })
       queryClient.invalidateQueries({ queryKey: publicationKeys.unreadCount() })
     },
+  })
+}
+
+/** Marcar como lida — ou desfazer — por um gesto da pessoa (o dashboard).
+ * Diferente do `useMarkPublicationRead`, que é efeito de abrir e fica calado;
+ * aqui quem chama dá o retorno. Invalida o prefixo inteiro: a fila de
+ * `/publicacoes`, o contador da barra lateral e as prévias andam juntos. */
+export function useSetPublicationRead() {
+  const invalidate = useInvalidatePublications()
+
+  return useMutation({
+    mutationFn: ({ id, read }: { id: string; read: boolean }) =>
+      read ? markPublicationRead(id) : markPublicationUnread(id),
+    onSettled: () => invalidate(),
+    onError: () => toast.error('Não foi possível atualizar a publicação.'),
   })
 }
 
