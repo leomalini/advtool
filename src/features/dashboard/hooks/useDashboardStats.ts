@@ -16,7 +16,12 @@ import {
   getPublicationsPerDay,
   getWebhookHealth,
   getPortalAccessSummary,
+  getCreditBalance,
 } from '../services/dashboard.service'
+
+/** The credit balance is read once an hour: the call is free, but the balance
+ * only moves with charged calls and top-ups. "Atualizar" reads it on demand. */
+const CREDIT_BALANCE_REFRESH_MS = 60 * 60_000
 
 /**
  * Dashboard query keys.
@@ -58,6 +63,8 @@ export const dashboardKeys = {
   /** Own key: accesses are written by the portal, server-side, so nothing on
    * this side invalidates them — the minute refetch does. */
   portalAccess: ['dashboard-portal-access'] as const,
+  /** Own key: the balance lives at the BuscaProcessos, not in our tables. */
+  creditBalance: ['dashboard-credit-balance'] as const,
 }
 
 export function useCasesByLegalArea() {
@@ -161,5 +168,18 @@ export function usePortalAccessSummary() {
     queryKey: dashboardKeys.portalAccess,
     queryFn: getPortalAccessSummary,
     refetchInterval: 60_000,
+  })
+}
+
+/** Only for `configuracoes:view` — the components that call it are gated.
+ * The pill and the card share the key, so the dashboard reads it once. */
+export function useCreditBalance() {
+  return useQuery({
+    queryKey: dashboardKeys.creditBalance,
+    queryFn: getCreditBalance,
+    // Without the matching staleTime, coming back to the dashboard after the
+    // default minute would read it again.
+    staleTime: CREDIT_BALANCE_REFRESH_MS,
+    refetchInterval: CREDIT_BALANCE_REFRESH_MS,
   })
 }

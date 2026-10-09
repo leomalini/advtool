@@ -10,25 +10,10 @@ import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
 import { useWebhookHealth } from '../hooks/useDashboardStats'
 import { pluralize } from '../utils/format'
 import { registerProcessHref } from '../utils/links'
+import { DOT_TONES, PILL_TONES, STATUS_PILL, type StatusTone } from '../utils/statusTones'
 import { CardLink } from './CardLink'
 
 const WEBHOOKS_SETTINGS_PATH = '/configuracoes?aba=webhooks'
-
-type StatusTone = 'success' | 'warning' | 'danger' | 'muted'
-
-const PILL_TONES: Record<StatusTone, string> = {
-  success: 'border-success/30 bg-success/8',
-  warning: 'border-warning/35 bg-warning/10',
-  danger: 'border-destructive/35 bg-destructive/10 text-destructive',
-  muted: 'bg-card',
-}
-
-const DOT_TONES: Record<StatusTone, string> = {
-  success: 'bg-success',
-  warning: 'bg-warning',
-  danger: 'bg-destructive',
-  muted: 'bg-muted-foreground/60',
-}
 
 function lastRefused(health: DashboardWebhookHealth): boolean {
   return health.lastDelivery?.status === 'invalid'
@@ -161,14 +146,7 @@ export function WebhookStatusPill({ canCreateProcess }: { canCreateProcess: bool
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors hover:bg-muted',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            PILL_TONES[tone]
-          )}
-        >
+        <button type="button" className={cn(STATUS_PILL, PILL_TONES[tone])}>
           <span aria-hidden className={cn('size-2 shrink-0 rounded-full', DOT_TONES[tone])} />
           <span className="truncate">{label}</span>
           <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />

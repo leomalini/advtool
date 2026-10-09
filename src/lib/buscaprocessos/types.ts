@@ -24,6 +24,22 @@ export interface BpResponse<T> {
   meta: BpMeta
 }
 
+// ── Conta ────────────────────────────────────────────────────────────────────
+
+/** GET /v1/conta/saldo — não é cobrado e não tem limite de chamadas.
+ *
+ * Conferido contra uma resposta real (2026-10-09): `{ credits: 672.26,
+ * currency: "BRL", accountStatus: "ACTIVE" }`, com `meta.creditsRemaining`
+ * repetindo o mesmo saldo e `meta.servedAt` só com a hora ("14:32:10"). */
+export interface BpContaSaldoData {
+  /** Saldo disponível, em `currency` — os preços da API são em reais. */
+  credits: number
+  /** Código ISO 4217 ("BRL"). */
+  currency: string
+  /** "ACTIVE" na resposta observada; os outros valores não estão documentados. */
+  accountStatus: string
+}
+
 /** Corpo do HTTP 202: a consulta passou da janela síncrona e continua em
  * processamento. O resultado final sai em `GET /v1/requests/{requestId}`. */
 export interface BpPendingData {

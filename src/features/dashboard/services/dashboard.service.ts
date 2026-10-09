@@ -5,6 +5,7 @@ import type { Publication } from '@/types/publication.types'
 // Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
 // para o navegador.
 import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
+import type { CreditBalance } from '@/lib/buscaprocessos/creditBalance'
 import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns'
 
 const supabase = createClient()
@@ -284,6 +285,19 @@ export async function getWebhookHealth(): Promise<DashboardWebhookHealth> {
     throw new Error(message ?? 'Não foi possível ler as entregas do webhook.')
   }
   return body as DashboardWebhookHealth
+}
+
+/** The BuscaProcessos credit balance — through our route, which holds the
+ * API key. */
+export async function getCreditBalance(): Promise<CreditBalance> {
+  const response = await fetch('/api/buscaprocessos/saldo')
+  const body: unknown = await response.json().catch(() => null)
+
+  if (!response.ok || body === null) {
+    const message = (body as { error?: string } | null)?.error
+    throw new Error(message ?? 'Não foi possível ler o saldo de créditos.')
+  }
+  return body as CreditBalance
 }
 
 /** Case counts per legal area, for the areas chart. Items with no area set

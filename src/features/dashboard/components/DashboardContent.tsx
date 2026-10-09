@@ -12,6 +12,7 @@ import { FinanceCard } from "./FinanceCard";
 import { TeamCard } from "./TeamCard";
 import { PortalCard } from "./PortalCard";
 import { PendenciesCard } from "./PendenciesCard";
+import { CreditBalanceCard } from "./CreditBalanceCard";
 import { usePermissions } from "@/hooks/usePermissions";
 import { enterDelay } from "../utils/motion";
 
@@ -49,6 +50,9 @@ export function DashboardContent() {
     ),
     can("clientes", "view") && <PortalCard key="portal" className={cn("order-6", enterDelay(4))} />,
     can("crm", "view") && <TeamCard key="team" className={cn("order-7", enterDelay(5))} />,
+    can("configuracoes", "view") && (
+      <CreditBalanceCard key="credits" className={cn("order-8", enterDelay(6))} />
+    ),
   ]);
 
   return (

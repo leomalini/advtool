@@ -29,6 +29,7 @@ import { groupProcessNews, type ProcessNews } from '../utils/groupProcessNews'
 import { formatCount, pluralize } from '../utils/format'
 import { registerProcessHref } from '../utils/links'
 import { CardLink } from './CardLink'
+import { CreditBalancePill } from './CreditBalancePill'
 import { DashboardCard } from './DashboardCard'
 import { EmptyLine } from './EmptyLine'
 import { MiniColumns } from './MicroCharts'
@@ -371,7 +372,14 @@ export function MonitoringCard({ className }: MonitoringCardProps) {
       icon={Radar}
       tone="info"
       title="Monitoramento"
-      action={can('configuracoes', 'view') && <WebhookStatusPill canCreateProcess={canCreateProcess} />}
+      action={
+        can('configuracoes', 'view') && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <CreditBalancePill />
+            <WebhookStatusPill canCreateProcess={canCreateProcess} />
+          </div>
+        )
+      }
       className={className}
       bodyClassName="space-y-2 px-2 pb-2"
       footer={footer}
