@@ -13,6 +13,7 @@ import {
   getUnreadOrphanPublicationCount,
   getWebhookMovements,
   getUnreadPublicationsPreview,
+  getPublicationsPerDay,
   getWebhookHealth,
   getPortalAccessSummary,
 } from '../services/dashboard.service'
@@ -47,6 +48,8 @@ export const dashboardKeys = {
   unreadOrphanPublications: [...publicationKeys.unreadCount(), 'orphans'] as const,
   /** Same reason: the list has to move together with the count above it. */
   unreadPublicationsPreview: [...publicationKeys.unreadCount(), 'preview'] as const,
+  /** Arrivals, not the queue: reading one doesn't change them, a new one does. */
+  publicationsPerDay: [...publicationKeys.all, 'dashboard-per-day'] as const,
   webhookMovements: [...legalProcessKeys.all, 'dashboard-webhook-movements'] as const,
   /** Under processos too: registering the processo from the strip's
    * "Cadastrar" has to take it off the strip. */
@@ -108,6 +111,14 @@ export function useWebhookMovements() {
   return useQuery({
     queryKey: dashboardKeys.webhookMovements,
     queryFn: getWebhookMovements,
+    refetchInterval: 60_000,
+  })
+}
+
+export function usePublicationsPerDay() {
+  return useQuery({
+    queryKey: dashboardKeys.publicationsPerDay,
+    queryFn: () => getPublicationsPerDay(),
     refetchInterval: 60_000,
   })
 }

@@ -5,9 +5,16 @@ import type { Publication } from '@/types/publication.types'
 // Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
 // para o navegador.
 import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
-import { subDays, format } from 'date-fns'
+import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns'
 
 const supabase = createClient()
+
+/** Rows read to split the overdue tasks by age — far more than an office
+ * leaves late; past it the oldest ones still count. */
+const OVERDUE_AGES_CAP = 1000
+
+/** A busy office gets dozens of publications a day; two weeks fit. */
+const PUBLICATIONS_PER_DAY_CAP = 2000
 
 /** How far back the monitoring card looks — docs/dashboard.md, decision 4. */
 export const MONITORING_WINDOW_DAYS = 7
@@ -25,7 +32,22 @@ export interface TaskCounts {
   overdue: number
   /** Not done, due today. */
   dueToday: number
+  /** The overdue ones by how late they are — up to a week, up to a month,
+   * older. A pile of month-old tasks is a different problem from yesterday's. */
+  overdueByAge: { week: number; month: number; older: number }
+  /** Days since the oldest overdue due date; `null` when nothing is late. */
+  oldestOverdueDays: number | null
 }
+
+/** One bar of a daily series. */
+export interface DailyCount {
+  /** 'yyyy-MM-dd' */
+  day: string
+  count: number
+}
+
+/** How many days the publications indicator draws. */
+export const PUBLICATION_DAYS = 14
 
 /** The client columns the lists embed — just enough for a name. */
 interface ClientNameFields {
@@ -94,22 +116,67 @@ export async function getProcessCounts(): Promise<ProcessCounts> {
 export async function getTaskCounts(): Promise<TaskCounts> {
   // `due_date` is a plain date: compared to the local day, as the Agenda does.
   // Computed here, not by the caller, so the minute refetch picks up midnight.
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const todayKey = format(new Date(), 'yyyy-MM-dd')
+  const today = parseISO(todayKey)
 
   const [overdue, dueToday] = await Promise.all([
+    // The rows too, oldest first, for the ages; the count stays exact even
+    // past the cap.
+    supabase
+      .from('tasks')
+      .select('due_date', { count: 'exact' })
+      .neq('status', 'done')
+      .lt('due_date', todayKey)
+      .order('due_date')
+      .limit(OVERDUE_AGES_CAP),
     supabase
       .from('tasks')
       .select('id', { count: 'exact', head: true })
       .neq('status', 'done')
-      .lt('due_date', today),
-    supabase
-      .from('tasks')
-      .select('id', { count: 'exact', head: true })
-      .neq('status', 'done')
-      .eq('due_date', today),
+      .eq('due_date', todayKey),
   ])
 
-  return { overdue: countOf(overdue), dueToday: countOf(dueToday) }
+  const rows = (overdue.data ?? []) as { due_date: string }[]
+  const daysLate = (row: { due_date: string }) => differenceInCalendarDays(today, parseISO(row.due_date))
+  const overdueByAge = { week: 0, month: 0, older: 0 }
+  for (const row of rows) {
+    const days = daysLate(row)
+    if (days <= 7) overdueByAge.week += 1
+    else if (days <= 30) overdueByAge.month += 1
+    else overdueByAge.older += 1
+  }
+
+  return {
+    overdue: countOf(overdue),
+    dueToday: countOf(dueToday),
+    overdueByAge,
+    oldestOverdueDays: rows.length > 0 ? daysLate(rows[0]) : null,
+  }
+}
+
+/** Publications per day (by `publication_date`, duplicates out), oldest day
+ * first, today last — the arrivals behind the unread count. */
+export async function getPublicationsPerDay(days = PUBLICATION_DAYS): Promise<DailyCount[]> {
+  const now = new Date()
+  const first = format(subDays(now, days - 1), 'yyyy-MM-dd')
+
+  const { data, error } = await supabase
+    .from('publications')
+    .select('publication_date')
+    .is('duplicate_of_id', null)
+    .gte('publication_date', first)
+    .limit(PUBLICATIONS_PER_DAY_CAP)
+
+  if (error) throw error
+
+  const counts = new Map<string, number>()
+  for (const row of (data ?? []) as { publication_date: string }[]) {
+    counts.set(row.publication_date, (counts.get(row.publication_date) ?? 0) + 1)
+  }
+  return Array.from({ length: days }, (_, index) => {
+    const day = format(subDays(now, days - 1 - index), 'yyyy-MM-dd')
+    return { day, count: counts.get(day) ?? 0 }
+  })
 }
 
 /** Unread publications of processos nobody registered — the same queue as

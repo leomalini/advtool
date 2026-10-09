@@ -41,7 +41,6 @@ import {
   buildPaymentMessage,
   buildWhatsAppUrl,
 } from '@/features/financeiro/utils/paymentLinkMessage'
-import type { FinancialSituationFilter } from '@/features/financeiro/utils/filterFinancialEntries'
 import { formatCount, formatWholeBRL, pluralize } from '../utils/format'
 import { CardLink } from './CardLink'
 import { DashboardCard } from './DashboardCard'
@@ -68,37 +67,11 @@ const ROW_ACTIONS =
   'flex shrink-0 items-center transition-opacity pointer-fine:opacity-0 ' +
   'pointer-fine:group-hover/row:opacity-100 pointer-fine:group-focus-within/row:opacity-100'
 
-function situationHref(situation: FinancialSituationFilter): string {
-  return `/financeiro?situacao=${situation}`
-}
-
 function entryHref(entryId: string | null | undefined): string {
   return entryId ? `/financeiro?id=${entryId}` : '/financeiro'
 }
 
 // ── Mês corrente ─────────────────────────────────────────────────────────────
-
-/** As três parcelas que somam "A receber" — as cores da página do Financeiro. */
-const RECEIVABLE_PARTS = [
-  {
-    situation: 'a_vencer',
-    label: 'A vencer',
-    value: (s: FinancialSummary) => s.receivableUpcoming,
-    bar: 'bg-warning',
-  },
-  {
-    situation: 'vencido',
-    label: 'Vencido',
-    value: (s: FinancialSummary) => s.receivableOverdue,
-    bar: 'bg-destructive',
-  },
-  {
-    situation: 'condicao_especial',
-    label: 'Condição especial',
-    value: (s: FinancialSummary) => s.receivableConditional,
-    bar: 'bg-info',
-  },
-] as const
 
 function Stat({
   label,
@@ -128,12 +101,13 @@ function Stat({
   )
 }
 
+/** The month in three numbers. What is still to be received lives in the
+ * "A receber" indicator, with its parts — not repeated here. */
 function MonthBlock({ summary }: { summary: FinancialSummary }) {
   const result = summary.receivedThisMonth - summary.expensesThisMonth
-  const total = summary.receivableTotal
 
   return (
-    <section className="space-y-4 px-4 pb-4">
+    <section className="px-4 pb-4">
       <dl className="grid grid-cols-3 gap-4">
         <Stat
           label="Recebido"
@@ -152,53 +126,6 @@ function MonthBlock({ summary }: { summary: FinancialSummary }) {
           tone={result < 0 ? 'danger' : undefined}
         />
       </dl>
-
-      {/* "A receber" é o TUDO; a barra mostra de que ele é feito, e cada parcela
-          abre o Financeiro já no recorte dela. */}
-      <div className="space-y-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <Link
-            href={situationHref('a_receber')}
-            className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
-          >
-            A receber
-          </Link>
-          <span className="text-sm font-bold tabular-nums">{formatWholeBRL(total)}</span>
-        </div>
-        <div className="flex h-2 gap-0.5" aria-hidden>
-          {total > 0 ? (
-            RECEIVABLE_PARTS.map((part) => {
-              const value = part.value(summary)
-              if (value <= 0) return null
-              return (
-                <div
-                  key={part.situation}
-                  className={cn('h-full first:rounded-l-full last:rounded-r-full', part.bar)}
-                  style={{ width: `${(value / total) * 100}%` }}
-                />
-              )
-            })
-          ) : (
-            <div className="h-full w-full rounded-full bg-muted" />
-          )}
-        </div>
-        <ul className="flex flex-wrap gap-x-4 gap-y-1">
-          {RECEIVABLE_PARTS.map((part) => (
-            <li key={part.situation}>
-              <Link
-                href={situationHref(part.situation)}
-                className="inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <span aria-hidden className={cn('size-2 shrink-0 rounded-[2px]', part.bar)} />
-                {part.label}
-                <span className="font-semibold text-foreground tabular-nums">
-                  {formatWholeBRL(part.value(summary))}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
     </section>
   )
 }

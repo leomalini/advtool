@@ -13,7 +13,7 @@ import { TeamCard } from "./TeamCard";
 import { PortalCard } from "./PortalCard";
 import { PendenciesCard } from "./PendenciesCard";
 import { usePermissions } from "@/hooks/usePermissions";
-import { ENTER_ANIMATION, enterDelay } from "../utils/motion";
+import { enterDelay } from "../utils/motion";
 
 /** The cards a role can see, in the order of the column. */
 function visible(cards: (React.ReactElement | false)[]): React.ReactElement[] {
@@ -59,7 +59,7 @@ export function DashboardContent() {
       {/* ── Indicadores ── */}
       {/* Sem indicador de tendência: não guardamos histórico para comparar
           períodos, e um número inventado aqui seria pior que nenhum. */}
-      <DashboardMetrics className={cn(ENTER_ANIMATION, enterDelay(1))} />
+      <DashboardMetrics />
 
       {/* `can()` responde false para tudo enquanto a matriz carrega: segurar as
           colunas evita os cards sumirem e voltarem. */}
