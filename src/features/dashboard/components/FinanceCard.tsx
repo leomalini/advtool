@@ -5,8 +5,15 @@ import { Bar, BarChart, XAxis } from 'recharts'
 import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
-import { AlertTriangle, Copy, ExternalLink, MessageCircle, Wallet } from 'lucide-react'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  AlertTriangle,
+  Copy,
+  ExternalLink,
+  MessageCircle,
+  ReceiptText,
+  Wallet,
+  Zap,
+} from 'lucide-react'
 import {
   ChartContainer,
   ChartTooltip,
@@ -34,28 +41,31 @@ import {
   buildPaymentMessage,
   buildWhatsAppUrl,
 } from '@/features/financeiro/utils/paymentLinkMessage'
-import type { FinancialSituationFilter } from '@/features/financeiro/utils/filterFinancialEntries'
 import { formatCount, formatWholeBRL, pluralize } from '../utils/format'
+import { CardLink } from './CardLink'
+import { DashboardCard } from './DashboardCard'
+import { EmptyLine } from './EmptyLine'
 
 /** Pagamentos recentes: um mês cobre o ciclo de cobrança do escritório. */
 const RECENT_DAYS = 30
-const LIST_ROWS = 4
+const LIST_ROWS = 3
 
-const HEADING = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground'
+const HEADING = 'text-[13px] font-semibold text-foreground'
+const SUBHEADING = 'px-2 pt-2 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'
 const ROW =
-  'relative flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/50 ' +
+  'group/row relative flex items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 ' +
   'has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-ring'
 /** O link da linha cobre a linha inteira (`::after`); as ações ficam por cima. */
 const ROW_LINK =
-  'block truncate text-sm font-medium after:absolute after:inset-0 focus-visible:outline-none'
+  'block truncate text-sm font-semibold after:absolute after:inset-0 focus-visible:outline-none'
 const ICON_ACTION =
   'relative z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground ' +
   'transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none ' +
   'focus-visible:ring-2 focus-visible:ring-ring'
-
-function situationHref(situation: FinancialSituationFilter): string {
-  return `/financeiro?situacao=${situation}`
-}
+/** Row actions show on hover where there is a mouse; on touch they stay. */
+const ROW_ACTIONS =
+  'flex shrink-0 items-center transition-opacity pointer-fine:opacity-0 ' +
+  'pointer-fine:group-hover/row:opacity-100 pointer-fine:group-focus-within/row:opacity-100'
 
 function entryHref(entryId: string | null | undefined): string {
   return entryId ? `/financeiro?id=${entryId}` : '/financeiro'
@@ -63,123 +73,59 @@ function entryHref(entryId: string | null | undefined): string {
 
 // ── Mês corrente ─────────────────────────────────────────────────────────────
 
-/** As três parcelas que somam "A receber" — as cores da página do Financeiro. */
-const RECEIVABLE_PARTS = [
-  {
-    situation: 'a_vencer',
-    label: 'A vencer',
-    value: (s: FinancialSummary) => s.receivableUpcoming,
-    bar: 'bg-warning',
-    text: 'text-warning',
-  },
-  {
-    situation: 'vencido',
-    label: 'Vencido',
-    value: (s: FinancialSummary) => s.receivableOverdue,
-    bar: 'bg-destructive',
-    text: 'text-destructive',
-  },
-  {
-    situation: 'condicao_especial',
-    label: 'Condição especial',
-    value: (s: FinancialSummary) => s.receivableConditional,
-    bar: 'bg-info',
-    text: 'text-info',
-  },
-] as const
+function Stat({
+  label,
+  value,
+  tone,
+  note,
+}: {
+  label: string
+  value: string
+  tone?: 'success' | 'danger'
+  note?: string | null
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          'truncate text-xl font-bold tracking-tight',
+          tone === 'success' && 'text-success',
+          tone === 'danger' && 'text-destructive'
+        )}
+      >
+        {value}
+      </dd>
+      {note && <dd className="truncate text-xs text-muted-foreground">{note}</dd>}
+    </div>
+  )
+}
 
+/** The month in three numbers. What is still to be received lives in the
+ * "A receber" indicator, with its parts — not repeated here. */
 function MonthBlock({ summary }: { summary: FinancialSummary }) {
   const result = summary.receivedThisMonth - summary.expensesThisMonth
-  const total = summary.receivableTotal
 
   return (
-    <section className="space-y-4">
-      <h3 className={HEADING}>{format(new Date(), 'MMMM', { locale: ptBR })}</h3>
-
-      <dl className="grid grid-cols-3 gap-3">
-        <div className="min-w-0">
-          <dt className="text-[11px] text-muted-foreground">Recebido</dt>
-          <dd className="truncate text-lg font-semibold tabular-nums text-success">
-            {formatWholeBRL(summary.receivedThisMonth)}
-          </dd>
-          {summary.receivedViaInfinitePayCount > 0 && (
-            <dd className="text-[11px] text-muted-foreground">
-              {formatWholeBRL(summary.receivedViaInfinitePay)} pela InfinitePay
-            </dd>
-          )}
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[11px] text-muted-foreground">Despesas</dt>
-          <dd className="truncate text-lg font-semibold tabular-nums">
-            {formatWholeBRL(summary.expensesThisMonth)}
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[11px] text-muted-foreground">Resultado</dt>
-          <dd
-            className={cn(
-              'truncate text-lg font-semibold tabular-nums',
-              result < 0 ? 'text-destructive' : 'text-foreground'
-            )}
-          >
-            {formatWholeBRL(result)}
-          </dd>
-        </div>
+    <section className="px-4 pb-4">
+      <dl className="grid grid-cols-3 gap-4">
+        <Stat
+          label="Recebido"
+          value={formatWholeBRL(summary.receivedThisMonth)}
+          tone="success"
+          note={
+            summary.receivedViaInfinitePayCount > 0
+              ? `${formatWholeBRL(summary.receivedViaInfinitePay)} pela InfinitePay`
+              : null
+          }
+        />
+        <Stat label="Despesas" value={formatWholeBRL(summary.expensesThisMonth)} />
+        <Stat
+          label="Resultado"
+          value={formatWholeBRL(result)}
+          tone={result < 0 ? 'danger' : undefined}
+        />
       </dl>
-
-      {/* "A receber" é o TUDO; a barra mostra de que ele é feito, e cada parcela
-          abre o Financeiro já no recorte dela. */}
-      <div className="space-y-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <Link
-            href={situationHref('a_receber')}
-            className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
-          >
-            A receber
-          </Link>
-          <span className="text-lg font-semibold tabular-nums">{formatWholeBRL(total)}</span>
-        </div>
-        <div className="flex h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
-          {total > 0 &&
-            RECEIVABLE_PARTS.map((part) => {
-              const value = part.value(summary)
-              if (value <= 0) return null
-              return (
-                <div
-                  key={part.situation}
-                  className={part.bar}
-                  style={{ width: `${(value / total) * 100}%` }}
-                />
-              )
-            })}
-        </div>
-        <ul className="grid grid-cols-3 gap-1">
-          {RECEIVABLE_PARTS.map((part) => {
-            const value = part.value(summary)
-            return (
-              <li key={part.situation} className="min-w-0">
-                <Link
-                  href={situationHref(part.situation)}
-                  className="block rounded-md px-1.5 py-1 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
-                    <span aria-hidden className={cn('h-2 w-2 shrink-0 rounded-full', part.bar)} />
-                    {part.label}
-                  </span>
-                  <span
-                    className={cn(
-                      'block truncate text-sm font-semibold tabular-nums',
-                      value > 0 ? part.text : 'text-muted-foreground'
-                    )}
-                  >
-                    {formatWholeBRL(value)}
-                  </span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
     </section>
   )
 }
@@ -212,13 +158,12 @@ function OpenChargeRow({ charge }: { charge: PaymentCharge }) {
         <Link href={entryHref(charge.financial_entry_id)} className={ROW_LINK}>
           {charge.description}
         </Link>
-        <p className="truncate text-[11px] text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground">
           {[charge.customer_name, age].filter(Boolean).join(' · ')}
         </p>
       </div>
-      <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(amount)}</span>
       {url && (
-        <>
+        <div className={ROW_ACTIONS}>
           <button
             type="button"
             onClick={() => void copy(url)}
@@ -247,8 +192,9 @@ function OpenChargeRow({ charge }: { charge: PaymentCharge }) {
           >
             <MessageCircle className="h-3.5 w-3.5" />
           </a>
-        </>
+        </div>
       )}
+      <span className="shrink-0 text-sm font-bold tabular-nums">{formatCurrency(amount)}</span>
     </li>
   )
 }
@@ -268,32 +214,34 @@ function PaymentRow({ payment }: { payment: RecentPayment }) {
         <Link href={entryHref(charge?.financial_entry_id)} className={ROW_LINK}>
           {charge?.description ?? 'Pagamento'}
         </Link>
-        <p className="truncate text-[11px] text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground">
           {[charge?.customer_name, method, formatRelative(payment.confirmed_at)]
             .filter(Boolean)
             .join(' · ')}
         </p>
         {paidOnCanceledLink && (
-          <p className="flex items-center gap-1 text-[11px] font-medium text-warning">
+          <p className="flex items-center gap-1 text-xs font-medium text-warning">
             <AlertTriangle className="h-3 w-3 shrink-0" />
             Pago num link cancelado — confira o lançamento
           </p>
         )}
       </div>
-      <span className="shrink-0 text-sm font-semibold tabular-nums text-success">
+      {payment.receipt_url && (
+        <div className={ROW_ACTIONS}>
+          <a
+            href={payment.receipt_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Abrir o comprovante"
+            className={ICON_ACTION}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      )}
+      <span className="shrink-0 text-sm font-bold tabular-nums text-success">
         {formatCurrency(payment.paid_amount_cents / 100)}
       </span>
-      {payment.receipt_url && (
-        <a
-          href={payment.receipt_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Abrir o comprovante"
-          className={ICON_ACTION}
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-      )}
     </li>
   )
 }
@@ -309,11 +257,23 @@ function ChargesBlock() {
   const loading = settingsLoading || live.isLoading || payments.isLoading
   const openTotal = charges.reduce((sum, charge) => sum + charge.amount_cents, 0) / 100
 
+  const heading = (
+    <h3 className={cn(HEADING, 'flex items-center justify-between gap-2 px-2')}>
+      Cobranças por link
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        <Zap aria-hidden className="size-3" />
+        InfinitePay
+      </span>
+    </h3>
+  )
+
   if (loading) {
     return (
-      <section className="space-y-2">
-        <h3 className={HEADING}>Cobranças por link</h3>
-        <Skeleton className="h-28 w-full rounded-lg" />
+      <section className="space-y-2 px-2 py-3">
+        {heading}
+        <div className="px-2">
+          <Skeleton className="h-28 w-full rounded-lg" />
+        </div>
       </section>
     )
   }
@@ -322,73 +282,72 @@ function ChargesBlock() {
   // mesmo depois de a tag ser removida — os links continuam pagáveis.
   if (!settings?.infinitepay_handle && charges.length === 0 && received.length === 0) {
     return (
-      <section className="space-y-2">
-        <h3 className={HEADING}>Cobranças por link</h3>
-        <p className="text-sm text-muted-foreground">
-          Com a InfinitePay, uma receita ganha link de pagamento por Pix ou cartão, e a baixa
-          acontece sozinha quando o cliente paga.
-        </p>
-        {can('configuracoes', 'manage') ? (
-          <Link
-            href="/configuracoes?aba=pagamentos"
-            className="inline-flex text-sm font-medium text-foreground hover:underline"
-          >
-            Configurar a InfinitePay
-          </Link>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Quem administra o escritório configura em Configurações → Pagamentos.
-          </p>
-        )}
+      <section className="space-y-1 px-2 py-3">
+        {heading}
+        <EmptyLine
+          icon={Zap}
+          tone="accent"
+          title="Receba por link"
+          description={
+            can('configuracoes', 'manage')
+              ? 'Pix ou cartão, com a baixa automática quando o cliente paga.'
+              : 'Quem administra o escritório configura em Configurações → Pagamentos.'
+          }
+          action={
+            can('configuracoes', 'manage') ? (
+              <CardLink href="/configuracoes?aba=pagamentos" strong>
+                Configurar
+              </CardLink>
+            ) : undefined
+          }
+        />
       </section>
     )
   }
 
   return (
-    <section className="space-y-3">
-      <h3 className={HEADING}>Cobranças por link</h3>
+    <section className="px-2 py-3">
+      {heading}
 
       {(live.isError || payments.isError) && (
-        <p className="text-sm text-muted-foreground">Não foi possível carregar as cobranças.</p>
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          Não foi possível carregar as cobranças.
+        </p>
       )}
 
-      <div className="space-y-1">
-        <div className="flex items-baseline justify-between gap-2 px-2 text-[11px] text-muted-foreground">
-          <span>Em aberto · {formatCount(charges.length)}</span>
-          {charges.length > 0 && (
-            <span className="font-medium tabular-nums">{formatCurrency(openTotal)}</span>
-          )}
-        </div>
-        {charges.length === 0 ? (
-          <p className="px-2 text-xs text-muted-foreground">Nenhum link esperando pagamento.</p>
-        ) : (
-          <ul>
-            {charges.slice(0, LIST_ROWS).map((charge) => (
-              <OpenChargeRow key={charge.id} charge={charge} />
-            ))}
-          </ul>
-        )}
-        {charges.length > LIST_ROWS && (
-          <p className="px-2 text-[11px] text-muted-foreground">
-            e mais {pluralize(charges.length - LIST_ROWS, 'link', 'links')}
-          </p>
+      <div className={cn(SUBHEADING, 'flex items-baseline justify-between gap-2')}>
+        <span>Em aberto · {formatCount(charges.length)}</span>
+        {charges.length > 0 && (
+          <span className="font-semibold normal-case tracking-normal tabular-nums">
+            {formatCurrency(openTotal)}
+          </span>
         )}
       </div>
-
-      <div className="space-y-1">
-        <p className="px-2 text-[11px] text-muted-foreground">
-          Recebidos · {RECENT_DAYS} dias
+      {charges.length === 0 ? (
+        <p className="px-2 py-1 text-xs text-muted-foreground">Nenhum link esperando pagamento.</p>
+      ) : (
+        <ul>
+          {charges.slice(0, LIST_ROWS).map((charge) => (
+            <OpenChargeRow key={charge.id} charge={charge} />
+          ))}
+        </ul>
+      )}
+      {charges.length > LIST_ROWS && (
+        <p className="px-2 text-xs text-muted-foreground">
+          e mais {pluralize(charges.length - LIST_ROWS, 'link', 'links')}
         </p>
-        {received.length === 0 ? (
-          <p className="px-2 text-xs text-muted-foreground">Nenhum pagamento no período.</p>
-        ) : (
-          <ul>
-            {received.slice(0, LIST_ROWS).map((payment) => (
-              <PaymentRow key={payment.id} payment={payment} />
-            ))}
-          </ul>
-        )}
-      </div>
+      )}
+
+      <p className={SUBHEADING}>Recebidos · {RECENT_DAYS} dias</p>
+      {received.length === 0 ? (
+        <p className="px-2 py-1 text-xs text-muted-foreground">Nenhum pagamento no período.</p>
+      ) : (
+        <ul>
+          {received.slice(0, LIST_ROWS).map((payment) => (
+            <PaymentRow key={payment.id} payment={payment} />
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
@@ -401,6 +360,11 @@ const chartConfig = {
   despesa: { label: 'Despesas', color: 'var(--destructive)' },
 } satisfies ChartConfig
 
+/**
+ * The chart grows to the height of the column beside it (`flex-1` in a
+ * stretched grid cell): with a fixed height, the charges list next to it left
+ * a blank block under the chart — the empty space this layout exists to avoid.
+ */
 function CashFlowBlock() {
   const { data: cashFlow, isLoading, isError } = useMonthlyCashFlow(6)
 
@@ -411,33 +375,49 @@ function CashFlowBlock() {
   }))
   const totalReceita = data.reduce((sum, month) => sum + month.receita, 0)
   const totalDespesa = data.reduce((sum, month) => sum + month.despesa, 0)
+  const isEmpty = cashFlow !== undefined && totalReceita === 0 && totalDespesa === 0
 
   return (
-    <section className="space-y-2">
-      <div className="flex items-baseline justify-between gap-2">
+    <section className="flex min-w-0 flex-col gap-2 px-4 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className={HEADING}>Fluxo · 6 meses</h3>
-        <Link
-          href="/financeiro"
-          className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
-        >
-          Ver no Financeiro
-        </Link>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {(['receita', 'despesa'] as const).map((serie) => (
+            <span key={serie} className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className="size-2.5 rounded-[2px]"
+                style={{ backgroundColor: chartConfig[serie].color }}
+              />
+              {chartConfig[serie].label}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {isLoading && <Skeleton className="h-36 w-full rounded-lg" />}
+      {isLoading && <Skeleton className="min-h-36 w-full flex-1 rounded-lg" />}
       {isError && (
         <p className="text-sm text-muted-foreground">Não foi possível carregar o fluxo.</p>
       )}
 
-      {cashFlow && (
+      {isEmpty && (
+        <EmptyLine
+          icon={ReceiptText}
+          title="Sem lançamentos em 6 meses"
+          description="O fluxo aparece com as primeiras receitas e despesas."
+          className="px-0"
+        />
+      )}
+
+      {cashFlow && !isEmpty && (
         <>
-          <ChartContainer config={chartConfig} className="h-36 w-full">
+          <ChartContainer config={chartConfig} className="aspect-auto min-h-36 w-full flex-1">
             <BarChart accessibilityLayer data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
               <XAxis
                 dataKey="mes"
                 tickLine={false}
                 axisLine={false}
-                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                 className="capitalize"
               />
               {/* `formatter` substitui a linha inteira do tooltip — por isso ela
@@ -466,11 +446,11 @@ function CashFlowBlock() {
                   />
                 }
               />
-              <Bar dataKey="receita" fill="var(--color-receita)" radius={3} />
-              <Bar dataKey="despesa" fill="var(--color-despesa)" radius={3} />
+              <Bar dataKey="receita" fill="var(--color-receita)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="despesa" fill="var(--color-despesa)" radius={[4, 4, 0, 0]} maxBarSize={18} />
             </BarChart>
           </ChartContainer>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Receitas {formatWholeBRL(totalReceita)} · Despesas {formatWholeBRL(totalDespesa)}
           </p>
         </>
@@ -496,32 +476,33 @@ export function FinanceCard({ className }: FinanceCardProps) {
   const { data: summary, isLoading, isError } = useFinancialSummary()
 
   return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-success" />
-          Financeiro
-        </CardTitle>
-        <CardAction>
-          <Link
-            href="/financeiro"
-            className="text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Abrir Financeiro
-          </Link>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-6 lg:grid-cols-3">
-          {isLoading && <Skeleton className="h-48 w-full rounded-lg" />}
-          {isError && (
-            <p className="text-sm text-muted-foreground">Não foi possível carregar o resumo.</p>
-          )}
-          {summary && <MonthBlock summary={summary} />}
-          <ChargesBlock />
-          <CashFlowBlock />
+    <DashboardCard
+      icon={Wallet}
+      tone="success"
+      title="Financeiro"
+      subtitle={format(new Date(), 'MMMM', { locale: ptBR })}
+      action={<CardLink href="/financeiro">Abrir Financeiro</CardLink>}
+      className={className}
+      bodyClassName=""
+    >
+      {isLoading && (
+        <div className="px-4 pb-4">
+          <Skeleton className="h-28 w-full rounded-lg" />
         </div>
-      </CardContent>
-    </Card>
+      )}
+      {isError && (
+        <p className="px-4 pb-4 text-sm text-muted-foreground">
+          Não foi possível carregar o resumo.
+        </p>
+      )}
+      {summary && <MonthBlock summary={summary} />}
+
+      {/* Side by side when the card is wide enough; the chart's cell stretches
+          to the height of the list. Stacked, a hairline separates the two. */}
+      <div className="grid border-t @xl:grid-cols-2 @xl:divide-x @max-xl:[&>*+*]:border-t">
+        <CashFlowBlock />
+        <ChargesBlock />
+      </div>
+    </DashboardCard>
   )
 }

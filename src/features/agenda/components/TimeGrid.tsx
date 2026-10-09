@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { format, isToday, isSameDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Sun } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useNow } from '@/hooks/useNow'
 import { resolveEventType } from '@/types/event.types'
 import type { EventTypeRecord } from '@/types/event.types'
 import { layoutDayEvents, segmentMinutes, type PositionedEvent } from '../utils/dayLayout'
@@ -79,12 +80,7 @@ interface TimeGridProps {
 
 /** Linha vermelha da hora atual, como no Google Calendar. */
 function NowIndicator({ days }: { days: Date[] }) {
-  const [now, setNow] = useState(() => new Date())
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000)
-    return () => clearInterval(timer)
-  }, [])
+  const now = useNow()
 
   const columnIndex = days.findIndex((d) => isSameDay(d, now))
   if (columnIndex === -1) return null

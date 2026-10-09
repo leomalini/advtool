@@ -5,20 +5,19 @@ import type { Publication } from '@/types/publication.types'
 // Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
 // para o navegador.
 import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
-import { startOfWeek, endOfWeek, addDays, subDays, format } from 'date-fns'
+import { differenceInCalendarDays, format, parseISO, subDays } from 'date-fns'
 
 const supabase = createClient()
 
+/** Rows read to split the overdue tasks by age — far more than an office
+ * leaves late; past it the oldest ones still count. */
+const OVERDUE_AGES_CAP = 1000
+
+/** A busy office gets dozens of publications a day; two weeks fit. */
+const PUBLICATIONS_PER_DAY_CAP = 2000
+
 /** How far back the monitoring card looks — docs/dashboard.md, decision 4. */
 export const MONITORING_WINDOW_DAYS = 7
-
-/** The header line under the greeting. */
-export interface DashboardStats {
-  /** Hearings scheduled for the current week. */
-  weekly_hearings: number
-  /** Deadlines falling within the next 7 days (overdue ones included). */
-  upcoming_deadlines: number
-}
 
 /** The "Processos ativos" indicator. */
 export interface ProcessCounts {
@@ -33,7 +32,22 @@ export interface TaskCounts {
   overdue: number
   /** Not done, due today. */
   dueToday: number
+  /** The overdue ones by how late they are — up to a week, up to a month,
+   * older. A pile of month-old tasks is a different problem from yesterday's. */
+  overdueByAge: { week: number; month: number; older: number }
+  /** Days since the oldest overdue due date; `null` when nothing is late. */
+  oldestOverdueDays: number | null
 }
+
+/** One bar of a daily series. */
+export interface DailyCount {
+  /** 'yyyy-MM-dd' */
+  day: string
+  count: number
+}
+
+/** How many days the publications indicator draws. */
+export const PUBLICATION_DAYS = 14
 
 /** The client columns the lists embed — just enough for a name. */
 interface ClientNameFields {
@@ -79,32 +93,6 @@ export type WorkloadByAssignee = Record<
   { total: number; byWorkflow: Record<string, number> }
 >
 
-export async function getDashboardStats(): Promise<DashboardStats> {
-  const now = new Date()
-  const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
-  const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
-  const inSevenDays = format(addDays(now, 7), 'yyyy-MM-dd')
-
-  const [hearings, deadlines] = await Promise.all([
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('type', 'hearing')
-      .gte('start_at', weekStart)
-      .lte('start_at', weekEnd),
-    supabase
-      .from('crm_items')
-      .select('id', { count: 'exact', head: true })
-      .not('next_deadline', 'is', null)
-      .lte('next_deadline', inSevenDays),
-  ])
-
-  return {
-    weekly_hearings: countOf(hearings),
-    upcoming_deadlines: countOf(deadlines),
-  }
-}
-
 export async function getProcessCounts(): Promise<ProcessCounts> {
   const [active, monitored] = await Promise.all([
     supabase
@@ -128,22 +116,67 @@ export async function getProcessCounts(): Promise<ProcessCounts> {
 export async function getTaskCounts(): Promise<TaskCounts> {
   // `due_date` is a plain date: compared to the local day, as the Agenda does.
   // Computed here, not by the caller, so the minute refetch picks up midnight.
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const todayKey = format(new Date(), 'yyyy-MM-dd')
+  const today = parseISO(todayKey)
 
   const [overdue, dueToday] = await Promise.all([
+    // The rows too, oldest first, for the ages; the count stays exact even
+    // past the cap.
+    supabase
+      .from('tasks')
+      .select('due_date', { count: 'exact' })
+      .neq('status', 'done')
+      .lt('due_date', todayKey)
+      .order('due_date')
+      .limit(OVERDUE_AGES_CAP),
     supabase
       .from('tasks')
       .select('id', { count: 'exact', head: true })
       .neq('status', 'done')
-      .lt('due_date', today),
-    supabase
-      .from('tasks')
-      .select('id', { count: 'exact', head: true })
-      .neq('status', 'done')
-      .eq('due_date', today),
+      .eq('due_date', todayKey),
   ])
 
-  return { overdue: countOf(overdue), dueToday: countOf(dueToday) }
+  const rows = (overdue.data ?? []) as { due_date: string }[]
+  const daysLate = (row: { due_date: string }) => differenceInCalendarDays(today, parseISO(row.due_date))
+  const overdueByAge = { week: 0, month: 0, older: 0 }
+  for (const row of rows) {
+    const days = daysLate(row)
+    if (days <= 7) overdueByAge.week += 1
+    else if (days <= 30) overdueByAge.month += 1
+    else overdueByAge.older += 1
+  }
+
+  return {
+    overdue: countOf(overdue),
+    dueToday: countOf(dueToday),
+    overdueByAge,
+    oldestOverdueDays: rows.length > 0 ? daysLate(rows[0]) : null,
+  }
+}
+
+/** Publications per day (by `publication_date`, duplicates out), oldest day
+ * first, today last — the arrivals behind the unread count. */
+export async function getPublicationsPerDay(days = PUBLICATION_DAYS): Promise<DailyCount[]> {
+  const now = new Date()
+  const first = format(subDays(now, days - 1), 'yyyy-MM-dd')
+
+  const { data, error } = await supabase
+    .from('publications')
+    .select('publication_date')
+    .is('duplicate_of_id', null)
+    .gte('publication_date', first)
+    .limit(PUBLICATIONS_PER_DAY_CAP)
+
+  if (error) throw error
+
+  const counts = new Map<string, number>()
+  for (const row of (data ?? []) as { publication_date: string }[]) {
+    counts.set(row.publication_date, (counts.get(row.publication_date) ?? 0) + 1)
+  }
+  return Array.from({ length: days }, (_, index) => {
+    const day = format(subDays(now, days - 1 - index), 'yyyy-MM-dd')
+    return { day, count: counts.get(day) ?? 0 }
+  })
 }
 
 /** Unread publications of processos nobody registered — the same queue as
@@ -218,13 +251,20 @@ export type PublicationPreview = Pick<
   | 'created_at'
 >
 
-/** The head of the unread queue, in the order `/publicacoes` lists it. */
-export async function getUnreadPublicationsPreview(limit = 5): Promise<PublicationPreview[]> {
-  const { data, error } = await supabase
+/** The head of the unread queue, in the order `/publicacoes` lists it —
+ * or only its orphans (no processo registered for the CNJ). */
+export async function getUnreadPublicationsPreview({
+  limit = 5,
+  orphansOnly = false,
+}: { limit?: number; orphansOnly?: boolean } = {}): Promise<PublicationPreview[]> {
+  let query = supabase
     .from('publications')
     .select('id, sequence_number, cnj_number, legal_process_id, diario_sigla, title, publication_date, created_at')
     .is('duplicate_of_id', null)
     .is('read_at', null)
+  if (orphansOnly) query = query.is('legal_process_id', null)
+
+  const { data, error } = await query
     .order('publication_date', { ascending: false })
     .order('sequence_number', { ascending: false })
     .limit(limit)
@@ -344,6 +384,8 @@ export interface PortalAccessSummary {
   recent: PortalAccess[]
   /** Links that still open: not revoked and not expired. */
   activeLinks: number
+  /** Granted accesses per local day over the window, today last. */
+  daily: DailyCount[]
 }
 
 /** Plenty for a month of a small office; the card prints three accesses. */
@@ -379,6 +421,16 @@ export async function getPortalAccessSummary(): Promise<PortalAccessSummary> {
   const rows = (log.data ?? []) as unknown as Row[]
   const granted = rows.filter((row) => row.outcome === 'granted')
 
+  const perDay = new Map<string, number>()
+  for (const row of granted) {
+    const day = format(parseISO(row.created_at), 'yyyy-MM-dd')
+    perDay.set(day, (perDay.get(day) ?? 0) + 1)
+  }
+  const daily = Array.from({ length: PORTAL_WINDOW_DAYS }, (_, index) => {
+    const day = format(subDays(now, PORTAL_WINDOW_DAYS - 1 - index), 'yyyy-MM-dd')
+    return { day, count: perDay.get(day) ?? 0 }
+  })
+
   return {
     granted: granted.length,
     clients: new Set(granted.map((row) => row.client_id).filter(Boolean)).size,
@@ -389,5 +441,6 @@ export async function getPortalAccessSummary(): Promise<PortalAccessSummary> {
       at: row.created_at,
     })),
     activeLinks: countOf(links),
+    daily,
   }
 }

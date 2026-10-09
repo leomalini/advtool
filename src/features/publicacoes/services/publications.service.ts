@@ -110,6 +110,19 @@ export async function markPublicationRead(id: string): Promise<void> {
   if (error) throw error
 }
 
+/** Desfaz o "marcar como lida": a publicação volta para a fila. Só a que não
+ * foi tratada — tratar implica lida, e desfazer a leitura não pode desfazer o
+ * tratamento junto. */
+export async function markPublicationUnread(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('publications')
+    .update({ read_at: null })
+    .eq('id', id)
+    .is('handled_at', null)
+
+  if (error) throw error
+}
+
 /** Alterna "tratada". Tratar implica lida — não dá para resolver o que não leu. */
 export async function setPublicationHandled(id: string, handled: boolean): Promise<void> {
   const now = new Date().toISOString()

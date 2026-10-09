@@ -5,7 +5,6 @@ import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { taskKeys } from '@/features/tarefas/hooks/useTasks'
 import {
-  getDashboardStats,
   getCasesByLegalArea,
   getUpcomingDeadlines,
   getWorkloadByAssignee,
@@ -14,30 +13,30 @@ import {
   getUnreadOrphanPublicationCount,
   getWebhookMovements,
   getUnreadPublicationsPreview,
+  getPublicationsPerDay,
   getWebhookHealth,
   getPortalAccessSummary,
 } from '../services/dashboard.service'
 
 /**
- * Dashboard query keys, exported so the invalidation helpers in other features
- * can reference them instead of duplicating magic strings — the dashboard reads
- * events, tasks and crm_items, so creating any of those has to reach in here.
+ * Dashboard query keys.
  *
- * `refetchInterval` alone is not enough: it only runs while the query has a
- * mounted observer. With `staleTime: 60_000` and `refetchOnWindowFocus: false`
- * (see lib/query-client.ts), navigating to the dashboard within a minute of a
- * change shows stale data unless something invalidated it explicitly.
+ * `refetchInterval` alone is not enough to keep them fresh: it only runs while
+ * the query has a mounted observer. With `staleTime: 60_000` and
+ * `refetchOnWindowFocus: false` (see lib/query-client.ts), navigating to the
+ * dashboard within a minute of a change shows stale data unless something
+ * invalidated it.
  *
- * The indicator counts and the monitoring card take the other route: they sit
- * under their domain's prefix, so the invalidations that domain already does
- * reach them — every processo mutation invalidates `legalProcessKeys.all`,
- * every task mutation `taskKeys.all`. Those features don't need to know the
- * dashboard exists. And the bell's Realtime flush (`useRealtimeNotifications`)
- * invalidates the processos and publications prefixes on every notice, so a
- * webhook delivery refreshes the monitoring card by itself.
+ * So the keys that matter sit under their domain's prefix, and the
+ * invalidations that domain already does reach them — every processo mutation
+ * invalidates `legalProcessKeys.all`, every task mutation `taskKeys.all`; the
+ * agenda reads the Agenda's own `eventKeys.range()`. Those features don't need
+ * to know the dashboard exists. And the bell's Realtime flush
+ * (`useRealtimeNotifications`) invalidates the processos and publications
+ * prefixes on every notice, so a webhook delivery refreshes the monitoring card
+ * by itself.
  */
 export const dashboardKeys = {
-  stats: ['dashboard-stats'] as const,
   casesByArea: ['dashboard-cases-by-area'] as const,
   /** Prefix — covers every `limit` variant. */
   upcomingDeadlines: ['dashboard-upcoming-deadlines'] as const,
@@ -49,6 +48,9 @@ export const dashboardKeys = {
   unreadOrphanPublications: [...publicationKeys.unreadCount(), 'orphans'] as const,
   /** Same reason: the list has to move together with the count above it. */
   unreadPublicationsPreview: [...publicationKeys.unreadCount(), 'preview'] as const,
+  unreadOrphanPublicationsPreview: [...publicationKeys.unreadCount(), 'orphans-preview'] as const,
+  /** Arrivals, not the queue: reading one doesn't change them, a new one does. */
+  publicationsPerDay: [...publicationKeys.all, 'dashboard-per-day'] as const,
   webhookMovements: [...legalProcessKeys.all, 'dashboard-webhook-movements'] as const,
   /** Under processos too: registering the processo from the strip's
    * "Cadastrar" has to take it off the strip. */
@@ -56,14 +58,6 @@ export const dashboardKeys = {
   /** Own key: accesses are written by the portal, server-side, so nothing on
    * this side invalidates them — the minute refetch does. */
   portalAccess: ['dashboard-portal-access'] as const,
-}
-
-export function useDashboardStats() {
-  return useQuery({
-    queryKey: dashboardKeys.stats,
-    queryFn: getDashboardStats,
-    refetchInterval: 60_000,
-  })
 }
 
 export function useCasesByLegalArea() {
@@ -106,27 +100,50 @@ export function useTaskCounts() {
   })
 }
 
-export function useUnreadOrphanPublicationCount() {
+/** `enabled` lets a card call the hook unconditionally and read only with the
+ * permission of the table behind it. */
+interface QueryToggle {
+  enabled?: boolean
+}
+
+export function useUnreadOrphanPublicationCount({ enabled }: QueryToggle = {}) {
   return useQuery({
     queryKey: dashboardKeys.unreadOrphanPublications,
     queryFn: getUnreadOrphanPublicationCount,
     refetchInterval: 60_000,
+    enabled,
   })
 }
 
-export function useWebhookMovements() {
+export function useWebhookMovements({ enabled }: QueryToggle = {}) {
   return useQuery({
     queryKey: dashboardKeys.webhookMovements,
     queryFn: getWebhookMovements,
     refetchInterval: 60_000,
+    enabled,
   })
 }
 
-export function useUnreadPublicationsPreview() {
+export function usePublicationsPerDay() {
   return useQuery({
-    queryKey: dashboardKeys.unreadPublicationsPreview,
-    queryFn: () => getUnreadPublicationsPreview(),
+    queryKey: dashboardKeys.publicationsPerDay,
+    queryFn: () => getPublicationsPerDay(),
     refetchInterval: 60_000,
+  })
+}
+
+/** The head of the unread queue — or of its orphans, for the "Sem processo" tab. */
+export function useUnreadPublicationsPreview({
+  orphansOnly = false,
+  enabled,
+}: QueryToggle & { orphansOnly?: boolean } = {}) {
+  return useQuery({
+    queryKey: orphansOnly
+      ? dashboardKeys.unreadOrphanPublicationsPreview
+      : dashboardKeys.unreadPublicationsPreview,
+    queryFn: () => getUnreadPublicationsPreview({ orphansOnly }),
+    refetchInterval: 60_000,
+    enabled,
   })
 }
 

@@ -1,17 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { addDays, format, parseISO } from 'date-fns'
+import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ListChecks } from 'lucide-react'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChevronDown, CircleCheck, Flag, ListChecks } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { getDisplayName } from '@/utils/profile'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useCurrentProfile } from '@/hooks/useProfiles'
-import { TASK_PRIORITY_COLORS, TASK_PRIORITY_LABELS, type Task } from '@/types/task.types'
+import { TASK_PRIORITY_LABELS, type Task } from '@/types/task.types'
 import { AgendaTaskCheck } from '@/features/agenda/components/AgendaTaskCheck'
 import { taskToAgendaItem } from '@/features/agenda/utils/agendaItem'
 import { useTasks } from '@/features/tarefas/hooks/useTasks'
@@ -20,6 +18,10 @@ import { collapseRecurringTasks } from '@/features/tarefas/utils/seriesTasks'
 import { isTaskOverdue } from '@/features/tarefas/utils/filterTasks'
 import { useCompleteTask } from '../hooks/useCompleteTask'
 import { formatCount, pluralize } from '../utils/format'
+import { CardLink } from './CardLink'
+import { DashboardCard } from './DashboardCard'
+import { EmptyLine } from './EmptyLine'
+import { SegmentedControl, type SegmentedOption } from './SegmentedControl'
 
 type Scope = 'mine' | 'office'
 type GroupKey = 'overdue' | 'today' | 'upcoming'
@@ -35,7 +37,10 @@ const GROUP_LABELS: Record<GroupKey, string> = {
   upcoming: `Próximos ${UPCOMING_DAYS} dias`,
 }
 
-const SCOPE_LABELS: Record<Scope, string> = { mine: 'Minhas', office: 'Escritório' }
+const SCOPE_OPTIONS = [
+  { value: 'mine', label: 'Minhas' },
+  { value: 'office', label: 'Escritório' },
+] as const satisfies readonly SegmentedOption<Scope>[]
 
 interface DatedTask {
   task: Task
@@ -50,10 +55,19 @@ function byDue(a: DatedTask, b: DatedTask): number {
   )
 }
 
+/** Only the two that change what to do first; low and medium stay quiet. */
+const PRIORITY_PILLS: Partial<Record<Task['priority'], string>> = {
+  urgent: 'bg-destructive/10 text-destructive',
+  high: 'bg-warning/12 text-warning',
+}
+
 function dueLabel({ task, dueDate }: DatedTask, group: GroupKey): string {
   const time = task.due_time?.slice(0, 5)
   const day = parseISO(dueDate)
-  if (group === 'overdue') return `venceu ${format(day, 'dd/MM')}`
+  if (group === 'overdue') {
+    const late = differenceInCalendarDays(new Date(), day)
+    return `venceu ${format(day, 'dd/MM')} · há ${pluralize(late, 'dia', 'dias')}`
+  }
   if (group === 'today') return time ? `hoje até ${time}` : 'hoje'
   const weekday = format(day, 'EEE, dd/MM', { locale: ptBR })
   return time ? `${weekday}, ${time}` : weekday
@@ -72,11 +86,11 @@ interface TaskRowProps {
 function TaskRow({ row, group, showAssignee, onOpen, onComplete }: TaskRowProps) {
   const { task } = row
   const item = taskToAgendaItem(task)
-  const urgent = task.priority === 'high' || task.priority === 'urgent'
+  const priorityPill = PRIORITY_PILLS[task.priority]
   const assigneeName = showAssignee && task.assignee ? getDisplayName(task.assignee.full_name) : null
 
   return (
-    <div className="relative flex items-start gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/50 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring">
+    <div className="relative flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring">
       {item && (
         <span className="relative z-10 mt-0.5 flex">
           <AgendaTaskCheck
@@ -90,13 +104,13 @@ function TaskRow({ row, group, showAssignee, onOpen, onComplete }: TaskRowProps)
         <button
           type="button"
           onClick={() => onOpen(task)}
-          className="block w-full truncate text-left text-sm font-medium after:absolute after:inset-0 focus-visible:outline-none"
+          className="block w-full truncate text-left text-sm font-semibold after:absolute after:inset-0 focus-visible:outline-none"
         >
           {task.title}
         </button>
         <p
           className={cn(
-            'truncate text-[11px]',
+            'truncate text-xs',
             group === 'overdue' ? 'text-destructive' : 'text-muted-foreground'
           )}
         >
@@ -104,10 +118,14 @@ function TaskRow({ row, group, showAssignee, onOpen, onComplete }: TaskRowProps)
           {assigneeName && ` · ${assigneeName}`}
         </p>
       </div>
-      {urgent && (
+      {priorityPill && (
         <span
-          className={cn('mt-0.5 shrink-0 text-[10px] font-semibold', TASK_PRIORITY_COLORS[task.priority])}
+          className={cn(
+            'mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+            priorityPill
+          )}
         >
+          <Flag aria-hidden className="size-3" />
           {TASK_PRIORITY_LABELS[task.priority]}
         </span>
       )}
@@ -136,6 +154,7 @@ export function TasksCard({ className }: TasksCardProps) {
   const completeTask = useCompleteTask()
 
   const [scope, setScope] = useState<Scope>('mine')
+  const [expanded, setExpanded] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -154,8 +173,8 @@ export function TasksCard({ className }: TasksCardProps) {
     upcoming: dated.filter((row) => row.dueDate > today && row.dueDate <= horizon).sort(byDue),
   }
 
-  // Up to ROWS rows in total, the late ones first.
-  let budget = ROWS
+  // Up to ROWS rows in total, the late ones first — all of them once expanded.
+  let budget = expanded ? Infinity : ROWS
   let hidden = 0
   const groups: { key: GroupKey; total: number; rows: DatedTask[] }[] = []
   for (const key of ['overdue', 'today', 'upcoming'] as const) {
@@ -170,100 +189,112 @@ export function TasksCard({ className }: TasksCardProps) {
     ? (tasks.find((task) => task.id === selectedTaskId) ?? null)
     : null
 
+  const scopeToggle = (
+    <SegmentedControl
+      label="De quem"
+      options={SCOPE_OPTIONS}
+      value={scope}
+      onChange={(next) => {
+        setScope(next)
+        setExpanded(false)
+      }}
+    />
+  )
+
+  const shownCount = groups.reduce((sum, group) => sum + group.rows.length, 0)
+  const toggleLabel =
+    hidden > 0 ? `Mostrar mais ${formatCount(hidden)}` : expanded && shownCount > ROWS ? 'Mostrar menos' : null
+
   return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <ListChecks className="h-4 w-4 text-warning" />
-          Tarefas
-        </CardTitle>
-        <CardAction>
-          <div role="radiogroup" aria-label="De quem" className="flex rounded-md border p-0.5">
-            {(['mine', 'office'] as const).map((option) => (
+    <DashboardCard
+      icon={ListChecks}
+      tone="warning"
+      title="Tarefas"
+      action={scopeToggle}
+      className={className}
+      footer={
+        <>
+          <span className="flex items-center gap-3">
+            {toggleLabel && (
               <button
-                key={option}
                 type="button"
-                role="radio"
-                aria-checked={scope === option}
-                onClick={() => setScope(option)}
-                className={cn(
-                  'rounded px-2 py-0.5 text-[11px] transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  scope === option
-                    ? 'bg-muted font-medium text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
+                aria-expanded={expanded}
+                onClick={() => setExpanded(!expanded)}
+                className="inline-flex items-center gap-1 rounded-sm font-semibold text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {SCOPE_LABELS[option]}
+                {toggleLabel}
+                <ChevronDown
+                  aria-hidden
+                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+                />
               </button>
-            ))}
-          </div>
-        </CardAction>
-      </CardHeader>
-
-      <CardContent className="space-y-3">
-        {isLoading && (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full rounded-lg" />
-            ))}
-          </div>
-        )}
-
-        {isError && (
-          <p className="px-2 py-4 text-sm text-muted-foreground">
-            Não foi possível carregar as tarefas.
-          </p>
-        )}
-
-        {!isLoading && !isError && groups.length === 0 && (
-          <p className="px-2 py-4 text-sm text-muted-foreground">
-            {scope === 'mine'
-              ? `Nada seu atrasado nem para os próximos ${UPCOMING_DAYS} dias.`
-              : `Nada atrasado nem para os próximos ${UPCOMING_DAYS} dias.`}
-          </p>
-        )}
-
-        {groups.map((group) => (
-          <section key={group.key} className="space-y-0.5">
-            <h3
-              className={cn(
-                'px-2 text-xs font-semibold',
-                group.key === 'overdue' ? 'text-destructive' : 'text-muted-foreground'
-              )}
-            >
-              {GROUP_LABELS[group.key]} · {formatCount(group.total)}
-            </h3>
-            <ul>
-              {group.rows.map((row) => (
-                <li key={row.task.id}>
-                  <TaskRow
-                    row={row}
-                    group={group.key}
-                    showAssignee={scope === 'office'}
-                    onOpen={(task) => setSelectedTaskId(task.id)}
-                    onComplete={canComplete ? completeTask : undefined}
-                  />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-muted-foreground">
-          <Link href="/tarefas" className="font-medium text-foreground hover:underline">
-            Ver todas
-          </Link>
-          {hidden > 0 && <span>e mais {pluralize(hidden, 'tarefa', 'tarefas')}</span>}
-          {undatedCount > 0 && <span>{pluralize(undatedCount, 'sem data', 'sem data')}</span>}
+            )}
+            {undatedCount > 0 && <span>{pluralize(undatedCount, 'sem data', 'sem data')}</span>}
+          </span>
+          <CardLink href="/tarefas" strong>
+            Ver quadro
+          </CardLink>
+        </>
+      }
+    >
+      {isLoading && (
+        <div className="space-y-2 px-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full rounded-lg" />
+          ))}
         </div>
-      </CardContent>
+      )}
+
+      {isError && (
+        <p className="px-2 py-3 text-sm text-muted-foreground">
+          Não foi possível carregar as tarefas.
+        </p>
+      )}
+
+      {!isLoading && !isError && groups.length === 0 && (
+        <EmptyLine
+          icon={CircleCheck}
+          tone="success"
+          title="Tudo em dia"
+          description={
+            scope === 'mine'
+              ? `Nada seu atrasado nem para os próximos ${UPCOMING_DAYS} dias.`
+              : `Nada atrasado nem para os próximos ${UPCOMING_DAYS} dias.`
+          }
+        />
+      )}
+
+      {groups.map((group) => (
+        <section key={group.key}>
+          <h3
+            className={cn(
+              'px-2 pt-2 pb-0.5 text-[11px] font-semibold uppercase tracking-wider',
+              group.key === 'overdue' ? 'text-destructive' : 'text-muted-foreground'
+            )}
+          >
+            {GROUP_LABELS[group.key]} · {formatCount(group.total)}
+          </h3>
+          <ul>
+            {group.rows.map((row) => (
+              <li key={row.task.id}>
+                <TaskRow
+                  row={row}
+                  group={group.key}
+                  showAssignee={scope === 'office'}
+                  onOpen={(task) => setSelectedTaskId(task.id)}
+                  onComplete={canComplete ? completeTask : undefined}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
 
       <TaskDetailModal
         task={selectedTask}
         open={!!selectedTask}
         onClose={() => setSelectedTaskId(null)}
       />
-    </Card>
+    </DashboardCard>
   )
 }

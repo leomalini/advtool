@@ -42,11 +42,7 @@ export function CasesByAreaChart() {
   if (isLoading) return <Skeleton className="h-[180px] w-full rounded-lg" />
 
   if (chartData.length === 0) {
-    return (
-      <p className="py-10 text-center text-sm text-muted-foreground">
-        Nenhum caso com área jurídica definida.
-      </p>
-    )
+    return <p className="py-2 text-sm text-muted-foreground">Nenhum caso com área jurídica definida.</p>
   }
 
   return (
