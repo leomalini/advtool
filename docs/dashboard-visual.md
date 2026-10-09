@@ -1,0 +1,256 @@
+# Dashboard — refatoração visual
+
+> **Status:** plano e decisões aprovados em 2026-10-08 (as três primeiras
+> recomendações; a despesa do fluxo continua vermelha). PRs em branches
+> empilhadas, sem push — ver "Como ficou" em cada fase. Os dados e as consultas da refatoração anterior
+> ([dashboard.md](dashboard.md)) ficam; muda a forma. Protótipo navegável com
+> dados fictícios (três cenários, claro/escuro, celular):
+> [dashboard-visual-prototipo.html](dashboard-visual-prototipo.html) — abrir
+> no navegador; aceita `?cenario=cheia|vazia|zerado&tema=dark&tela=390`.
+
+Pedido: o resultado visual do dashboard atual não ficou bom — muito espaço vazio
+e mal aproveitado. Exemplo: com a agenda da semana vazia, o card fica com um
+enorme espaço em branco embaixo para igualar a altura do card de monitoramento.
+Dar mais vida ao dashboard, mais interativo e visualmente atraente.
+
+## Por que sobra espaço hoje
+
+| # | Causa | Onde |
+|---|---|---|
+| 1 | **A linha amarra a altura dos cards.** `DashboardRow` é um grid; item de grid estica até o mais alto da linha (`align-items: stretch`). O card com menos conteúdo ganha o vazio embaixo. Acontece nas três linhas de pares: Monitoramento + Agenda, Tarefas + Prazos, Equipe + Portal + Pendências. | `DashboardRow.tsx`, `DashboardContent.tsx:95-117` |
+| 2 | **Vazio ocupa um card inteiro.** "Nada nos próximos 7 dias." fica dentro do card com cabeçalho e faixa de dias, e ainda estica pelo item 1. Com os dados reais (2 eventos em 30 dias) a agenda vive vazia. | `AgendaWeekCard.tsx:335-339` |
+| 3 | **Moldura maior que o conteúdo.** O `Card` do shadcn traz `py-6 gap-6` (48 px de respiro vertical + 24 px entre cabeçalho e corpo), e o conteúdo é texto de 11–13 px. Caixas grandes com pouco dentro. | `components/ui/card.tsx` |
+| 4 | **Tudo com o mesmo peso.** Nove caixas brancas iguais, mesmo título pequeno, texto cinza; a cor só aparece em pontos de 6 px. Nada conduz o olho. | todos os cards |
+| 5 | **Número sem forma.** Cada indicador é um número num cartão de ~170 px de altura. | `MetricCard.tsx` |
+| 6 | **Pouca interação.** Além de links, só concluir tarefa funciona no lugar. | — |
+
+## Princípios
+
+1. **Conteúdo define a altura; o vizinho nunca.**
+2. **Vazio é pequeno:** uma linha com o que fazer, nunca um card do tamanho do cheio.
+3. **Um protagonista:** o bloco "Hoje" no topo responde "o que eu faço agora?".
+4. **Número com forma — e só com dado real.** Nada de tendência inventada (regra
+   que já vale desde a refatoração anterior).
+5. **Agir sem sair do dashboard.**
+6. **Movimento com propósito**, sempre atrás de `prefers-reduced-motion`.
+7. **Continua Graphite:** tokens de `globals.css`; cor de estado (vermelho,
+   âmbar, verde) só quando significa estado.
+
+## Layout
+
+Desktop (área de conteúdo ≥ ~940 px):
+
+| Faixa | Conteúdo |
+|---|---|
+| 1 | **Hoje** (largura toda) |
+| 2 | **Indicadores** (4) |
+| 3 | Duas colunas **independentes**: principal (~65%) com Monitoramento, Tarefas e Financeiro; lateral (~35%) com Prazos, Pendências, Portal e Equipe |
+
+Cada coluna empilha os seus cards na altura do próprio conteúdo. O fim das
+colunas fica desigual — no rodapé da página, onde não incomoda — em troca de
+nunca haver vazio dentro de card nem entre cards.
+
+Celular: uma coluna, na ordem Hoje, Indicadores, Prazos, Monitoramento, Tarefas,
+Financeiro, Pendências, Portal, Equipe. As duas colunas viram `display:
+contents` abaixo do breakpoint e cada card carrega um `order`, então a mesma
+árvore serve aos dois layouts.
+
+Card sem permissão continua sumindo (regra de `DashboardContent`). Se uma coluna
+ficar sem nenhum card para o perfil, a outra ocupa a largura toda.
+
+## Hoje (substitui o `AgendaWeekCard` e a linha do cabeçalho)
+
+- Saudação e data, com um resumo em chips derivado da agenda já carregada:
+  "N compromissos e N tarefas hoje", "Prazo fatal hoje · <título>" (com o
+  pulso de `animate-pulse-urgent`) e "Próximo: <título> às 14:00 · em 35 min".
+  Substitui "N audiências esta semana · N prazos próximos"
+  (`getDashboardStats`), que sai.
+- Ações: **Novo compromisso** e **Tarefa** abrem o `AgendaCreateDialog` — o
+  mesmo da Agenda. Ele precisa de uma prop para abrir já na aba Tarefa.
+- Faixa de 7 dias (a mesma de hoje, maior): pontos na cor do tipo, vermelho
+  para prazo fatal; clicar troca o dia mostrado.
+- **Régua do dia** (08h–19h, alarga se houver item fora): blocos na cor do tipo,
+  tarefas como marcadores, passado esmaecido, linha do "agora". Passar o mouse
+  mostra o resumo; clicar abre `EventDetailModal`/`TaskDetailModal`.
+  `layoutDayEvents` (`agenda/utils/dayLayout.ts`) já calcula posição e faixas
+  de sobreposição em porcentagem — serve na horizontal. Some no celular.
+- **Lista do dia:** horário, barra na cor do tipo, título, tipo · cliente ·
+  local, responsável, selos "em 35 min" e "agora", divisor "Agora · 13:25";
+  tarefa com o círculo de concluir (`useCompleteTask`, com Desfazer).
+- Dia vazio: uma faixa "Dia livre · N itens no resto da semana" + "Agendar".
+  Semana vazia: "Semana livre".
+- Mesmas consultas e chaves da Agenda (`useEvents`, `useTasksInRange`), como o
+  card atual. O "agora" anda a cada minuto: `useNow(60_000)` extraído do
+  `NowIndicator` de `TimeGrid.tsx`.
+
+## Indicadores
+
+Os mesmos quatro (e "Em negociação" para quem não vê o Financeiro), num cartão
+mais baixo: rótulo, valor contando até o número, um micro-gráfico e uma linha
+de apoio.
+
+| Indicador | Micro-gráfico | Dado | Consulta nova? |
+|---|---|---|---|
+| Processos ativos | medidor monitorados / ativos | `getProcessCounts` | não |
+| Publicações não lidas | colunas por dia, 14 dias, hoje em destaque | `publications.publication_date` (sem duplicadas) | sim, uma leve |
+| Tarefas atrasadas | barra pela idade do atraso: até 7 dias · 8–30 · mais de 30 | `due_date` das atrasadas, no lugar da contagem `head` | ajuste |
+| A receber | barra das três parcelas, cada uma clicável | `FinancialSummary` | não |
+
+- "Concluídas por dia" fica de fora: `tasks` não tem `completed_at`.
+- As parcelas do "A receber" viram links (`/financeiro?situacao=…`) por cima
+  do link do cartão — o mesmo padrão de link esticado que a linha de
+  publicação já usa.
+- "Em negociação" fica sem micro-gráfico.
+
+## Cards
+
+### Monitoramento
+
+- Abas com contagem: **Movimentações · Publicações · Sem processo** (a fila
+  filtrada pelas órfãs). Abre em Movimentações quando houve alguma em 7 dias;
+  senão, em Publicações.
+- Ao lado das abas, as chegadas por dia em 7 dias — das movimentações já
+  carregadas, sem consulta nova.
+- Movimentação: ponto "novo" para o que chegou em 24 h; passar o mouse mostra
+  os últimos 3 atos do processo. `groupProcessNews` hoje guarda só o último:
+  passa a guardar os 3 mais recentes.
+- Publicação: ao passar o mouse, **Marcar como lida** (`useMarkPublicationRead`)
+  e Abrir. O Desfazer precisa de `markPublicationUnread` (`read_at` nulo) em
+  `publications.service.ts` — hoje só existe o caminho de ida.
+- A faixa da integração (`WebhookHealthStrip`) vira uma pílula de status no
+  cabeçalho (em dia / atenção / recusada) com o conteúdo atual num popover. Só a
+  "última entrega recusada" continua como alerta dentro do card.
+
+### Tarefas
+
+Mesmos dados e regras (`collapseRecurringTasks`, Minhas · Escritório). Grupos
+com contagem, atraso em vermelho com "há N dias", selo de prioridade alta e
+urgente, avatar no modo Escritório. "Mostrar mais N" abre no próprio card.
+
+### Financeiro
+
+- O mês em quatro números: Recebido (com a parte da InfinitePay), Despesas,
+  Resultado e Links em aberto. "A receber" fica só no indicador.
+- Abaixo, lado a lado: o fluxo de 6 meses e as cobranças por link (em aberto e
+  recebidas, com copiar, WhatsApp e comprovante ao passar o mouse).
+- O gráfico **preenche a altura da coluna** ao lado (`flex-1`), em vez de ter
+  altura fixa — senão o vazio volta para dentro do card.
+
+### Lateral
+
+- **Prazos:** bloco de data, ponto pulsando no prazo fatal, área com a cor dela,
+  rótulo de urgência, responsável.
+- **Pendências:** dois blocos (clientes, processos) com quantos travam o
+  trabalho.
+- **Portal:** número, colunas de acessos por dia em 30 dias (das linhas que
+  `getPortalAccessSummary` já busca) e os 3 últimos acessos.
+- **Equipe:** uma linha por pessoa (casos, tarefas, atrasadas) com a barra
+  processo × negociação; abas Pessoas · Áreas mantidas.
+
+## Cores — achados do validador de paleta
+
+Rodado sobre os tokens atuais (claro e escuro):
+
+- **Receitas × Despesas** (verde × vermelho): ΔE 3,0 em deuteranopia — para
+  quem não distingue vermelho e verde, as duas barras são a mesma cor. Falha.
+  Decisão 4: fica como está, aqui e no Financeiro; a leitura para quem não
+  distingue as cores segue pela posição fixa das barras (receita à esquerda),
+  pela legenda e pelo tooltip com os dois valores.
+- **A receber**, "a vencer" × "vencido" (âmbar × vermelho) lado a lado: ΔE 15,0
+  em visão normal (no limite) e 7,6 em deuteranopia. Reordenar para **A vencer
+  · Condição especial · Vencido** põe o azul no meio e passa em todos os testes.
+
+## Base visual (componentes novos)
+
+| Peça | Papel |
+|---|---|
+| `DashboardCard` | Moldura dos cards do dashboard: cabeçalho (ícone com fundo tingido, título, ações), corpo, rodapé opcional; respiro de 16 px. O `Card` do shadcn não muda fora daqui. |
+| `EmptyLine` | Estado vazio compacto: ícone, frase, apoio, uma ação. |
+| `StatTile` | Substitui `MetricCard`. |
+| `MiniColumns`, `Meter`, `SegmentBar` | Micro-gráficos em HTML/CSS, com tooltip. |
+| `DashboardColumns` | Substitui `DashboardRow`: duas colunas independentes + ordem do celular. |
+| `TodayPanel` | O bloco Hoje. |
+| `useCountUp`, `useNow` | Número contando (só na montagem e quando o valor muda) e relógio por minuto. |
+
+Entrada dos cards com `animate-in fade-in slide-in-from-bottom` (o
+`tw-animate-css` já está importado), escalonada e atrás de `motion-safe:`.
+Ações das linhas aparecem no hover e também no foco do teclado.
+
+## Decisões
+
+Escolhidas pelo usuário em 2026-10-08.
+
+| # | Decisão | Escolha | Descartado |
+|---|---|---|---|
+| 1 | Organização dos cards | Duas colunas independentes | Grade com altura fixa e rolagem interna (o card vazio continuaria ocupando a altura); manter as linhas e só encolher o vazio |
+| 2 | Bloco Hoje | Régua do dia + lista | Só a lista; manter a agenda como card na lateral |
+| 3 | Interações novas | Todas: criar no topo, marcar publicação como lida (com Desfazer), prévia das movimentações, animações | — |
+| 4 | Cor da despesa no fluxo | **Manter o vermelho** (aqui e no Financeiro) | Cinza (era a recomendação); violeta |
+
+## Fases
+
+Uma branch por PR, empilhadas, a partir de `origin/main` com `--no-track`.
+
+1. **Base e layout** — `DashboardCard`, `EmptyLine`, `DashboardColumns`,
+   estados vazios compactos em todos os cards, respiro e tipografia, entrada
+   animada. Os cards mantêm o conteúdo. Só este PR já acaba com o vazio da
+   queixa.
+
+   **Como ficou (2026-10-09, branch `feat/dashboard-visual-base`):**
+
+   - Peças novas: `DashboardCard` (moldura própria e container — o conteúdo
+     se arranja pela largura do card, não da janela), `EmptyLine`, `CardLink`,
+     `SegmentedControl` (abas ou filtro, com setas do teclado) e
+     `DashboardColumns`. A entrada escalonada está em `utils/motion.ts`, atrás
+     de `motion-safe:`; o atraso vai por `--tw-animation-delay`, porque o
+     `delay-*` também atrasaria as transições do próprio elemento.
+   - As duas colunas abrem com a área do dashboard a partir de 896 px
+     (`@4xl/dashboard`), medida de verdade — com a barra lateral aberta ou
+     fechada. Abaixo disso, `display: contents` + `order-*`: Agenda, Prazos,
+     Monitoramento, Tarefas, Financeiro, Pendências, Portal, Equipe.
+   - Até o PR 2, a Agenda da semana fica no topo da coluna lateral.
+   - Antecipado do PR 4 (só apresentação): Prazos em linhas sem caixa, com o
+     ponto da área na cor dela; Equipe em uma linha por pessoa, com a barra
+     processo × negociação proporcional à mesa mais cheia e legenda; Financeiro
+     reorganizado para a coluna larga (números do mês; "A receber" com a barra
+     até o PR 3; fluxo e cobranças lado a lado, com o gráfico preenchendo a
+     altura da lista e a legenda que faltava). Ações das cobranças aparecem no
+     hover só onde há mouse (`pointer-fine:`); no toque ficam visíveis.
+   - A Equipe deixou o `Tabs` do Radix: envolvendo o card, ele injetava
+     `gap-2` e levava a variável do atraso da animação para fora do elemento
+     animado (ela não é herdada).
+   - Tarefas: "há N dias" nas atrasadas, selo de prioridade alta e urgente,
+     "Ver quadro" no rodapé.
+   - Achado fora do escopo: `formatPrazo` (`crm/utils/prazo.ts`) lê a data
+     como meia-noite UTC; entre 21h e meia-noite os prazos aparecem um dia
+     adiantados ("Vencido há 1d" no dia). Ficou como tarefa separada.
+   - Conferido: `tsc`, lint e build ok. Telas pela página temporária
+     `/acompanhar/preview-dashboard` (semana cheia, semana vazia e escritório
+     novo; perfis admin e financeiro; 1500 px e celular 375 px; claro e
+     escuro), sem estouro lateral no celular.
+2. **Hoje** — `TodayPanel` com chips, ações, faixa, régua e lista; saem
+   `AgendaWeekCard`, `getDashboardStats` e a linha do cabeçalho.
+3. **Indicadores** — `StatTile`, micro-gráficos, `useCountUp`, consulta de
+   publicações por dia, idade das atrasadas, parcelas clicáveis e a nova ordem
+   do "A receber".
+4. **Cards interativos** — Monitoramento (abas, chegadas por dia, prévia,
+   marcar como lida com Desfazer, pílula de status), Tarefas (mostrar mais),
+   Financeiro (números do mês, gráfico que preenche a coluna) e a lateral.
+
+Pronto, em cada PR: nenhum card estica para acompanhar outro; todo estado vazio
+tem uma linha só; `npx tsc --noEmit`, `pnpm lint` e `pnpm build` ok.
+
+## Verificação
+
+Sem testes automatizados no projeto. Em cada PR, a página temporária
+`/acompanhar/preview-dashboard` com o cache do React Query pré-carregado (como
+na refatoração anterior), em três cenários — semana cheia, semana vazia,
+escritório novo —, desktop e celular, claro e escuro, com captura de tela.
+Apagar antes do commit.
+
+## Fora de escopo
+
+- Personalizar o layout (esconder e reordenar cards).
+- Tendências e comparativos sem histórico guardado.
+- "Adiar tarefa" direto do card (uma escrita nova).
+- Marcar movimentação como vista.
