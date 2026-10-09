@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { format, isToday, isSameDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Sun } from 'lucide-react'
@@ -16,6 +17,8 @@ import {
   type DaySegment,
 } from '../utils/daySpan'
 import { agendaItemWhenLabel, type AgendaItem, type TaskAgendaItem } from '../utils/agendaItem'
+import type { AgendaDragSource, GridDropZone } from '../utils/dragMove'
+import { useAgendaDrag, type AgendaDragPreview } from '../hooks/useAgendaDrag'
 import { AgendaTaskCheck } from './AgendaTaskCheck'
 
 /** Minutos do dia → "HH:mm". 1440 é meia-noite do dia seguinte. */
@@ -53,6 +56,8 @@ interface TimeGridProps {
   onItemClick: (item: AgendaItem) => void
   /** Ausente sem permissão de alterar tarefas. */
   onToggleTask?: (item: TaskAgendaItem) => void
+  /** Pode arrastar este item para outro dia ou horário? Ausente: nada se move. */
+  canDragItem?: (item: AgendaItem) => boolean
 }
 
 /** Linha vermelha da hora atual, como no Google Calendar. */
@@ -152,11 +157,13 @@ function AllDayChip({
 function TimedBlock({
   positioned,
   eventTypes,
+  draggable,
   onItemClick,
   onToggleTask,
 }: {
   positioned: PositionedEvent
   eventTypes: Map<string, EventTypeRecord>
+  draggable: boolean
   onItemClick: (item: AgendaItem) => void
   onToggleTask?: (item: TaskAgendaItem) => void
 }) {
@@ -170,10 +177,30 @@ function TimedBlock({
     width: `calc(${widthPct}% - 4px)`,
   }
 
+  // Um id por pedaço: o mesmo evento aparece em mais de uma coluna quando
+  // atravessa a meia-noite.
+  const dragSource: AgendaDragSource = {
+    type: 'agenda-item',
+    segment,
+    topMin: startMin,
+    heightMin: endMin - startMin,
+  }
+  const { setNodeRef, listeners } = useDraggable({
+    id: `${item.id}@${segment.dayKey}`,
+    data: dragSource,
+    disabled: !draggable,
+  })
+  // O bloco fica no lugar enquanto a sombra mostra o destino; todos os
+  // pedaços do item apagam juntos.
+  const { movingItemId } = useAgendaDrag()
+  const dragClasses = cn(draggable && 'cursor-grab', movingItemId === item.id && 'opacity-40')
+
   if (item.kind === 'task') {
     // Tarefa marca um momento: uma linha só, com o círculo de concluir.
     return (
       <div
+        ref={setNodeRef}
+        {...listeners}
         role="button"
         tabIndex={0}
         onClick={() => onItemClick(item)}
@@ -185,7 +212,8 @@ function TimedBlock({
         title={`Tarefa · ${agendaItemWhenLabel(item)} · ${item.title}`}
         className={cn(
           'absolute z-10 flex items-start gap-1 rounded border border-info/40 bg-card px-1.5 py-0.5 text-left text-info overflow-hidden shadow-sm hover:bg-info/10 transition-colors cursor-pointer',
-          item.done && 'opacity-60'
+          item.done && 'opacity-60',
+          dragClasses
         )}
         style={position}
       >
@@ -213,13 +241,16 @@ function TimedBlock({
 
   return (
     <button
+      ref={setNodeRef}
+      {...listeners}
       type="button"
       onClick={() => onItemClick(item)}
       title={`${eventRangeLabel(item.event)} · ${tipo.label} · ${item.title}`}
       className={cn(
         'absolute z-10 rounded px-1.5 text-left text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity',
         // Abaixo de ~14px não sobra altura nem para o padding.
-        heightPx < 16 ? 'py-0 leading-none' : 'py-0.5'
+        heightPx < 16 ? 'py-0 leading-none' : 'py-0.5',
+        dragClasses
       )}
       style={{ ...position, backgroundColor: tipo.color }}
     >
@@ -243,6 +274,106 @@ function TimedBlock({
   )
 }
 
+/** Onde o item arrastado vai cair: encaixado no passo de 15 min, com o novo
+ * horário escrito. Não recebe o mouse — o alvo continua sendo a coluna. */
+function DragGhost({
+  preview,
+  eventTypes,
+}: {
+  preview: AgendaDragPreview
+  eventTypes: Map<string, EventTypeRecord>
+}) {
+  const { item, topMin, heightMin, label } = preview
+  const position = {
+    top: `${(topMin / FULL_DAY.spanMin) * 100}%`,
+    height: `${Math.max((heightMin / FULL_DAY.spanMin) * 100, MIN_HEIGHT_PCT)}%`,
+  }
+  const color = item.kind === 'event' ? resolveEventType(eventTypes, item.event.type).color : null
+
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'absolute inset-x-0.5 z-20 pointer-events-none overflow-hidden rounded border-2 border-dashed px-1.5 py-0.5 shadow-md',
+        !color && 'border-info bg-info/15 text-info'
+      )}
+      style={color ? { ...position, borderColor: color, backgroundColor: `${color}33`, color } : position}
+    >
+      <span className="block text-[10px] font-semibold leading-tight">{label}</span>
+      {heightMin >= 30 && (
+        <span className="block text-[10px] leading-tight truncate">{item.title}</span>
+      )}
+    </div>
+  )
+}
+
+/** Coluna de um dia: cria no clique, recebe o item arrastado e mostra a sombra. */
+function DayColumn({
+  day,
+  segments,
+  eventTypes,
+  canDragItem,
+  onSlotClick,
+  onItemClick,
+  onToggleTask,
+}: {
+  day: Date
+  segments: DaySegment[]
+  eventTypes: Map<string, EventTypeRecord>
+  canDragItem?: (item: AgendaItem) => boolean
+  onSlotClick: (day: Date, hour: number) => void
+  onItemClick: (item: AgendaItem) => void
+  onToggleTask?: (item: TaskAgendaItem) => void
+}) {
+  const dayKey = format(day, 'yyyy-MM-dd')
+  const columnRef = useRef<HTMLDivElement | null>(null)
+  const dropZone: GridDropZone = {
+    type: 'grid-day',
+    day,
+    hourHeight: HOUR_HEIGHT,
+    getTop: () => columnRef.current?.getBoundingClientRect().top ?? 0,
+  }
+  const { setNodeRef } = useDroppable({ id: `grid-day:${dayKey}`, data: dropZone })
+  const { preview } = useAgendaDrag()
+
+  const { timed } = layoutDayEvents(segments, FULL_DAY, { minHeightPct: MIN_HEIGHT_PCT })
+
+  return (
+    <div
+      ref={(node) => {
+        setNodeRef(node)
+        columnRef.current = node
+      }}
+      className={cn('relative flex-1 min-w-0 border-r last:border-r-0', isToday(day) && 'bg-primary/[0.03]')}
+    >
+      {/* Alvos de clique por hora */}
+      {HOURS.map((h) => (
+        <button
+          key={h}
+          type="button"
+          aria-label={`Criar em ${format(day, "dd 'de' MMMM", { locale: ptBR })} às ${h}h`}
+          onClick={() => onSlotClick(day, h)}
+          className="absolute inset-x-0 hover:bg-accent/30 transition-colors"
+          style={{ top: h * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+        />
+      ))}
+
+      {timed.map((positioned) => (
+        <TimedBlock
+          key={positioned.item.id}
+          positioned={positioned}
+          eventTypes={eventTypes}
+          draggable={canDragItem?.(positioned.item) ?? false}
+          onItemClick={onItemClick}
+          onToggleTask={onToggleTask}
+        />
+      ))}
+
+      {preview?.dayKey === dayKey && <DragGhost preview={preview} eventTypes={eventTypes} />}
+    </div>
+  )
+}
+
 export function TimeGrid({
   days,
   getItemsForDay,
@@ -250,6 +381,7 @@ export function TimeGrid({
   onSlotClick,
   onItemClick,
   onToggleTask,
+  canDragItem,
 }: TimeGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -290,7 +422,8 @@ export function TimeGrid({
         mesmo container, todos compartilham a mesma largura útil — e de quebra
         os dias continuam visíveis ao rolar, como no Google Calendar.
       */}
-      <div ref={scrollRef} className="overflow-y-auto max-h-[620px]">
+      {/* select-none: arrastar um bloco não pode sair selecionando o texto da grade. */}
+      <div ref={scrollRef} className="overflow-y-auto max-h-[620px] select-none">
         <div className="sticky top-0 z-30 bg-card">
           {/* Cabeçalho dos dias */}
           <div className="flex border-b bg-muted/30">
@@ -370,43 +503,18 @@ export function TimeGrid({
               ))}
             </div>
 
-            {days.map((day) => {
-              const { timed } = layoutDayEvents(getItemsForDay(day), FULL_DAY, {
-                minHeightPct: MIN_HEIGHT_PCT,
-              })
-
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={cn(
-                    'relative flex-1 min-w-0 border-r last:border-r-0',
-                    isToday(day) && 'bg-primary/[0.03]'
-                  )}
-                >
-                  {/* Alvos de clique por hora */}
-                  {HOURS.map((h) => (
-                    <button
-                      key={h}
-                      type="button"
-                      aria-label={`Criar em ${format(day, "dd 'de' MMMM", { locale: ptBR })} às ${h}h`}
-                      onClick={() => onSlotClick(day, h)}
-                      className="absolute inset-x-0 hover:bg-accent/30 transition-colors"
-                      style={{ top: h * HOUR_HEIGHT, height: HOUR_HEIGHT }}
-                    />
-                  ))}
-
-                  {timed.map((positioned) => (
-                    <TimedBlock
-                      key={positioned.item.id}
-                      positioned={positioned}
-                      eventTypes={eventTypes}
-                      onItemClick={onItemClick}
-                      onToggleTask={onToggleTask}
-                    />
-                  ))}
-                </div>
-              )
-            })}
+            {days.map((day) => (
+              <DayColumn
+                key={day.toISOString()}
+                day={day}
+                segments={getItemsForDay(day)}
+                eventTypes={eventTypes}
+                canDragItem={canDragItem}
+                onSlotClick={onSlotClick}
+                onItemClick={onItemClick}
+                onToggleTask={onToggleTask}
+              />
+            ))}
 
             <NowIndicator days={days} />
           </div>

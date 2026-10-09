@@ -1,5 +1,13 @@
+import type { SeriesScope } from '@/lib/recurrence'
 import type { CalendarEvent } from '@/types/event.types'
 import { effectiveEnd } from './daySpan'
+
+/** Opções do diálogo de alcance, no gênero de "evento" — detalhe e arraste. */
+export const EVENT_SCOPE_LABELS: Record<SeriesScope, string> = {
+  this: 'Este evento',
+  following: 'Este e os eventos seguintes',
+  all: 'Todos os eventos',
+}
 
 export interface CollapsedEvent {
   event: CalendarEvent

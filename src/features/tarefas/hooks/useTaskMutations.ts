@@ -107,8 +107,9 @@ const TASK_LIST_FILTERS = [
 ]
 
 /** Aplica `patch` à tarefa `id` em todas as listas em cache e devolve o
- * retrato anterior, para desfazer se o servidor recusar. */
-async function patchCachedTask(
+ * retrato anterior, para desfazer se o servidor recusar. Também o arraste da
+ * Agenda (useMoveAgendaItem). */
+export async function patchCachedTask(
   queryClient: ReturnType<typeof useQueryClient>,
   id: string,
   patch: Partial<Task>
