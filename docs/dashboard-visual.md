@@ -305,6 +305,43 @@ Uma branch por PR, empilhadas, a partir de `origin/main` com `--no-track`.
    marcar como lida com Desfazer, pílula de status), Tarefas (mostrar mais),
    Financeiro (números do mês, gráfico que preenche a coluna) e a lateral.
 
+   **Como ficou (2026-10-09, branch `feat/dashboard-visual-interativo`,
+   empilhada na do PR 3):** Financeiro, Prazos e Equipe já tinham entrado no
+   PR 1; aqui ficou o resto.
+
+   - Monitoramento em abas com contagem — Movimentações · Publicações · Sem
+     processo —, cada uma com a permissão da sua tabela (as consultas ganharam
+     `enabled`). Abre em Movimentações quando há novidade (ou enquanto carrega);
+     senão, na fila. Num card estreito as abas dividem a largura, contagem em
+     cima do rótulo (`SegmentedControl` com `stackOnNarrow`).
+   - "Sem processo" lê só as órfãs (`getUnreadPublicationsPreview` com
+     `orphansOnly`), com "Cadastrar" já com o CNJ.
+   - Chegadas por dia em 7 dias ao lado das abas, das movimentações já
+     carregadas. Ponto "novo" no que chegou nas últimas 24 h. Passar o mouse
+     num processo mostra os 3 atos mais recentes (`groupProcessNews` guarda
+     `recent`).
+   - "Marcar como lida" na linha da publicação (só com `publicacoes:update`,
+     a RLS de UPDATE): a linha sai e as contagens caem na hora; o toast traz
+     "Desfazer" (`markPublicationUnread`, que não desfaz publicação tratada).
+     `useSetPublicationRead` invalida o prefixo inteiro de publicações.
+   - A saúde da BuscaProcessos virou `WebhookStatusPill` no cabeçalho (em dia /
+     a reprocessar / monitorado sem cadastro / recusada), com os detalhes num
+     popover; só "última entrega recusada" continua como alerta dentro do card.
+     Saiu `WebhookHealthStrip`.
+   - Tarefas: "Mostrar mais N" abre no próprio card; trocar Minhas · Escritório
+     fecha de novo.
+   - Portal: colunas de acessos por dia em 30 dias (das mesmas linhas que
+     `getPortalAccessSummary` já lia).
+   - Achado: o extrator de classes do Tailwind 4 perdeu as classes escritas
+     depois do `buttons.current[index] = element` do `SegmentedControl` — o
+     botão ficava sem elas, no dev e no build. Foram para constantes no topo do
+     módulo. Uma auditoria das classes de todos os arquivos do dashboard contra
+     o CSS servido não achou outro caso.
+   - Conferido: `tsc`, lint e build ok. Pela página temporária: abas, marcar
+     como lida (linha sai, 12 → 11, toast com Desfazer), aba das órfãs com
+     "Cadastrar", popover da pílula, prévia dos atos, "Mostrar mais 4" (6 → 10
+     linhas); 1500 px e celular sem estouro lateral; claro e escuro.
+
 Pronto, em cada PR: nenhum card estica para acompanhar outro; todo estado vazio
 tem uma linha só; `npx tsc --noEmit`, `pnpm lint` e `pnpm build` ok.
 
