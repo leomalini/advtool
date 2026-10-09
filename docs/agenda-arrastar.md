@@ -1,10 +1,10 @@
 # Agenda — arrastar para mudar dia e horário
 
 > **Status:** plano e decisões aprovados em 2026-10-08 (todas as
-> recomendações; a fase 3 entra com os dois extras). **Fase 1** commitada em
-> `feat/agenda-arrastar`; **fase 2** implementada em
-> `feat/agenda-arrastar-mes`, empilhada sobre ela (nada com push) — ver "Como
-> ficou" em cada fase. Fase 3 por fazer.
+> recomendações; a fase 3 entra com os dois extras). As três fases estão
+> implementadas, em branches empilhadas e sem push: `feat/agenda-arrastar` →
+> `feat/agenda-arrastar-mes` → `feat/agenda-arrastar-extras` — ver "Como
+> ficou" em cada fase. Falta conferir logado, contra o banco real.
 
 Pedido: arrastar um item da Agenda para escolher o dia e o horário, como no
 Google Agenda.
@@ -264,6 +264,41 @@ refazer ocorrências) a simulação não executa.
   preenchidos. Clique simples continua criando às HH:00, como hoje. Depende de
   o alvo de criação levar término — hoje `AgendaCreateTarget` só tem `at` e
   `withTime`.
+
+**Como ficou (2026-10-08):**
+
+- **Redimensionar:** `ResizeHandle` (um `span` de 8 px na base do bloco,
+  visível no hover) com `useAgendaResizeDrag`; fonte `ResizeDragSource` e
+  conta em `resizeInGrid`. Só em evento, só no pedaço do último dia, só em
+  bloco de 24 px ou mais. Passo de 15 min no deslocamento (como o mover),
+  duração mínima de 15 min, término até a meia-noite do próprio dia. A alça
+  fica dentro do bloco: o dnd-kit marca o evento nativo com quem o capturou
+  primeiro, e a alça, mais por dentro, ganha. Evento sem término ganha um; o
+  Desfazer volta a "sem término". Avisos próprios: "Evento vai até 11:00." /
+  "Término desfeito." / "Erro ao alterar o término.".
+- `isUnchangedMove` passou a comparar também o término (o redimensionar não
+  mexe no início).
+- **Criar arrastando:** `hooks/useCreateRange.ts`, com eventos nativos de
+  mouse — não há item nem alvo, só uma faixa na própria coluna. Começa no
+  `mousedown` dos botões de horário (os blocos ficam por cima e não disparam);
+  vira faixa depois de 5 px; o encaixe é para fora, em 15 min no relógio
+  (`createRange`), para cima ou para baixo. Soltar abre o "Novo" com
+  `AgendaCreateTarget.end`, que vira `inform_end` + término no `EventForm`. Só
+  mouse (sem toque) e sem rolagem automática durante a faixa.
+- `suppressNextClick` saiu do `AgendaDnd` para `utils/suppressNextClick.ts`
+  (usado pelo arraste e pela faixa).
+- **Correção de um problema anterior:** o "Novo" abria sempre na aba
+  **Tarefa**. A aba inicial vinha de `useState(canEvent ? …)`, decidido no
+  primeiro render — quando o `useAuth` ainda não tem usuário e `can()`
+  responde false. Visto na página de teste, inclusive no botão "Novo" do topo
+  (fluxo antigo). Agora a aba é derivada até a pessoa escolher uma.
+
+Verificado com o banco simulado: alça puxada 1h (9h–10h → 9h–11h, alça ganha
+do bloco, soltar não abre o detalhe), mínimo de 15 min, evento sem término →
+14h–15h30 e Desfazer de volta a sem término, pedaço depois da meia-noite com
+alça (o de antes, sem); faixa para baixo (10h00–11h30) e para cima
+(13h15–15h15) abrindo Evento com início e término; clique simples às 16h00
+sem término; "Novo" do topo abrindo em Evento.
 
 ## Verificação
 

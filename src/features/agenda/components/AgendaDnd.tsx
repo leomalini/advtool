@@ -25,18 +25,21 @@ import { useEventTypeMap } from '../hooks/useEventTypes'
 import { isOptimisticMove, useMoveAgendaItem, type AgendaMove } from '../hooks/useMoveAgendaItem'
 import type { AgendaItem } from '../utils/agendaItem'
 import { EVENT_SCOPE_LABELS } from '../utils/eventSeries'
+import { suppressNextClick } from '../utils/suppressNextClick'
 import {
   blockTopInColumn,
   crossesFatalDeadline,
   isAgendaDragSource,
   isDayDropZone,
   isGridDropZone,
+  isResizeDragSource,
   isUnchangedMove,
   movedDayKeys,
   movedTimeLabel,
   moveChipToGrid,
   moveInGrid,
   moveToDay,
+  resizeInGrid,
   type MovedTimes,
 } from '../utils/dragMove'
 
@@ -56,23 +59,6 @@ const ANNOUNCEMENTS: Announcements = {
 
 const SCREEN_READER_INSTRUCTIONS = {
   draggable: 'Arraste com o mouse para mudar o dia e o horário. Pelo teclado, abra o item e edite.',
-}
-
-/**
- * Engole o clique que o navegador dispara logo depois de soltar.
- *
- * Soltar em cima do próprio bloco (um arraste curto) fecharia o ciclo
- * mousedown/mouseup nele, e o clique abriria o detalhe por cima do movimento.
- * O dnd-kit chama `onDragEnd` dentro do mouseup — o clique vem em seguida, na
- * mesma tarefa, antes do timeout que retira o ouvinte.
- */
-function suppressNextClick() {
-  const swallow = (event: MouseEvent) => {
-    event.stopPropagation()
-    event.preventDefault()
-  }
-  window.addEventListener('click', swallow, { capture: true, once: true })
-  setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0)
 }
 
 /** Posição do ponteiro (mouse ou dedo) num evento do navegador. */
@@ -107,7 +93,9 @@ const agendaCollision: CollisionDetection = ({ droppableContainers, pointerCoord
 /** Identidade da sombra: muda só quando ela muda de casa. */
 function previewKey(preview: AgendaDragPreview | null): string {
   if (!preview) return ''
-  if (preview.kind === 'grid') return `${preview.item.id}|grid|${preview.dayKey}|${preview.topMin}`
+  if (preview.kind === 'grid') {
+    return `${preview.item.id}|grid|${preview.dayKey}|${preview.topMin}|${preview.heightMin}`
+  }
   return `${preview.item.id}|${preview.area}|${preview.dayKeys.join(',')}`
 }
 
@@ -185,42 +173,56 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
 
   /** Para onde o arraste leva o item agora — `null` fora de um alvo, ou num
    * alvo que não aceita o item. */
-  function resolveMove({
-    active,
-    over,
-  }: DragMoveEvent | DragEndEvent): { item: AgendaItem; moved: MovedTimes; preview: AgendaDragPreview } | null {
+  function resolveMove({ active, over }: DragMoveEvent | DragEndEvent): {
+    item: AgendaItem
+    moved: MovedTimes
+    action: 'move' | 'resize'
+    preview: AgendaDragPreview
+  } | null {
     const source = active.data.current
     const zone = over?.data.current
-    if (!isAgendaDragSource(source)) return null
+    const resizing = isResizeDragSource(source)
+    if (!resizing && !isAgendaDragSource(source)) return null
     const item = source.segment.item
 
-    if (isDayDropZone(zone)) {
+    if (!resizing && isDayDropZone(zone)) {
       const moved = moveToDay(source.segment, zone)
-      return { item, moved, preview: { kind: 'days', item, dayKeys: movedDayKeys(moved), area: zone.area } }
+      return {
+        item,
+        moved,
+        action: 'move',
+        preview: { kind: 'days', item, dayKeys: movedDayKeys(moved), area: zone.area },
+      }
     }
 
     const pointerY = pointerYRef.current
     if (!isGridDropZone(zone) || pointerY === null) return null
     // O retângulo inicial do item só existe depois do `onDragStart` — lá ele
     // ainda vinha vazio, e a pega contava como zero: a sombra caía um passo
-    // abaixo do ponteiro.
-    const initialTop = active.rect.current.initial?.top
-    if (grabOffsetRef.current === null && initialTop !== undefined && activatorYRef.current !== null) {
-      grabOffsetRef.current = activatorYRef.current - initialTop
+    // abaixo do ponteiro. No redimensionar, a pega é medida até a base.
+    const initial = active.rect.current.initial
+    if (grabOffsetRef.current === null && initial && activatorYRef.current !== null) {
+      grabOffsetRef.current = activatorYRef.current - (resizing ? initial.bottom : initial.top)
     }
-    const rawTopMin = blockTopInColumn(zone, pointerY, grabOffsetRef.current ?? 0)
-    const grid =
-      source.origin === 'grid'
-        ? moveInGrid(source, zone, rawTopMin)
-        : moveChipToGrid(source.segment, zone, rawTopMin)
+    // Todas as colunas têm o mesmo topo: a do ponteiro serve de régua mesmo
+    // quando o redimensionar escorrega para a coluna ao lado.
+    const rawMin = blockTopInColumn(zone, pointerY, grabOffsetRef.current ?? 0)
+
+    let grid
+    if (resizing) grid = resizeInGrid(source, rawMin)
+    else if (source.origin === 'grid') grid = moveInGrid(source, zone, rawMin)
+    else grid = moveChipToGrid(source.segment, zone, rawMin)
     if (!grid) return null
+
     return {
       item,
       moved: grid.moved,
+      action: resizing ? 'resize' : 'move',
       preview: {
         kind: 'grid',
         item,
-        dayKey: format(zone.day, 'yyyy-MM-dd'),
+        // O redimensionar fica no dia do próprio bloco.
+        dayKey: resizing ? source.segment.dayKey : format(zone.day, 'yyyy-MM-dd'),
         topMin: grid.topMin,
         heightMin: grid.heightMin,
         label: movedTimeLabel(item, grid.moved),
@@ -237,7 +239,7 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
 
   function handleDragStart({ active, activatorEvent }: DragStartEvent) {
     const source = active.data.current
-    if (!isAgendaDragSource(source)) return
+    if (!isAgendaDragSource(source) && !isResizeDragSource(source)) return
 
     const pointerY = pointerYOf(activatorEvent)
     pointerYRef.current = pointerY
@@ -245,7 +247,7 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
     grabOffsetRef.current = null
     setDraggingItemId(source.segment.item.id)
     // Bloco da grade tem a sombra encaixada; chip segue o ponteiro.
-    if (source.origin === 'chip') setOverlayItem(source.segment.item)
+    if (isAgendaDragSource(source) && source.origin === 'chip') setOverlayItem(source.segment.item)
   }
 
   function handleDragMove(event: DragMoveEvent) {
@@ -264,7 +266,7 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
       clear()
       return
     }
-    askDeadline({ item: resolved.item, moved: resolved.moved })
+    askDeadline({ item: resolved.item, moved: resolved.moved, action: resolved.action })
   }
 
   function handleDragCancel() {
