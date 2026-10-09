@@ -1,10 +1,25 @@
-import { addMinutes, endOfDay, format, parseISO, startOfDay } from 'date-fns'
+import {
+  addDays,
+  addMinutes,
+  differenceInCalendarDays,
+  eachDayOfInterval,
+  endOfDay,
+  format,
+  parseISO,
+  startOfDay,
+} from 'date-fns'
 import type { CalendarEvent } from '@/types/event.types'
 import type { Task } from '@/types/task.types'
 import type { UpdateEventInput } from '@/schemas/event.schema'
 import type { UpdateTaskInput } from '@/schemas/task.schema'
 import type { AgendaItem } from './agendaItem'
-import type { DaySegment } from './daySpan'
+import {
+  belongsToAllDayStrip,
+  DEFAULT_DURATION_MIN,
+  eventDayBounds,
+  isMultiDay,
+  type DaySegment,
+} from './daySpan'
 
 /**
  * Arrastar um item da Agenda: de onde ele saiu e onde caiu → os novos instantes.
@@ -28,14 +43,24 @@ export interface MovedTimes {
   allDay: boolean
 }
 
-/** O que o bloco arrastado carrega (`data` do `useDraggable`). */
-export interface AgendaDragSource {
+/** Bloco da grade de horas (`data` do `useDraggable`). */
+export interface GridDragSource {
   type: 'agenda-item'
+  origin: 'grid'
   segment: DaySegment
   /** Topo do bloco na coluna, em minutos do dia — o que a tela mostra. */
   topMin: number
   heightMin: number
 }
+
+/** Chip do mês ou da faixa "Dia todo" — sem posição vertical. */
+export interface ChipDragSource {
+  type: 'agenda-item'
+  origin: 'chip'
+  segment: DaySegment
+}
+
+export type AgendaDragSource = GridDragSource | ChipDragSource
 
 /** Coluna de um dia na grade de horas (`data` do `useDroppable`). */
 export interface GridDropZone {
@@ -48,12 +73,29 @@ export interface GridDropZone {
   getTop: () => number
 }
 
+/** Um dia inteiro como alvo: célula do mês ou da faixa "Dia todo". */
+export interface DayDropZone {
+  type: 'day-cell'
+  day: Date
+  /** Na faixa "Dia todo", o que vem da grade de horas vira dia inteiro. No
+   * mês, só o dia muda. */
+  area: 'strip' | 'month'
+}
+
+function hasType(data: unknown, type: string): boolean {
+  return typeof data === 'object' && data !== null && (data as { type?: unknown }).type === type
+}
+
 export function isAgendaDragSource(data: unknown): data is AgendaDragSource {
-  return typeof data === 'object' && data !== null && (data as { type?: unknown }).type === 'agenda-item'
+  return hasType(data, 'agenda-item')
 }
 
 export function isGridDropZone(data: unknown): data is GridDropZone {
-  return typeof data === 'object' && data !== null && (data as { type?: unknown }).type === 'grid-day'
+  return hasType(data, 'grid-day')
+}
+
+export function isDayDropZone(data: unknown): data is DayDropZone {
+  return hasType(data, 'day-cell')
 }
 
 export interface GridMove {
@@ -88,7 +130,7 @@ export function blockTopInColumn(zone: GridDropZone, pointerY: number, grabOffse
  * inteiro. O pedaço de depois da meia-noite começa no topo da coluna, e o
  * evento, horas antes, no dia anterior — essa distância é mantida.
  */
-export function moveInGrid(source: AgendaDragSource, zone: GridDropZone, rawTopMin: number): GridMove {
+export function moveInGrid(source: GridDragSource, zone: GridDropZone, rawTopMin: number): GridMove {
   const { segment, topMin, heightMin } = source
   const item = segment.item
 
@@ -111,6 +153,78 @@ export function moveInGrid(source: AgendaDragSource, zone: GridDropZone, rawTopM
     topMin: newTop,
     heightMin: Math.min(heightMin, DAY_MINUTES - newTop),
   }
+}
+
+/** Altura da sombra de uma tarefa — a mesma do bloco dela (`TASK_BLOCK_MINUTES`). */
+const TASK_GHOST_MINUTES = 30
+
+/**
+ * Chip da faixa "Dia todo" solto na grade de horas: ganha horário.
+ *
+ * Sem horário de origem para deslocar, o encaixe é no relógio (9h00, 9h15…).
+ * Dia inteiro vira 1 hora com término informado; tarefa vira o momento; evento
+ * de 24h ou mais (que mora na faixa pela duração) mantém a duração.
+ *
+ * `null`: dia inteiro de vários dias não cabe num horário — vira o quê, a
+ * primeira hora de uma semana de férias? Fica onde está.
+ */
+export function moveChipToGrid(
+  segment: DaySegment,
+  zone: GridDropZone,
+  rawTopMin: number
+): GridMove | null {
+  const item = segment.item
+  if (item.all_day && isMultiDay(item)) return null
+
+  const top = Math.min(
+    Math.max(Math.round(rawTopMin / SNAP_MINUTES) * SNAP_MINUTES, 0),
+    DAY_MINUTES - SNAP_MINUTES
+  )
+  const start = addMinutes(startOfDay(zone.day), top)
+
+  let durationMin: number
+  if (item.kind === 'task') durationMin = 0
+  else if (item.all_day) durationMin = DEFAULT_DURATION_MIN
+  else durationMin = (parseISO(item.end_at).getTime() - parseISO(item.start_at).getTime()) / MINUTE_MS
+
+  const ghostMin = item.kind === 'task' ? TASK_GHOST_MINUTES : Math.max(durationMin, SNAP_MINUTES)
+  return {
+    moved: { start, end: addMinutes(start, durationMin), allDay: false },
+    topMin: top,
+    heightMin: Math.min(ghostMin, DAY_MINUTES - top),
+  }
+}
+
+/**
+ * Item solto num dia inteiro (célula do mês ou da faixa "Dia todo").
+ *
+ * Anda em dias de calendário: o relógio fica (9h continua 9h) e um evento de
+ * vários dias anda inteiro — pego no 3º dia e solto dois dias depois, +2. Na
+ * faixa, o que vem da grade de horas vira dia inteiro de um dia, naquele dia.
+ */
+export function moveToDay(segment: DaySegment, zone: DayDropZone): MovedTimes {
+  const item = segment.item
+  if (zone.area === 'strip' && !belongsToAllDayStrip(item)) {
+    const day = startOfDay(zone.day)
+    return { start: day, end: day, allDay: true }
+  }
+
+  const dayDelta = differenceInCalendarDays(zone.day, parseISO(segment.dayKey))
+  return {
+    start: addDays(parseISO(item.start_at), dayDelta),
+    end: addDays(parseISO(item.end_at), dayDelta),
+    allDay: item.all_day,
+  }
+}
+
+/** Dias (yyyy-MM-dd) que o item ocupa depois de movido — as células acesas. */
+export function movedDayKeys(moved: MovedTimes): string[] {
+  const { first, last } = eventDayBounds({
+    start_at: moved.start.toISOString(),
+    end_at: moved.end.toISOString(),
+    all_day: moved.allDay,
+  })
+  return eachDayOfInterval({ start: first, end: last }).map((day) => format(day, 'yyyy-MM-dd'))
 }
 
 /** O item já está aí — soltar no lugar não grava nada. */

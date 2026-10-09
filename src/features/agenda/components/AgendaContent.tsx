@@ -411,6 +411,7 @@ export function AgendaContent() {
               onDayClick={handleDayClick}
               onItemClick={handleItemClick}
               onToggleTask={canToggleTasks ? handleToggleTask : undefined}
+              canDragItem={canDragItem}
             />
           ) : (
             <TimeGrid

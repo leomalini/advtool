@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { useDroppable } from '@dnd-kit/core'
 import { format, isToday, isSameDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Sun } from 'lucide-react'
@@ -17,8 +17,18 @@ import {
   type DaySegment,
 } from '../utils/daySpan'
 import { agendaItemWhenLabel, type AgendaItem, type TaskAgendaItem } from '../utils/agendaItem'
-import type { AgendaDragSource, GridDropZone } from '../utils/dragMove'
-import { useAgendaDrag, type AgendaDragPreview } from '../hooks/useAgendaDrag'
+import type {
+  ChipDragSource,
+  DayDropZone,
+  GridDragSource,
+  GridDropZone,
+} from '../utils/dragMove'
+import {
+  isDayHighlighted,
+  useAgendaDrag,
+  useAgendaItemDrag,
+  type AgendaDragPreview,
+} from '../hooks/useAgendaDrag'
 import { AgendaTaskCheck } from './AgendaTaskCheck'
 
 /** Minutos do dia → "HH:mm". 1440 é meia-noite do dia seguinte. */
@@ -90,20 +100,26 @@ function NowIndicator({ days }: { days: Date[] }) {
 function AllDayChip({
   segment,
   eventTypes,
+  draggable,
   onItemClick,
   onToggleTask,
 }: {
   segment: DaySegment
   eventTypes: Map<string, EventTypeRecord>
+  draggable: boolean
   onItemClick: (item: AgendaItem) => void
   onToggleTask?: (item: TaskAgendaItem) => void
 }) {
   const item = segment.item
+  const dragSource: ChipDragSource = { type: 'agenda-item', origin: 'chip', segment }
+  const { setNodeRef, listeners, dragClasses } = useAgendaItemDrag(dragSource, draggable)
 
   if (item.kind === 'task') {
     return (
       // div: o círculo de concluir é um botão, e botão dentro de botão não vale.
       <div
+        ref={setNodeRef}
+        {...listeners}
         role="button"
         tabIndex={0}
         onClick={() => onItemClick(item)}
@@ -115,7 +131,8 @@ function AllDayChip({
         title={`Tarefa · ${agendaItemWhenLabel(item)} · ${item.title}`}
         className={cn(
           'flex min-w-0 items-center gap-1 rounded border border-info/40 bg-info/10 px-1.5 py-1 text-left text-info hover:bg-info/15 transition-colors cursor-pointer',
-          item.done && 'opacity-60'
+          item.done && 'opacity-60',
+          dragClasses
         )}
       >
         <AgendaTaskCheck item={item} onToggle={onToggleTask} className="h-3 w-3" />
@@ -133,6 +150,8 @@ function AllDayChip({
 
   return (
     <button
+      ref={setNodeRef}
+      {...listeners}
       type="button"
       onClick={() => onItemClick(item)}
       title={`${eventRangeLabel(item.event)} · ${tipo.label} · ${item.title}`}
@@ -142,7 +161,8 @@ function AllDayChip({
         'flex min-w-0 items-center gap-1 rounded px-1.5 py-1 text-left hover:brightness-95 transition-all',
         // Emendas retas até a borda da coluna: uma barra só.
         !segment.isFirstDay && '-ml-1 rounded-l-none',
-        !segment.isLastDay && '-mr-1 rounded-r-none'
+        !segment.isLastDay && '-mr-1 rounded-r-none',
+        dragClasses
       )}
       style={{ backgroundColor: `${tipo.color}22`, color: tipo.color }}
     >
@@ -177,23 +197,14 @@ function TimedBlock({
     width: `calc(${widthPct}% - 4px)`,
   }
 
-  // Um id por pedaço: o mesmo evento aparece em mais de uma coluna quando
-  // atravessa a meia-noite.
-  const dragSource: AgendaDragSource = {
+  const dragSource: GridDragSource = {
     type: 'agenda-item',
+    origin: 'grid',
     segment,
     topMin: startMin,
     heightMin: endMin - startMin,
   }
-  const { setNodeRef, listeners } = useDraggable({
-    id: `${item.id}@${segment.dayKey}`,
-    data: dragSource,
-    disabled: !draggable,
-  })
-  // O bloco fica no lugar enquanto a sombra mostra o destino; todos os
-  // pedaços do item apagam juntos.
-  const { movingItemId } = useAgendaDrag()
-  const dragClasses = cn(draggable && 'cursor-grab', movingItemId === item.id && 'opacity-40')
+  const { setNodeRef, listeners, dragClasses } = useAgendaItemDrag(dragSource, draggable)
 
   if (item.kind === 'task') {
     // Tarefa marca um momento: uma linha só, com o círculo de concluir.
@@ -280,7 +291,7 @@ function DragGhost({
   preview,
   eventTypes,
 }: {
-  preview: AgendaDragPreview
+  preview: Extract<AgendaDragPreview, { kind: 'grid' }>
   eventTypes: Map<string, EventTypeRecord>
 }) {
   const { item, topMin, heightMin, label } = preview
@@ -369,7 +380,29 @@ function DayColumn({
         />
       ))}
 
-      {preview?.dayKey === dayKey && <DragGhost preview={preview} eventTypes={eventTypes} />}
+      {preview?.kind === 'grid' && preview.dayKey === dayKey && (
+        <DragGhost preview={preview} eventTypes={eventTypes} />
+      )}
+    </div>
+  )
+}
+
+/** Célula de um dia na faixa "Dia todo": recebe o item arrastado. */
+function StripCell({ day, children }: { day: Date; children: React.ReactNode }) {
+  const dayKey = format(day, 'yyyy-MM-dd')
+  const dropZone: DayDropZone = { type: 'day-cell', day, area: 'strip' }
+  const { setNodeRef } = useDroppable({ id: `strip:${dayKey}`, data: dropZone })
+  const { preview } = useAgendaDrag()
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'flex-1 min-w-0 min-h-7 p-1 flex flex-col gap-1 border-r last:border-r-0 transition-colors',
+        isDayHighlighted(preview, 'strip', dayKey) && 'bg-primary/10 ring-2 ring-inset ring-primary/40'
+      )}
+    >
+      {children}
     </div>
   )
 }
@@ -448,8 +481,11 @@ export function TimeGrid({
             })}
           </div>
 
-          {/* Faixa de dia inteiro — fora do eixo de horas, como no Google Calendar */}
-          {hasAllDay && (
+          {/* Faixa de dia inteiro — fora do eixo de horas, como no Google
+              Calendar. Fica mesmo vazia quando dá para arrastar: é o alvo
+              para tornar um item "dia inteiro", e surgir no meio do arraste
+              empurraria a grade para baixo do ponteiro. */}
+          {(hasAllDay || canDragItem) && (
             <div className="flex border-b bg-card">
               <div className="w-14 shrink-0 border-r px-1 py-1.5 text-right">
                 <span className="text-[9px] font-medium text-muted-foreground uppercase">
@@ -457,20 +493,18 @@ export function TimeGrid({
                 </span>
               </div>
               {allDayByColumn.map((list, i) => (
-                <div
-                  key={days[i].toISOString()}
-                  className="flex-1 min-w-0 p-1 flex flex-col gap-1 border-r last:border-r-0"
-                >
+                <StripCell key={days[i].toISOString()} day={days[i]}>
                   {list.map((segment) => (
                     <AllDayChip
                       key={segment.item.id}
                       segment={segment}
                       eventTypes={eventTypes}
+                      draggable={canDragItem?.(segment.item) ?? false}
                       onItemClick={onItemClick}
                       onToggleTask={onToggleTask}
                     />
                   ))}
-                </div>
+                </StripCell>
               ))}
             </div>
           )}
