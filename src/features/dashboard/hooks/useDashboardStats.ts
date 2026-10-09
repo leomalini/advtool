@@ -5,7 +5,6 @@ import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { taskKeys } from '@/features/tarefas/hooks/useTasks'
 import {
-  getDashboardStats,
   getCasesByLegalArea,
   getUpcomingDeadlines,
   getWorkloadByAssignee,
@@ -19,25 +18,24 @@ import {
 } from '../services/dashboard.service'
 
 /**
- * Dashboard query keys, exported so the invalidation helpers in other features
- * can reference them instead of duplicating magic strings — the dashboard reads
- * events, tasks and crm_items, so creating any of those has to reach in here.
+ * Dashboard query keys.
  *
- * `refetchInterval` alone is not enough: it only runs while the query has a
- * mounted observer. With `staleTime: 60_000` and `refetchOnWindowFocus: false`
- * (see lib/query-client.ts), navigating to the dashboard within a minute of a
- * change shows stale data unless something invalidated it explicitly.
+ * `refetchInterval` alone is not enough to keep them fresh: it only runs while
+ * the query has a mounted observer. With `staleTime: 60_000` and
+ * `refetchOnWindowFocus: false` (see lib/query-client.ts), navigating to the
+ * dashboard within a minute of a change shows stale data unless something
+ * invalidated it.
  *
- * The indicator counts and the monitoring card take the other route: they sit
- * under their domain's prefix, so the invalidations that domain already does
- * reach them — every processo mutation invalidates `legalProcessKeys.all`,
- * every task mutation `taskKeys.all`. Those features don't need to know the
- * dashboard exists. And the bell's Realtime flush (`useRealtimeNotifications`)
- * invalidates the processos and publications prefixes on every notice, so a
- * webhook delivery refreshes the monitoring card by itself.
+ * So the keys that matter sit under their domain's prefix, and the
+ * invalidations that domain already does reach them — every processo mutation
+ * invalidates `legalProcessKeys.all`, every task mutation `taskKeys.all`; the
+ * agenda reads the Agenda's own `eventKeys.range()`. Those features don't need
+ * to know the dashboard exists. And the bell's Realtime flush
+ * (`useRealtimeNotifications`) invalidates the processos and publications
+ * prefixes on every notice, so a webhook delivery refreshes the monitoring card
+ * by itself.
  */
 export const dashboardKeys = {
-  stats: ['dashboard-stats'] as const,
   casesByArea: ['dashboard-cases-by-area'] as const,
   /** Prefix — covers every `limit` variant. */
   upcomingDeadlines: ['dashboard-upcoming-deadlines'] as const,
@@ -56,14 +54,6 @@ export const dashboardKeys = {
   /** Own key: accesses are written by the portal, server-side, so nothing on
    * this side invalidates them — the minute refetch does. */
   portalAccess: ['dashboard-portal-access'] as const,
-}
-
-export function useDashboardStats() {
-  return useQuery({
-    queryKey: dashboardKeys.stats,
-    queryFn: getDashboardStats,
-    refetchInterval: 60_000,
-  })
 }
 
 export function useCasesByLegalArea() {

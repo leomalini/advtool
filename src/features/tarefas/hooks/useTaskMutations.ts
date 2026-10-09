@@ -13,21 +13,19 @@ import {
   type TaskWriteOptions,
 } from '../services/tasks.service'
 import { taskKeys } from './useTasks'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { useAuth } from '@/hooks/useAuth'
 import type { CreateTaskInput, UpdateTaskInput } from '@/schemas/task.schema'
 import type { Task, TaskStatus } from '@/types/task.types'
 
-/** Every surface that shows task-derived data — see useInvalidateEventSurfaces
- * for why the dashboard keys have to be listed explicitly. */
+/** Every surface that shows task-derived data. The dashboard's task lists and
+ * counts sit under `taskKeys.all`, so the prefix reaches them too. */
 export function useInvalidateTaskSurfaces() {
   const queryClient = useQueryClient()
 
   return () => {
-    // Prefix — reaches comments() and forEntity() too.
+    // Prefix — reaches comments(), range() and forEntity() too.
     queryClient.invalidateQueries({ queryKey: taskKeys.all })
-    queryClient.invalidateQueries({ queryKey: dashboardKeys.stats })
     // Uma tarefa vinculada "cobre" um prazo próximo; concluí-la volta a
     // descobrir o prazo. Nos dois sentidos a pendência precisa recalcular.
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })

@@ -12,18 +12,13 @@ import {
 import { eventKeys } from './useEvents'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
 import { AttachedDocumentsError } from '@/features/documentos/services/documents.service'
-import { dashboardKeys } from '@/features/dashboard/hooks/useDashboardStats'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { useAuth } from '@/hooks/useAuth'
 import type { EventFormInput, UpdateEventInput } from '@/schemas/event.schema'
 
 /**
- * Every surface that shows event-derived data.
- *
- * Invalidating only ['events'] left the dashboard stale: with
- * `staleTime: 60_000` and `refetchOnWindowFocus: false`, its `refetchInterval`
- * only runs while the dashboard is mounted — so creating an event and
- * navigating there within a minute showed the old numbers.
+ * Every surface that shows event-derived data. The dashboard reads events
+ * through the Agenda's own keys (`range()`), so the prefix reaches it too.
  */
 export function useInvalidateEventSurfaces() {
   const queryClient = useQueryClient()
@@ -31,7 +26,6 @@ export function useInvalidateEventSurfaces() {
   return () => {
     // Prefix — reaches range() and forEntity() too.
     queryClient.invalidateQueries({ queryKey: eventKeys.all })
-    queryClient.invalidateQueries({ queryKey: dashboardKeys.stats })
     // Um evento vinculado "cobre" um prazo próximo: sem isto a pendência
     // continuaria listada mesmo depois de agendado o trabalho.
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })

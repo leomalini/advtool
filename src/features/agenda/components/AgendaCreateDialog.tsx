@@ -13,7 +13,7 @@ import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
 import { useCreateEvent } from '../hooks/useEventMutations'
 import { EventForm } from './EventForm'
 
-type CreateKind = 'event' | 'task'
+export type CreateKind = 'event' | 'task'
 
 const KIND_LABELS: Record<CreateKind, { tab: string; title: string }> = {
   event: { tab: 'Evento', title: 'Novo evento' },
@@ -27,6 +27,9 @@ export interface AgendaCreateTarget {
   /** Término, quando a faixa foi desenhada arrastando na grade. Só o evento
    * usa — tarefa marca um momento. */
   end?: Date
+  /** Aba em que o diálogo abre — o botão "Tarefa" do dashboard abre direto na
+   * de tarefa. Sem permissão para ela, vale a outra. */
+  kind?: CreateKind
 }
 
 interface AgendaCreateDialogProps {
@@ -62,7 +65,9 @@ function CreateBody({ target, onClose }: { target: AgendaCreateTarget; onClose: 
   // não chegaram (o `useAuth` começa sem usuário), `can()` responde false, e
   // um `useState(canEvent ? …)` travava a aba em "Tarefa" para sempre.
   const [chosenKind, setKind] = useState<CreateKind | null>(null)
-  const kind: CreateKind = chosenKind ?? (canEvent ? 'event' : 'task')
+  const preferred: CreateKind =
+    target.kind === 'task' ? (canTask ? 'task' : 'event') : canEvent ? 'event' : 'task'
+  const kind: CreateKind = chosenKind ?? preferred
 
   const createEvent = useCreateEvent()
   const createTask = useCreateTask()

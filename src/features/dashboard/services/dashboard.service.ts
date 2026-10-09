@@ -5,20 +5,12 @@ import type { Publication } from '@/types/publication.types'
 // Só o tipo: `import type` some na compilação, e nada do módulo de servidor vai
 // para o navegador.
 import type { DashboardWebhookHealth } from '@/lib/buscaprocessos/webhookHealth'
-import { startOfWeek, endOfWeek, addDays, subDays, format } from 'date-fns'
+import { subDays, format } from 'date-fns'
 
 const supabase = createClient()
 
 /** How far back the monitoring card looks — docs/dashboard.md, decision 4. */
 export const MONITORING_WINDOW_DAYS = 7
-
-/** The header line under the greeting. */
-export interface DashboardStats {
-  /** Hearings scheduled for the current week. */
-  weekly_hearings: number
-  /** Deadlines falling within the next 7 days (overdue ones included). */
-  upcoming_deadlines: number
-}
 
 /** The "Processos ativos" indicator. */
 export interface ProcessCounts {
@@ -78,32 +70,6 @@ export type WorkloadByAssignee = Record<
   string,
   { total: number; byWorkflow: Record<string, number> }
 >
-
-export async function getDashboardStats(): Promise<DashboardStats> {
-  const now = new Date()
-  const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
-  const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'HH:mm:ssxxx")
-  const inSevenDays = format(addDays(now, 7), 'yyyy-MM-dd')
-
-  const [hearings, deadlines] = await Promise.all([
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('type', 'hearing')
-      .gte('start_at', weekStart)
-      .lte('start_at', weekEnd),
-    supabase
-      .from('crm_items')
-      .select('id', { count: 'exact', head: true })
-      .not('next_deadline', 'is', null)
-      .lte('next_deadline', inSevenDays),
-  ])
-
-  return {
-    weekly_hearings: countOf(hearings),
-    upcoming_deadlines: countOf(deadlines),
-  }
-}
 
 export async function getProcessCounts(): Promise<ProcessCounts> {
   const [active, monitored] = await Promise.all([
