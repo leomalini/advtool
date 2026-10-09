@@ -230,6 +230,43 @@ Uma branch por PR, empilhadas, a partir de `origin/main` com `--no-track`.
      escuro), sem estouro lateral no celular.
 2. **Hoje** — `TodayPanel` com chips, ações, faixa, régua e lista; saem
    `AgendaWeekCard`, `getDashboardStats` e a linha do cabeçalho.
+
+   **Como ficou (2026-10-09, branch `feat/dashboard-visual-hoje`, empilhada
+   na do PR 1):**
+
+   - `TodayPanel` (saudação, chips, ações, faixa) + `TodayWeekStrip`,
+     `TodayRuler` e `TodayDayList`; regras puras em `utils/today.ts`. Mesmas
+     consultas e chaves do card que saiu.
+   - Só desenha depois de montar (`useMounted`): saudação, "agora" e contagem
+     são a hora local, e o relógio do servidor hidrataria outro texto. Antes
+     disso, um esqueleto da mesma altura.
+   - Chips: "N compromissos e N tarefas hoje" (ou "Nada marcado para hoje" /
+     "Tudo feito por hoje"), "Prazo fatal hoje" para evento com
+     `fatal_deadline` igual a hoje, e "Próximo" — comparado como instante,
+     porque eventos vêm do banco com `+00:00` e tarefas do `toInstant` com `Z`.
+     A contagem arredonda para cima (`minutesUntil`) e é a mesma no chip e na
+     linha.
+   - Régua: o `layoutDayEvents` da Agenda deitado (o eixo dele vira o
+     horizontal; as faixas de sobreposição viram linhas). Janela 08h–19h que
+     alarga até a hora cheia de quem estiver fora. Some no celular e no dia
+     sem evento (só marcadores de tarefa deixavam uma faixa vazia). Escondida
+     de leitor de tela e do Tab: a lista tem o mesmo, com nome e teclado.
+   - Lista: sem hora primeiro, depois por horário, com o divisor "Agora"; o que
+     terminou fica esmaecido, a tarefa concluída riscada (o círculo reabre).
+     Selos ("em 35 min", "agora", prazo fatal, "passou do horário") seguem o
+     título e descem de linha antes de cortá-lo.
+   - "Novo compromisso" e "Tarefa" abrem o `AgendaCreateDialog` no dia escolhido
+     na faixa; ele ganhou `target.kind` para abrir já na aba de tarefa.
+   - `useNow` virou hook compartilhado (`src/hooks/useNow.ts`); o indicador de
+     "agora" da Agenda passou a usá-lo.
+   - Saíram `AgendaWeekCard`, `getDashboardStats`, `useDashboardStats`,
+     `dashboardKeys.stats` e as duas invalidações dela (eventos e tarefas): o
+     dashboard lê eventos pelas chaves da Agenda e tarefas sob `taskKeys.all`.
+   - Conferido: `tsc`, lint e build ok. Telas pela página temporária, com o
+     relógio deslocado por `?agora=` (13:25 e 19:40): semana cheia, dia livre,
+     semana livre; trocar o dia na faixa, "Tarefa" abrindo na aba certa com a
+     data do dia escolhido, concluir pelo círculo (otimista, com Desfazer);
+     1500 px e celular; claro e escuro.
 3. **Indicadores** — `StatTile`, micro-gráficos, `useCountUp`, consulta de
    publicações por dia, idade das atrasadas, parcelas clicáveis e a nova ordem
    do "A receber".
