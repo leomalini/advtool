@@ -24,6 +24,9 @@ export interface AgendaCreateTarget {
   /** Dia clicado — e a hora, quando o clique veio de um horário da grade. */
   at?: Date
   withTime: boolean
+  /** Término, quando a faixa foi desenhada arrastando na grade. Só o evento
+   * usa — tarefa marca um momento. */
+  end?: Date
 }
 
 interface AgendaCreateDialogProps {
@@ -55,7 +58,11 @@ function CreateBody({ target, onClose }: { target: AgendaCreateTarget; onClose: 
   const { can } = usePermissions()
   const canEvent = can('agenda', 'create')
   const canTask = can('tarefas', 'create')
-  const [kind, setKind] = useState<CreateKind>(canEvent ? 'event' : 'task')
+  // Derivada até a pessoa escolher: no primeiro render as permissões ainda
+  // não chegaram (o `useAuth` começa sem usuário), `can()` responde false, e
+  // um `useState(canEvent ? …)` travava a aba em "Tarefa" para sempre.
+  const [chosenKind, setKind] = useState<CreateKind | null>(null)
+  const kind: CreateKind = chosenKind ?? (canEvent ? 'event' : 'task')
 
   const createEvent = useCreateEvent()
   const createTask = useCreateTask()
@@ -86,6 +93,15 @@ function CreateBody({ target, onClose }: { target: AgendaCreateTarget; onClose: 
       <EventForm
         defaultDate={day}
         defaultTime={time}
+        defaultValues={
+          target.end
+            ? {
+                inform_end: true,
+                end_date: format(target.end, 'yyyy-MM-dd'),
+                end_time: format(target.end, 'HH:mm'),
+              }
+            : undefined
+        }
         headerContent={header}
         onSubmit={handleEvent}
         onCancel={onClose}

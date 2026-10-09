@@ -62,6 +62,16 @@ export interface ChipDragSource {
 
 export type AgendaDragSource = GridDragSource | ChipDragSource
 
+/** Alça na borda de baixo de um bloco de evento: muda só o término. */
+export interface ResizeDragSource {
+  type: 'agenda-resize'
+  /** O pedaço do último dia — é nele que o término está. */
+  segment: DaySegment
+  /** Topo e base do bloco na coluna, em minutos do dia. */
+  startMin: number
+  endMin: number
+}
+
 /** Coluna de um dia na grade de horas (`data` do `useDroppable`). */
 export interface GridDropZone {
   type: 'grid-day'
@@ -90,6 +100,10 @@ export function isAgendaDragSource(data: unknown): data is AgendaDragSource {
   return hasType(data, 'agenda-item')
 }
 
+export function isResizeDragSource(data: unknown): data is ResizeDragSource {
+  return hasType(data, 'agenda-resize')
+}
+
 export function isGridDropZone(data: unknown): data is GridDropZone {
   return hasType(data, 'grid-day')
 }
@@ -107,6 +121,7 @@ export interface GridMove {
 
 /**
  * Onde o topo do bloco estaria na coluna, em minutos do dia (sem encaixe).
+ * Também a base, no redimensionar — aí `grabOffset` é medido até a base.
  *
  * `pointerY` é a posição do ponteiro na tela e `grabOffset` a distância entre
  * o topo do bloco e o ponto em que ele foi pego. Não usa o `delta` do dnd-kit:
@@ -153,6 +168,55 @@ export function moveInGrid(source: GridDragSource, zone: GridDropZone, rawTopMin
     topMin: newTop,
     heightMin: Math.min(heightMin, DAY_MINUTES - newTop),
   }
+}
+
+/**
+ * Novo término pela borda de baixo, com a base em `rawEndMin` (ver
+ * `blockTopInColumn`).
+ *
+ * Como no mover, o passo de 15 min vale para o deslocamento: um término às
+ * 10h10 anda para 10h25, 10h40… O início fica; a duração mínima é um passo, e
+ * o término não passa da meia-noite do próprio dia (estender para o dia
+ * seguinte é coisa do formulário). Evento sem término informado ganha um — a
+ * base que a tela mostra é a da duração padrão.
+ */
+export function resizeInGrid(source: ResizeDragSource, rawEndMin: number): GridMove {
+  const { segment, startMin, endMin } = source
+  const deltaMin = Math.round((rawEndMin - endMin) / SNAP_MINUTES) * SNAP_MINUTES
+  const newEndMin = Math.min(Math.max(endMin + deltaMin, startMin + SNAP_MINUTES), DAY_MINUTES)
+
+  return {
+    moved: {
+      start: parseISO(segment.item.start_at),
+      end: addMinutes(parseISO(segment.dayKey), newEndMin),
+      allDay: false,
+    },
+    topMin: startMin,
+    heightMin: newEndMin - startMin,
+  }
+}
+
+/** Intervalo dentro de um dia, em minutos (0–1440). */
+export interface MinuteRange {
+  startMin: number
+  endMin: number
+}
+
+/**
+ * Faixa desenhada arrastando no vazio da grade, para criar um evento.
+ *
+ * `anchorMin` é onde o mouse desceu e `currentMin` onde ele está agora. O
+ * encaixe é para fora, em passos de 15 min no relógio: o passo onde o mouse
+ * desceu fica sempre dentro, para cima ou para baixo.
+ */
+export function createRange(anchorMin: number, currentMin: number): MinuteRange {
+  const anchor = Math.min(Math.floor(anchorMin / SNAP_MINUTES) * SNAP_MINUTES, DAY_MINUTES - SNAP_MINUTES)
+  if (currentMin >= anchor) {
+    const end = Math.ceil(currentMin / SNAP_MINUTES) * SNAP_MINUTES
+    return { startMin: anchor, endMin: Math.min(Math.max(end, anchor + SNAP_MINUTES), DAY_MINUTES) }
+  }
+  const start = Math.floor(currentMin / SNAP_MINUTES) * SNAP_MINUTES
+  return { startMin: Math.max(start, 0), endMin: anchor + SNAP_MINUTES }
 }
 
 /** Altura da sombra de uma tarefa — a mesma do bloco dela (`TASK_BLOCK_MINUTES`). */
@@ -227,12 +291,15 @@ export function movedDayKeys(moved: MovedTimes): string[] {
   return eachDayOfInterval({ start: first, end: last }).map((day) => format(day, 'yyyy-MM-dd'))
 }
 
-/** O item já está aí — soltar no lugar não grava nada. */
+/** O item já está aí — soltar no lugar não grava nada. O término conta por
+ * causa do redimensionar, que não mexe no início. */
 export function isUnchangedMove(item: AgendaItem, moved: MovedTimes): boolean {
+  const sameMinute = (a: Date, iso: string) =>
+    Math.floor(a.getTime() / MINUTE_MS) === Math.floor(parseISO(iso).getTime() / MINUTE_MS)
   return (
     moved.allDay === item.all_day &&
-    Math.floor(moved.start.getTime() / MINUTE_MS) ===
-      Math.floor(parseISO(item.start_at).getTime() / MINUTE_MS)
+    sameMinute(moved.start, item.start_at) &&
+    sameMinute(moved.end, item.end_at)
   )
 }
 

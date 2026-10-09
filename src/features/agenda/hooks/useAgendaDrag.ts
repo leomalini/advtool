@@ -4,7 +4,7 @@ import { createContext, useContext } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { cn } from '@/lib/utils'
 import type { AgendaItem } from '../utils/agendaItem'
-import type { AgendaDragSource } from '../utils/dragMove'
+import type { AgendaDragSource, ResizeDragSource } from '../utils/dragMove'
 
 /** Onde o item vai cair. */
 export type AgendaDragPreview =
@@ -67,6 +67,15 @@ export function useAgendaItemDrag(source: AgendaDragSource, draggable: boolean) 
     movingItemId === segment.item.id && 'opacity-40'
   )
   return { setNodeRef, listeners, dragClasses }
+}
+
+/** Liga a alça de baixo de um bloco ao arraste — muda o término. */
+export function useAgendaResizeDrag(source: ResizeDragSource) {
+  const { setNodeRef, listeners } = useDraggable({
+    id: `${source.segment.item.id}@${source.segment.dayKey}:fim`,
+    data: source,
+  })
+  return { setNodeRef, listeners }
 }
 
 /** A célula `dayKey` da área `area` está acesa pelo arraste? */

@@ -29,6 +29,8 @@ export interface AgendaMove {
   moved: MovedTimes
   /** Alcance numa série de eventos. Tarefa move sempre só a ocorrência. */
   scope?: SeriesScope
+  /** Arrastou o item ou a borda de baixo dele — só muda o texto do aviso. */
+  action?: 'move' | 'resize'
   /** O próprio Desfazer — não oferece outro Desfazer. */
   isUndo?: boolean
 }
@@ -113,24 +115,39 @@ export function useMoveAgendaItem() {
 
     onError: (_error, move, context) => {
       for (const [key, data] of context?.snapshots ?? []) queryClient.setQueryData(key, data)
-      toast.error(move.item.kind === 'task' ? 'Erro ao mover tarefa.' : 'Erro ao mover evento.')
+      toast.error(
+        move.action === 'resize'
+          ? 'Erro ao alterar o término.'
+          : move.item.kind === 'task'
+            ? 'Erro ao mover tarefa.'
+            : 'Erro ao mover evento.'
+      )
     },
 
     onSuccess: (_data, move) => {
+      const resize = move.action === 'resize'
       const noun = move.item.kind === 'task' ? 'Tarefa movida' : 'Evento movido'
       if (move.isUndo) {
-        toast.success(`${noun} de volta.`)
+        toast.success(resize ? 'Término desfeito.' : `${noun} de volta.`)
         return
       }
       if (!isOptimisticMove(move)) {
-        toast.success('Eventos movidos.')
+        toast.success(resize ? 'Eventos atualizados.' : 'Eventos movidos.')
         return
       }
-      toast.success(`${noun} para ${movedWhenLabel(move.moved)}.`, {
+      const message = resize
+        ? `Evento vai até ${format(move.moved.end, 'HH:mm')}.`
+        : `${noun} para ${movedWhenLabel(move.moved)}.`
+      toast.success(message, {
         action: {
           label: 'Desfazer',
           onClick: () =>
-            mutation.mutate({ item: move.item, moved: currentTimes(move.item), isUndo: true }),
+            mutation.mutate({
+              item: move.item,
+              moved: currentTimes(move.item),
+              action: move.action,
+              isUndo: true,
+            }),
         },
       })
     },

@@ -13,6 +13,7 @@ import {
   addMonths,
   addWeeks,
   addDays,
+  addMinutes,
   min as minDate,
   max as maxDate,
   parseISO,
@@ -36,6 +37,7 @@ import { AgendaDnd } from './AgendaDnd'
 import { MonthGrid } from './MonthGrid'
 import { TimeGrid } from './TimeGrid'
 import { effectiveEnd, indexEventsByDay, type DaySegment } from '../utils/daySpan'
+import type { MinuteRange } from '../utils/dragMove'
 import {
   agendaItemWhenLabel,
   eventToAgendaItem,
@@ -308,6 +310,16 @@ export function AgendaContent() {
     openCreate({ at, withTime: true })
   }
 
+  /** Faixa desenhada arrastando no vazio da grade: já abre com início e término. */
+  function handleRangeSelect(day: Date, range: MinuteRange) {
+    const dayStart = startOfDay(day)
+    openCreate({
+      at: addMinutes(dayStart, range.startMin),
+      end: addMinutes(dayStart, range.endMin),
+      withTime: true,
+    })
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -419,6 +431,7 @@ export function AgendaContent() {
               getItemsForDay={getItemsForDay}
               eventTypes={eventTypes}
               onSlotClick={handleSlotClick}
+              onRangeSelect={canCreate ? handleRangeSelect : undefined}
               onItemClick={handleItemClick}
               onToggleTask={canToggleTasks ? handleToggleTask : undefined}
               canDragItem={canDragItem}

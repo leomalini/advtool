@@ -22,11 +22,15 @@ import type {
   DayDropZone,
   GridDragSource,
   GridDropZone,
+  ResizeDragSource,
 } from '../utils/dragMove'
+import type { MinuteRange } from '../utils/dragMove'
+import { useCreateRange } from '../hooks/useCreateRange'
 import {
   isDayHighlighted,
   useAgendaDrag,
   useAgendaItemDrag,
+  useAgendaResizeDrag,
   type AgendaDragPreview,
 } from '../hooks/useAgendaDrag'
 import { AgendaTaskCheck } from './AgendaTaskCheck'
@@ -63,6 +67,9 @@ interface TimeGridProps {
   eventTypes: Map<string, EventTypeRecord>
   /** Clique num espaço vazio cria evento ou tarefa naquele dia e hora. */
   onSlotClick: (day: Date, hour: number) => void
+  /** Arrastar no vazio de uma coluna cria com início e término. Ausente sem
+   * permissão de criar. */
+  onRangeSelect?: (day: Date, range: MinuteRange) => void
   onItemClick: (item: AgendaItem) => void
   /** Ausente sem permissão de alterar tarefas. */
   onToggleTask?: (item: TaskAgendaItem) => void
@@ -258,7 +265,7 @@ function TimedBlock({
       onClick={() => onItemClick(item)}
       title={`${eventRangeLabel(item.event)} · ${tipo.label} · ${item.title}`}
       className={cn(
-        'absolute z-10 rounded px-1.5 text-left text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity',
+        'group absolute z-10 rounded px-1.5 text-left text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity',
         // Abaixo de ~14px não sobra altura nem para o padding.
         heightPx < 16 ? 'py-0 leading-none' : 'py-0.5',
         dragClasses
@@ -281,7 +288,46 @@ function TimedBlock({
           <span className="block text-[9px] opacity-90 leading-tight">{rangeLabel}</span>
         </>
       )}
+      {/* O término está no pedaço do último dia. Bloco baixo não ganha alça:
+          não sobra onde pegar para mover sem pegar a alça por engano. */}
+      {draggable && segment.isLastDay && heightPx >= RESIZE_MIN_HEIGHT_PX && (
+        <ResizeHandle segment={segment} startMin={startMin} endMin={endMin} />
+      )}
     </button>
+  )
+}
+
+/** Altura mínima de um bloco para ter a alça de redimensionar. */
+const RESIZE_MIN_HEIGHT_PX = 24
+
+/**
+ * Alça na borda de baixo de um evento: arrastar muda o término.
+ *
+ * Fica dentro do bloco, e o dnd-kit dá o arraste a quem recebe o mousedown
+ * primeiro — a alça, que está mais por dentro. `span`: um botão não pode ter
+ * `div` dentro.
+ */
+function ResizeHandle({
+  segment,
+  startMin,
+  endMin,
+}: {
+  segment: DaySegment
+  startMin: number
+  endMin: number
+}) {
+  const source: ResizeDragSource = { type: 'agenda-resize', segment, startMin, endMin }
+  const { setNodeRef, listeners } = useAgendaResizeDrag(source)
+
+  return (
+    <span
+      ref={setNodeRef}
+      {...listeners}
+      aria-hidden
+      className="absolute inset-x-0 bottom-0 flex h-2 cursor-ns-resize items-end justify-center pb-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+    >
+      <span className="h-0.5 w-4 rounded-full bg-white/80" />
+    </span>
   )
 }
 
@@ -318,13 +364,31 @@ function DragGhost({
   )
 }
 
-/** Coluna de um dia: cria no clique, recebe o item arrastado e mostra a sombra. */
+/** Faixa sendo desenhada para criar um evento, com o intervalo escrito. */
+function CreateRangeGhost({ range }: { range: MinuteRange }) {
+  return (
+    <div
+      aria-hidden
+      className="absolute inset-x-0.5 z-20 pointer-events-none overflow-hidden rounded border border-primary/60 bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
+      style={{
+        top: `${(range.startMin / FULL_DAY.spanMin) * 100}%`,
+        height: `${((range.endMin - range.startMin) / FULL_DAY.spanMin) * 100}%`,
+      }}
+    >
+      {formatMinutes(range.startMin)} – {formatMinutes(range.endMin)}
+    </div>
+  )
+}
+
+/** Coluna de um dia: cria no clique ou arrastando no vazio, recebe o item
+ * arrastado e mostra a sombra. */
 function DayColumn({
   day,
   segments,
   eventTypes,
   canDragItem,
   onSlotClick,
+  onRangeSelect,
   onItemClick,
   onToggleTask,
 }: {
@@ -333,19 +397,21 @@ function DayColumn({
   eventTypes: Map<string, EventTypeRecord>
   canDragItem?: (item: AgendaItem) => boolean
   onSlotClick: (day: Date, hour: number) => void
+  onRangeSelect?: (day: Date, range: MinuteRange) => void
   onItemClick: (item: AgendaItem) => void
   onToggleTask?: (item: TaskAgendaItem) => void
 }) {
   const dayKey = format(day, 'yyyy-MM-dd')
   const columnRef = useRef<HTMLDivElement | null>(null)
-  const dropZone: GridDropZone = {
-    type: 'grid-day',
-    day,
-    hourHeight: HOUR_HEIGHT,
-    getTop: () => columnRef.current?.getBoundingClientRect().top ?? 0,
-  }
+  const getTop = () => columnRef.current?.getBoundingClientRect().top ?? 0
+  const dropZone: GridDropZone = { type: 'grid-day', day, hourHeight: HOUR_HEIGHT, getTop }
   const { setNodeRef } = useDroppable({ id: `grid-day:${dayKey}`, data: dropZone })
   const { preview } = useAgendaDrag()
+  const { range, handleMouseDown } = useCreateRange({
+    getTop,
+    hourHeight: HOUR_HEIGHT,
+    onSelect: onRangeSelect ? (selected) => onRangeSelect(day, selected) : undefined,
+  })
 
   const { timed } = layoutDayEvents(segments, FULL_DAY, { minHeightPct: MIN_HEIGHT_PCT })
 
@@ -357,12 +423,13 @@ function DayColumn({
       }}
       className={cn('relative flex-1 min-w-0 border-r last:border-r-0', isToday(day) && 'bg-primary/[0.03]')}
     >
-      {/* Alvos de clique por hora */}
+      {/* Alvos de clique por hora — e o começo de uma faixa arrastada */}
       {HOURS.map((h) => (
         <button
           key={h}
           type="button"
           aria-label={`Criar em ${format(day, "dd 'de' MMMM", { locale: ptBR })} às ${h}h`}
+          onMouseDown={handleMouseDown}
           onClick={() => onSlotClick(day, h)}
           className="absolute inset-x-0 hover:bg-accent/30 transition-colors"
           style={{ top: h * HOUR_HEIGHT, height: HOUR_HEIGHT }}
@@ -383,6 +450,7 @@ function DayColumn({
       {preview?.kind === 'grid' && preview.dayKey === dayKey && (
         <DragGhost preview={preview} eventTypes={eventTypes} />
       )}
+      {range && <CreateRangeGhost range={range} />}
     </div>
   )
 }
@@ -412,6 +480,7 @@ export function TimeGrid({
   getItemsForDay,
   eventTypes,
   onSlotClick,
+  onRangeSelect,
   onItemClick,
   onToggleTask,
   canDragItem,
@@ -545,6 +614,7 @@ export function TimeGrid({
                 eventTypes={eventTypes}
                 canDragItem={canDragItem}
                 onSlotClick={onSlotClick}
+                onRangeSelect={onRangeSelect}
                 onItemClick={onItemClick}
                 onToggleTask={onToggleTask}
               />
