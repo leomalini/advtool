@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
+  DragOverlay,
   MouseSensor,
   TouchSensor,
-  pointerWithin,
   useSensor,
   useSensors,
   type Announcements,
+  type CollisionDetection,
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
@@ -18,17 +19,25 @@ import { ptBR } from 'date-fns/locale'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { SeriesScopeDialog } from '@/components/shared/SeriesScopeDialog'
 import type { SeriesScope } from '@/lib/recurrence'
+import { resolveEventType } from '@/types/event.types'
 import { AgendaDragContext, type AgendaDragPreview } from '../hooks/useAgendaDrag'
+import { useEventTypeMap } from '../hooks/useEventTypes'
 import { isOptimisticMove, useMoveAgendaItem, type AgendaMove } from '../hooks/useMoveAgendaItem'
+import type { AgendaItem } from '../utils/agendaItem'
 import { EVENT_SCOPE_LABELS } from '../utils/eventSeries'
 import {
   blockTopInColumn,
   crossesFatalDeadline,
   isAgendaDragSource,
+  isDayDropZone,
   isGridDropZone,
   isUnchangedMove,
+  movedDayKeys,
   movedTimeLabel,
+  moveChipToGrid,
   moveInGrid,
+  moveToDay,
+  type MovedTimes,
 } from '../utils/dragMove'
 
 /** Movimento solto, esperando a resposta de um diálogo antes de gravar. */
@@ -76,6 +85,53 @@ function pointerYOf(event: Event | null): number | null {
   return 'clientY' in event ? (event as MouseEvent).clientY : null
 }
 
+/**
+ * O alvo sob o ponteiro, com os retângulos lidos na hora.
+ *
+ * Duas diferenças para o `pointerWithin` do dnd-kit: os retângulos não ficam
+ * velhos quando a grade rola, e a faixa "Dia todo" ganha das colunas. Ela é
+ * fixa no topo da área que rola: com a grade rolada, a faixa e o topo de uma
+ * coluna ocupam o mesmo lugar na tela, e o que se vê ali é a faixa.
+ */
+const agendaCollision: CollisionDetection = ({ droppableContainers, pointerCoordinates }) => {
+  if (!pointerCoordinates) return []
+  const { x, y } = pointerCoordinates
+  const hits = droppableContainers.filter((container) => {
+    const rect = container.node.current?.getBoundingClientRect()
+    return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+  })
+  const hit = hits.find((container) => isDayDropZone(container.data.current)) ?? hits[0]
+  return hit ? [{ id: hit.id }] : []
+}
+
+/** Identidade da sombra: muda só quando ela muda de casa. */
+function previewKey(preview: AgendaDragPreview | null): string {
+  if (!preview) return ''
+  if (preview.kind === 'grid') return `${preview.item.id}|grid|${preview.dayKey}|${preview.topMin}`
+  return `${preview.item.id}|${preview.area}|${preview.dayKeys.join(',')}`
+}
+
+/** O chip que acompanha o ponteiro ao arrastar do mês ou da faixa "Dia todo". */
+function DragChip({ item }: { item: AgendaItem }) {
+  const eventTypes = useEventTypeMap()
+
+  if (item.kind === 'task') {
+    return (
+      <div className="flex h-full items-center rounded border border-info/40 bg-card px-1.5 text-[10px] font-medium text-info shadow-lg cursor-grabbing">
+        <span className="truncate">{item.title}</span>
+      </div>
+    )
+  }
+  return (
+    <div
+      className="flex h-full items-center rounded px-1.5 text-[10px] font-medium text-white shadow-lg cursor-grabbing"
+      style={{ backgroundColor: resolveEventType(eventTypes, item.event.type).color }}
+    >
+      <span className="truncate">{item.title}</span>
+    </div>
+  )
+}
+
 function deadlineLabel(iso: string): string {
   const deadline = parseISO(iso)
   const withTime = deadline.getHours() !== 0 || deadline.getMinutes() !== 0
@@ -100,13 +156,16 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
   const moveItem = useMoveAgendaItem()
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
+  /** Chip arrastado — desenhado no `DragOverlay`, seguindo o ponteiro. */
+  const [overlayItem, setOverlayItem] = useState<AgendaItem | null>(null)
   const [preview, setPreview] = useState<AgendaDragPreview | null>(null)
   const [pending, setPending] = useState<PendingMove | null>(null)
 
   // Ponteiro lido direto do navegador durante o arraste, e a distância entre o
   // topo do bloco e o ponto em que ele foi pego. Ver `blockTopInColumn`.
   const pointerYRef = useRef<number | null>(null)
-  const grabOffsetRef = useRef(0)
+  const activatorYRef = useRef<number | null>(null)
+  const grabOffsetRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!draggingItemId) return
@@ -124,18 +183,54 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
     }
   }, [draggingItemId])
 
-  /** Para onde o arraste leva o item agora — `null` fora de uma coluna. */
-  function resolveMove({ active, over }: DragMoveEvent | DragEndEvent) {
+  /** Para onde o arraste leva o item agora — `null` fora de um alvo, ou num
+   * alvo que não aceita o item. */
+  function resolveMove({
+    active,
+    over,
+  }: DragMoveEvent | DragEndEvent): { item: AgendaItem; moved: MovedTimes; preview: AgendaDragPreview } | null {
     const source = active.data.current
     const zone = over?.data.current
+    if (!isAgendaDragSource(source)) return null
+    const item = source.segment.item
+
+    if (isDayDropZone(zone)) {
+      const moved = moveToDay(source.segment, zone)
+      return { item, moved, preview: { kind: 'days', item, dayKeys: movedDayKeys(moved), area: zone.area } }
+    }
+
     const pointerY = pointerYRef.current
-    if (!isAgendaDragSource(source) || !isGridDropZone(zone) || pointerY === null) return null
-    const rawTopMin = blockTopInColumn(zone, pointerY, grabOffsetRef.current)
-    return { item: source.segment.item, zone, grid: moveInGrid(source, zone, rawTopMin) }
+    if (!isGridDropZone(zone) || pointerY === null) return null
+    // O retângulo inicial do item só existe depois do `onDragStart` — lá ele
+    // ainda vinha vazio, e a pega contava como zero: a sombra caía um passo
+    // abaixo do ponteiro.
+    const initialTop = active.rect.current.initial?.top
+    if (grabOffsetRef.current === null && initialTop !== undefined && activatorYRef.current !== null) {
+      grabOffsetRef.current = activatorYRef.current - initialTop
+    }
+    const rawTopMin = blockTopInColumn(zone, pointerY, grabOffsetRef.current ?? 0)
+    const grid =
+      source.origin === 'grid'
+        ? moveInGrid(source, zone, rawTopMin)
+        : moveChipToGrid(source.segment, zone, rawTopMin)
+    if (!grid) return null
+    return {
+      item,
+      moved: grid.moved,
+      preview: {
+        kind: 'grid',
+        item,
+        dayKey: format(zone.day, 'yyyy-MM-dd'),
+        topMin: grid.topMin,
+        heightMin: grid.heightMin,
+        label: movedTimeLabel(item, grid.moved),
+      },
+    }
   }
 
   function clear() {
     setDraggingItemId(null)
+    setOverlayItem(null)
     setPreview(null)
     setPending(null)
   }
@@ -145,47 +240,31 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
     if (!isAgendaDragSource(source)) return
 
     const pointerY = pointerYOf(activatorEvent)
-    const blockTop = active.rect.current.initial?.top
     pointerYRef.current = pointerY
-    grabOffsetRef.current = pointerY !== null && blockTop !== undefined ? pointerY - blockTop : 0
+    activatorYRef.current = pointerY
+    grabOffsetRef.current = null
     setDraggingItemId(source.segment.item.id)
+    // Bloco da grade tem a sombra encaixada; chip segue o ponteiro.
+    if (source.origin === 'chip') setOverlayItem(source.segment.item)
   }
 
   function handleDragMove(event: DragMoveEvent) {
-    const resolved = resolveMove(event)
-    if (!resolved) {
-      setPreview(null)
-      return
-    }
-    const { item, zone, grid } = resolved
-    const next: AgendaDragPreview = {
-      item,
-      dayKey: format(zone.day, 'yyyy-MM-dd'),
-      topMin: grid.topMin,
-      heightMin: grid.heightMin,
-      label: movedTimeLabel(item, grid.moved),
-    }
+    const next = resolveMove(event)?.preview ?? null
     // Só re-renderiza quando a sombra muda de casa — o mouse anda a cada pixel.
-    setPreview((current) =>
-      current &&
-      current.item.id === next.item.id &&
-      current.dayKey === next.dayKey &&
-      current.topMin === next.topMin
-        ? current
-        : next
-    )
+    setPreview((current) => (previewKey(current) === previewKey(next) ? current : next))
   }
 
   function handleDragEnd(event: DragEndEvent) {
     suppressNextClick()
     const resolved = resolveMove(event)
     setDraggingItemId(null)
+    setOverlayItem(null)
 
-    if (!resolved || isUnchangedMove(resolved.item, resolved.grid.moved)) {
+    if (!resolved || isUnchangedMove(resolved.item, resolved.moved)) {
       clear()
       return
     }
-    askDeadline({ item: resolved.item, moved: resolved.grid.moved })
+    askDeadline({ item: resolved.item, moved: resolved.moved })
   }
 
   function handleDragCancel() {
@@ -236,7 +315,7 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
     <div className="min-w-0">
       <DndContext
         sensors={sensors}
-        collisionDetection={pointerWithin}
+        collisionDetection={agendaCollision}
         accessibility={{
           announcements: ANNOUNCEMENTS,
           screenReaderInstructions: SCREEN_READER_INSTRUCTIONS,
@@ -247,6 +326,11 @@ export function AgendaDnd({ children }: { children: React.ReactNode }) {
         onDragCancel={handleDragCancel}
       >
         <AgendaDragContext value={dragState}>{children}</AgendaDragContext>
+        {/* Sem animação de volta: o item já aparece no destino (otimista) ou
+            o diálogo assume. */}
+        <DragOverlay dropAnimation={null}>
+          {overlayItem ? <DragChip item={overlayItem} /> : null}
+        </DragOverlay>
       </DndContext>
 
       <ConfirmDialog

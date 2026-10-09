@@ -1,9 +1,10 @@
 # Agenda — arrastar para mudar dia e horário
 
 > **Status:** plano e decisões aprovados em 2026-10-08 (todas as
-> recomendações; a fase 3 entra com os dois extras). **Fase 1 implementada**
-> na branch `feat/agenda-arrastar` (sem push) — ver "Como ficou" na fase.
-> Fases 2 e 3 por fazer.
+> recomendações; a fase 3 entra com os dois extras). **Fase 1** commitada em
+> `feat/agenda-arrastar`; **fase 2** implementada em
+> `feat/agenda-arrastar-mes`, empilhada sobre ela (nada com push) — ver "Como
+> ficou" em cada fase. Fase 3 por fazer.
 
 Pedido: arrastar um item da Agenda para escolher o dia e o horário, como no
 Google Agenda.
@@ -224,6 +225,33 @@ refazer ocorrências) a simulação não executa.
 - Mês: chips de evento e de tarefa, barras de vários dias.
 - Faixa "Dia todo": mover entre dias e converter hora ↔ dia inteiro.
 
+**Como ficou (2026-10-08):**
+
+- `dragMove.ts`: a origem do arraste virou união — `GridDragSource` (bloco,
+  com `topMin`) e `ChipDragSource` (chip do mês ou da faixa) — e há um alvo
+  novo, `DayDropZone` (`area: 'month' | 'strip'`). Funções novas:
+  `moveToDay` (anda em dias de calendário; na faixa, o que vem da grade vira
+  dia inteiro de um dia), `moveChipToGrid` (dia inteiro vira 1h com término;
+  tarefa vira o momento; evento de 24h+ mantém a duração; encaixe no relógio)
+  e `movedDayKeys` (as células que acendem).
+- **Dia inteiro de vários dias não vai para a grade:** não há horário que o
+  represente; a grade não aceita e nada é gravado.
+- **A faixa "Dia todo" aparece sempre na Semana/Dia** quando dá para
+  arrastar, mesmo vazia: é o alvo para virar dia inteiro, e surgir no meio do
+  arraste empurraria a grade para baixo do ponteiro.
+- **Colisão própria (`agendaCollision`):** retângulos lidos na hora, e a faixa
+  ganha das colunas — ela é fixa no topo da área que rola e, com a grade
+  rolada, ocupa o mesmo lugar na tela que o topo das colunas.
+- Chips seguem o ponteiro num `DragOverlay` (sem animação de volta); o mês e
+  a faixa acendem **todos** os dias que o item vai ocupar.
+- `useAgendaItemDrag` (em `hooks/useAgendaDrag.ts`) junta `useDraggable` +
+  apagar o item para bloco, chip do mês e chip da faixa.
+- **Correção que também valia para a fase 1:** o `rect.current.initial` do
+  dnd-kit ainda vem vazio no `onDragStart`, e a pega contava como zero — a
+  sombra caía até um passo (15 min) abaixo do ponteiro. A pega agora é medida
+  no primeiro movimento. Conferido: mirando o topo em 10h00, 10h00; +6 px
+  (7,5 min), 10h15.
+
 ### Fase 3 — redimensionar e criar arrastando (`feat/agenda-arrastar-extras`)
 
 - **Redimensionar:** alça na borda de baixo do bloco de evento (só evento —
@@ -246,14 +274,21 @@ fictícios (avulso, série, vários dias, dia inteiro, atravessando a
 meia-noite, tarefa com e sem hora, concluída). A gravação contra o Supabase
 fica para o usuário conferir logado.
 
-Roteiro mínimo (marcado = conferido na fase 1, com o banco simulado):
+Roteiro mínimo (marcado = conferido com o banco simulado):
 
-- [x] Clique sem arrastar abre o detalhe (bloco; chip e tarefa do mês na fase 2).
+- [x] Clique sem arrastar abre o detalhe (bloco).
 - [x] Bloco movido duas colunas e +2h: 9h10–9h40 de seg → 11h10–11h40 de qua.
 - [x] Pegar pelo meio do bloco: desloca, não teleporta.
 - [x] Rolagem automática da grade durante o arraste: sombra sob o ponteiro.
 - [x] Evento atravessando a meia-noite, pego pelo 2º pedaço: 22h–2h → 23h–3h.
-- [ ] Mês: evento de 3 dias pego no 2º dia e solto +1 → começa um dia depois.
+- [x] Mês: "Férias" 13–15 pego no dia 14 e solto no 15 → 14–16; as três
+      células acendem; soltar não abre o "Novo" da célula.
+- [x] Mês: tarefa das 15h muda de dia e continua às 15h; evento de 28h pego
+      no 2º dia anda inteiro.
+- [x] Semana: bloco com hora → faixa vira dia inteiro (com a grade rolada, a
+      faixa ganha da coluna embaixo); dia inteiro → grade vira 1h com término;
+      tarefa sem hora → grade ganha `due_time`; faixa → faixa muda o dia.
+- [x] Dia inteiro de vários dias solto na grade: nada acontece.
 - [x] Série: diálogo aparece antes de gravar; "Todos" mostra "Salvando..." e
       passa pelo `updateEvent` de série. (Contra o banco real: pendente.)
 - [x] Prazo fatal: cruzar pede confirmação; Cancelar não grava; dentro do
