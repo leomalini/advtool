@@ -270,6 +270,37 @@ Uma branch por PR, empilhadas, a partir de `origin/main` com `--no-track`.
 3. **Indicadores** — `StatTile`, micro-gráficos, `useCountUp`, consulta de
    publicações por dia, idade das atrasadas, parcelas clicáveis e a nova ordem
    do "A receber".
+
+   **Como ficou (2026-10-09, branch `feat/dashboard-visual-indicadores`,
+   empilhada na do PR 2):**
+
+   - `StatTile` (substitui `MetricCard`) e `MicroCharts` (`Meter`,
+     `MiniColumns`, `SegmentBar`, em HTML/CSS, com tooltip por marca e nome
+     acessível com os números). O cartão inteiro é um link esticado; as
+     parcelas do "A receber" são links próprios por cima dele, cada uma
+     abrindo `/financeiro?situacao=`.
+   - `useCountUp`: o número conta do zero na primeira vez que chega, uma vez
+     por montagem (um refetch que muda 12 para 13 só mostra 13), e não anima
+     para quem pede menos movimento. O leitor de tela lê sempre o valor final
+     (`sr-only`), nunca um quadro da contagem.
+   - Publicações: `getPublicationsPerDay` (`publication_date`, sem duplicadas,
+     14 dias, hoje em índigo), sob `publicationKeys.all` — o flush do sino
+     atualiza.
+   - Tarefas: `getTaskCounts` passou a trazer as datas das atrasadas (a
+     contagem continua exata com `count: 'exact'`) para a barra por idade —
+     até 7 dias, 8 a 30, mais de 30 — num tom só, do claro ao escuro, e "mais
+     antiga há N dias".
+   - "A receber" na ordem A vencer · Condição especial · Vencido, e o bloco saiu
+     do card Financeiro (que ficou com Recebido, Despesas e Resultado).
+   - "Em negociação" (perfil sem Financeiro) ganhou o medidor da fatia dos casos
+     do CRM, pela mesma contagem das abas.
+   - A linha dos indicadores segue a largura do dashboard (`@3xl/dashboard`):
+     dois por linha no celular, todos lado a lado quando cabe, sem buraco quando
+     um some por permissão. Saíram `MetricCard` e `DashboardRow`.
+   - Conferido: `tsc`, lint e build ok. Telas pela página temporária: semana
+     cheia, escritório novo (zeros com "tudo em dia" e "nada vencido"), perfil
+     paralegal, escuro; parcelas por cima do link do cartão (pelo
+     `elementFromPoint`).
 4. **Cards interativos** — Monitoramento (abas, chegadas por dia, prévia,
    marcar como lida com Desfazer, pílula de status), Tarefas (mostrar mais),
    Financeiro (números do mês, gráfico que preenche a coluna) e a lateral.
