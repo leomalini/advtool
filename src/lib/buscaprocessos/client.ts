@@ -16,6 +16,7 @@ import type {
   BpIntimacaoOabListData,
   BpCreateIntimacaoOabData,
   BpIntimacaoOabMutationData,
+  BpContaSaldoData,
 } from "./types";
 
 const API_KEY = process.env.BUSCA_PROCESSOS_API_KEY;
@@ -149,6 +150,13 @@ async function request<T>(
   }
 
   return parsed as BpResponse<T>;
+}
+
+// ── Conta ─────────────────────────────────────────────────────────────────────
+
+/** Saldo de créditos da conta. Não é cobrado e não tem limite de chamadas. */
+export function getContaSaldo() {
+  return request<BpContaSaldoData>("/v1/conta/saldo");
 }
 
 // ── Processos ─────────────────────────────────────────────────────────────────

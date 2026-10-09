@@ -345,6 +345,47 @@ Uma branch por PR, empilhadas, a partir de `origin/main` com `--no-track`.
 Pronto, em cada PR: nenhum card estica para acompanhar outro; todo estado vazio
 tem uma linha só; `npx tsc --noEmit`, `pnpm lint` e `pnpm build` ok.
 
+## Depois das fases: saldo de créditos da API (2026-10-09)
+
+Pedido depois do merge do PR 4 (branch `feat/dashboard-saldo-creditos`): o
+saldo da conta da BuscaProcessos, por `GET /v1/conta/saldo`, em dois lugares —
+uma pílula no cabeçalho do Monitoramento, ao lado da das entregas, e um card
+"Créditos da API" no fim da coluna lateral.
+
+- **Formato.** Sem documentação pública acessível; o usuário passou o schema e
+  uma resposta real: `{ data: { credits: 672.26, currency: "BRL",
+  accountStatus: "ACTIVE" }, meta: { creditsRemaining: 672.26, requestId,
+  searchLogId: null, servedAt: "14:32:10" } }`. A consulta não é cobrada e não
+  tem limite. `meta.servedAt` vem só com a hora, sem data nem fuso; a hora da
+  leitura (`checkedAt`) é a do nosso servidor.
+- **Caminho.** `getContaSaldo` (client) → `readCreditBalance`
+  (`lib/buscaprocessos/creditBalance.ts`, confere o `data` com zod: um saldo
+  em texto vira 502, não "R$ NaN") → `GET /api/buscaprocessos/saldo`, com
+  `configuracoes:view` — a mesma permissão da saúde das entregas; na matriz da
+  migration 34, admin e advogado. A chave não sai do servidor.
+- **Frequência.** Uma leitura por hora (`refetchInterval` e `staleTime` de 60
+  min, a pedido do usuário: "não tem necessidade de tão pouco tempo"). A pílula
+  e o card leem a mesma chave; o botão "Atualizar" lê na hora.
+- **Cores.** Verde com a conta `ACTIVE` e saldo a partir de R$ 20; âmbar abaixo
+  de R$ 20 (`LOW_CREDIT_THRESHOLD`); vermelho zerado ou com a conta fora de
+  `ACTIVE` (os outros status não estão documentados — aparece o código cru).
+  O valor só ganha cor quando o problema é ele: conta suspensa com saldo
+  mostra o saldo neutro e o aviso em vermelho. Sem saldo ou com a conta
+  inativa, a API responde 403 às consultas cobradas — é o que o aviso diz.
+- **Falhas.** Sem leitura nenhuma: "Saldo indisponível" com a mensagem da API
+  (chave revogada, por exemplo) e "Tentar de novo". Com uma leitura boa e a
+  seguinte falhando: o valor anterior continua, com "a nova leitura falhou".
+- As classes das pílulas de status foram para `utils/statusTones.ts`, usadas
+  pelas duas.
+- Conferido: `tsc`, lint e build ok; o client e o schema reais rodados no Node
+  com `fetch` simulado (o exemplo real, saldo em texto, campo faltando, 401,
+  envelope sem `data`, faixas de cor e formatos) — nenhuma chamada à API de
+  verdade; a rota sem sessão responde 401 antes de chamar a API. Pela página
+  temporária: os seis estados (normal, baixo, zerado, conta suspensa, erro,
+  atualização que falhou), popover, "Atualizando…", perfis (admin e advogado
+  veem; assistente e financeiro não), 1500 px, 500 px e celular, claro e
+  escuro.
+
 ## Verificação
 
 Sem testes automatizados no projeto. Em cada PR, a página temporária
