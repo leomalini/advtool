@@ -32,6 +32,7 @@ import { useEvents } from '../hooks/useEvents'
 import { useEventTypes, useEventTypeMap } from '../hooks/useEventTypes'
 import { EventDetailModal } from './EventDetailModal'
 import { AgendaCreateDialog, type AgendaCreateTarget } from './AgendaCreateDialog'
+import { AgendaDnd } from './AgendaDnd'
 import { MonthGrid } from './MonthGrid'
 import { TimeGrid } from './TimeGrid'
 import { effectiveEnd, indexEventsByDay, type DaySegment } from '../utils/daySpan'
@@ -174,6 +175,7 @@ export function AgendaContent() {
   const { can } = usePermissions()
   const canViewTasks = can('tarefas', 'view')
   const canToggleTasks = can('tarefas', 'update')
+  const canMoveEvents = can('agenda', 'update')
   const canCreate = can('agenda', 'create') || can('tarefas', 'create')
 
   const [view, setView] = useState<CalendarView>('month')
@@ -264,6 +266,13 @@ export function AgendaContent() {
 
   function handleToggleTask(item: TaskAgendaItem) {
     toggleTaskDone.mutate({ id: item.task.id, done: !item.done })
+  }
+
+  /** Quem pode mudar o item pode arrastá-lo. Tarefa concluída fica onde está:
+   * não se reagenda o que já foi feito. */
+  function canDragItem(item: AgendaItem): boolean {
+    if (item.kind === 'event') return canMoveEvents
+    return canToggleTasks && !item.done
   }
 
   /** Um passo para trás ou para frente, na unidade da visão atual. */
@@ -391,27 +400,30 @@ export function AgendaContent() {
 
       {/* Layout principal: calendário + sidebar */}
       <div className="grid grid-cols-[1fr_240px] gap-4 items-start">
-        {/* Calendário */}
-        {view === 'month' ? (
-          <MonthGrid
-            days={days}
-            currentDate={currentDate}
-            getItemsForDay={getItemsForDay}
-            eventTypes={eventTypes}
-            onDayClick={handleDayClick}
-            onItemClick={handleItemClick}
-            onToggleTask={canToggleTasks ? handleToggleTask : undefined}
-          />
-        ) : (
-          <TimeGrid
-            days={days}
-            getItemsForDay={getItemsForDay}
-            eventTypes={eventTypes}
-            onSlotClick={handleSlotClick}
-            onItemClick={handleItemClick}
-            onToggleTask={canToggleTasks ? handleToggleTask : undefined}
-          />
-        )}
+        {/* Calendário — arrastar um item muda dia e horário */}
+        <AgendaDnd>
+          {view === 'month' ? (
+            <MonthGrid
+              days={days}
+              currentDate={currentDate}
+              getItemsForDay={getItemsForDay}
+              eventTypes={eventTypes}
+              onDayClick={handleDayClick}
+              onItemClick={handleItemClick}
+              onToggleTask={canToggleTasks ? handleToggleTask : undefined}
+            />
+          ) : (
+            <TimeGrid
+              days={days}
+              getItemsForDay={getItemsForDay}
+              eventTypes={eventTypes}
+              onSlotClick={handleSlotClick}
+              onItemClick={handleItemClick}
+              onToggleTask={canToggleTasks ? handleToggleTask : undefined}
+              canDragItem={canDragItem}
+            />
+          )}
+        </AgendaDnd>
 
         {/* Sidebar — próximos 7 dias */}
         <ProximosItens

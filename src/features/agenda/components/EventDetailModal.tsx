@@ -32,6 +32,7 @@ import { formatDate, formatDateTime } from "@/utils/date";
 import { RECURRENCE_SHORT_LABELS, type SeriesScope } from "@/lib/recurrence";
 import { SeriesScopeDialog } from "@/components/shared/SeriesScopeDialog";
 import { eventRangeLabel } from "../utils/daySpan";
+import { EVENT_SCOPE_LABELS } from "../utils/eventSeries";
 import { useDeleteEvent, useUpdateEvent } from "../hooks/useEventMutations";
 import { EventForm } from "./EventForm";
 import { eventDocumentLinks, eventToFormValues } from "../services/events.service";
@@ -404,12 +405,6 @@ function lockedDocumentLinks(event: CalendarEvent) {
 /** Ver deleteEventOnlyDocuments: só sai o anexo que não tem outro dono. */
 const DELETE_DOCUMENTS_NOTICE =
   "Documentos anexados só ao evento também são excluídos; os que também são do processo ou do cliente continuam lá.";
-
-const EVENT_SCOPE_LABELS: Record<SeriesScope, string> = {
-  this: "Este evento",
-  following: "Este e os eventos seguintes",
-  all: "Todos os eventos",
-};
 
 /** "Semanal · até 15/12/2026" — ou só "Recorrente" na flag antiga, sem série. */
 function seriesLabel(event: CalendarEvent): string {
