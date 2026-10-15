@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { FileCheck2, FileSignature, Plus, Search, X } from 'lucide-react'
+import { FileCheck2, FileSignature, FileUp, Plus, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -31,6 +31,7 @@ import { formatCurrency } from '@/types/financialEntry.types'
 import { formatDate } from '@/utils/date'
 import { useContracts } from '../hooks/useContracts'
 import { ContractFormDialog } from './ContractFormDialog'
+import { ImportContractDialog } from './ImportContractDialog'
 import { ContractSituationBadge } from './ContractSituationBadge'
 
 const ALL = '__all__'
@@ -79,6 +80,7 @@ function formatTerm(contract: ContractWithRelations): string {
 export function ContractsContent() {
   const { data: contracts = [], isLoading } = useContracts()
   const [createOpen, setCreateOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [situationFilter, setSituationFilter] = useState<SituationFilter | null>(null)
   const [kindFilter, setKindFilter] = useState<ContractKind | null>(null)
@@ -134,12 +136,19 @@ export function ContractsContent() {
           </p>
         </div>
         <Can resource="contratos" action="create">
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Novo contrato
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+              <FileUp className="h-4 w-4" />
+              Importar contrato
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Novo contrato
+            </Button>
+          </div>
         </Can>
       </div>
+      <ImportContractDialog open={importOpen} onOpenChange={setImportOpen} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {TILES.map((tile) => {

@@ -145,13 +145,17 @@ export function TemplatesContent({ scope = 'documentos' }: { scope?: TemplateSco
                 {template.description && (
                   <p className="text-sm text-muted-foreground">{template.description}</p>
                 )}
-                <TemplateFieldBadges fields={template.fields} settings={template.field_settings} />
+                <TemplateFieldBadges
+                  fields={template.fields}
+                  settings={template.field_settings}
+                  roles={template.parties}
+                />
               </CardContent>
             </Card>
           ))}
         </div>
 
-        <TemplateCatalogPanel />
+        <TemplateCatalogPanel scope={scope} />
       </div>
 
       <TemplateFormDialog

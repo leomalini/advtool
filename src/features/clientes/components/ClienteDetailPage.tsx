@@ -62,6 +62,8 @@ import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
+import { EntityContractsTab } from '@/features/contratos/components/EntityContractsTab'
+import { usePermissions } from '@/hooks/usePermissions'
 import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
@@ -75,6 +77,7 @@ type Tab =
   | 'agenda'
   | 'processos'
   | 'casos'
+  | 'contratos'
   | 'financeiro'
   | 'arquivos'
   | 'pendencias'
@@ -85,6 +88,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'agenda', label: 'Agenda' },
   { id: 'processos', label: 'Processos' },
   { id: 'casos', label: 'Casos' },
+  { id: 'contratos', label: 'Contratos' },
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'arquivos', label: 'Arquivos' },
   { id: 'pendencias', label: 'Pendências' },
@@ -537,6 +541,7 @@ function PendenciasTab({ clientId, onEdit }: { clientId: string; onEdit: () => v
 export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   const router = useRouter()
   const { data: cliente, isLoading, error } = useCliente(clienteId)
+  const { can } = usePermissions()
 
   const [tab, setTab] = useState<Tab>('cadastro')
   const [editOpen, setEditOpen] = useState(false)
@@ -755,7 +760,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
           {/* ── Abas ── */}
           <div className="rounded-xl border border-border bg-card">
             <div className="flex gap-0 overflow-x-auto border-b border-border px-2">
-              {TABS.map((t) => (
+              {TABS.filter((t) => t.id !== 'contratos' || can('contratos', 'view')).map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
@@ -810,6 +815,9 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
                 />
               )}
               {tab === 'casos' && <CasosTab clientId={clienteId} />}
+              {tab === 'contratos' && (
+                <EntityContractsTab clientId={clienteId} itemLabel="cliente" />
+              )}
               {tab === 'financeiro' && (
                 <FinancialEntriesTab
                   clientId={clienteId}

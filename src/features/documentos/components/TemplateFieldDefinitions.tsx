@@ -20,6 +20,7 @@ import {
   type TemplateFieldKind,
   type TemplateFieldSetting,
   type TemplateFieldSettings,
+  type TemplatePartyRole,
 } from '@/types/documentTemplate.types'
 import { suggestCatalogField } from '../templates/catalog'
 import {
@@ -36,6 +37,8 @@ import { newChoiceOption, TemplateChoiceEditor } from './TemplateChoiceEditor'
 interface TemplateFieldDefinitionsProps {
   fields: readonly string[]
   settings: TemplateFieldSettings
+  /** Papéis de parte declarados: os campos deles não se definem aqui. */
+  roles?: readonly TemplatePartyRole[]
   onChange: (settings: TemplateFieldSettings) => void
 }
 
@@ -101,18 +104,19 @@ function defaultSetting(
 export function TemplateFieldDefinitions({
   fields,
   settings,
+  roles = [],
   onChange,
 }: TemplateFieldDefinitionsProps) {
   // Trocar de tipo sem querer não pode apagar as opções ou a instrução já
   // digitadas: o que sai fica guardado aqui e volta se o tipo voltar.
   const [stash, setStash] = useState<KindStash>({})
-  const { manual, choice, ai } = classifyTemplateFields(fields, settings)
+  const { manual, choice, ai } = classifyTemplateFields(fields, settings, roles)
   const byName = new Map<string, Definition>([
     ...manual.map((field): [string, Definition] => [field.name, { kind: 'manual', field }]),
     ...choice.map((field): [string, Definition] => [field.name, { kind: 'choice', field }]),
     ...ai.map((field): [string, Definition] => [field.name, { kind: 'ai', field }]),
   ])
-  const definitions = definableFieldNames(fields).flatMap((name) => byName.get(name) ?? [])
+  const definitions = definableFieldNames(fields, roles).flatMap((name) => byName.get(name) ?? [])
 
   if (definitions.length === 0) {
     return (

@@ -47,6 +47,10 @@ export interface DocumentRecord {
   contract_id: string | null
   /** Minuta, assinado ou anexo — preenchido se e só se há `contract_id`. */
   contract_file_role: ContractFileRole | null
+  /** De qual parte do contrato é o documento (migration 70). */
+  contract_party_id: string | null
+  /** O que o leitor disse que o documento é: `cnh`, `matricula`… */
+  source_kind: string | null
   category: DocumentCategory
   file_name: string
   /** Caminho no bucket 'attachments' — nunca uma URL pública: o bucket é

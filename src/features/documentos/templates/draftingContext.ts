@@ -1,8 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { FilePart, TextPart } from 'ai'
-import { aiFileTypeFromName, isReadAsFile } from '@/features/ia/files/constants'
-import { extractText } from '@/features/ia/files/extractText'
-import { downloadBytes } from '@/features/ia/files/storage'
+import { readDocumentsAsParts, type ReadableDocument } from '@/features/ia/files/documentParts'
 import { clientLabel } from '@/features/ia/tools/shared'
 import { DOCUMENT_CATEGORY_LABELS } from '@/types/document.types'
 import type { DocumentTemplate } from '@/types/documentTemplate.types'
@@ -23,17 +21,9 @@ import { joinNames } from './text'
  * vaza.
  */
 
-const DOCUMENTS_BUCKET = 'attachments'
-
 /** Movimentações recentes: o suficiente para situar a peça. */
 const MAX_MOVEMENTS = 10
 const MAX_MOVEMENT_CHARS = 300
-
-/** Texto por documento. Um contrato inteiro cabe; uma planilha enorme, não. */
-const MAX_DOCUMENT_CHARS = 60_000
-
-/** PDF/imagem acima disto fica de fora — o pedido inteiro tem teto no provedor. */
-const MAX_FILE_BYTES = 20 * 1024 * 1024
 
 interface ProcessRow {
   cnj_number: string | null
@@ -57,13 +47,6 @@ interface MovementRow {
   movement_date: string
   title: string | null
   description: string
-}
-
-interface DocumentRow {
-  id: string
-  file_name: string
-  file_path: string
-  file_size: number
 }
 
 function clip(text: string, max: number): string {
@@ -155,15 +138,12 @@ async function describeProcess(
   return lines
 }
 
-/** Os documentos escolhidos, como o modelo os lê: PDF e imagem no original,
- * o resto como texto. O que não dá para ler vira um aviso, não um erro. */
+/** Os documentos escolhidos, como o modelo os lê — ver `documentParts.ts`. */
 async function readDocuments(
   supabase: SupabaseClient,
   documentIds: readonly string[],
 ): Promise<{ parts: Array<TextPart | FilePart>; skipped: string[] }> {
-  const parts: Array<TextPart | FilePart> = []
-  const skipped: string[] = []
-  if (documentIds.length === 0) return { parts, skipped }
+  if (documentIds.length === 0) return { parts: [], skipped: [] }
 
   const { data, error } = await supabase
     .from('documents')
@@ -171,40 +151,11 @@ async function readDocuments(
     .in('id', [...documentIds])
   if (error) throw error
 
-  for (const document of (data ?? []) as DocumentRow[]) {
-    const type = aiFileTypeFromName(document.file_name)
-    if (!type) {
-      skipped.push(`${document.file_name} (formato que a IA não lê)`)
-      continue
-    }
-    if (isReadAsFile(type.kind) && document.file_size > MAX_FILE_BYTES) {
-      skipped.push(`${document.file_name} (grande demais)`)
-      continue
-    }
-    try {
-      const bytes = await downloadBytes(supabase, DOCUMENTS_BUCKET, document.file_path)
-      if (isReadAsFile(type.kind)) {
-        parts.push({ type: 'text', text: `Documento: ${document.file_name}` })
-        parts.push({
-          type: 'file',
-          data: { type: 'data', data: bytes },
-          mediaType: type.mediaType,
-          filename: document.file_name,
-        })
-      } else {
-        const text = await extractText(type.kind, bytes)
-        parts.push({
-          type: 'text',
-          text:
-            `Documento: ${document.file_name}\n\n` +
-            (clip(text ?? '', MAX_DOCUMENT_CHARS) || '[sem texto]'),
-        })
-      }
-    } catch (readError) {
-      console.error('[modelos] leitura de documento para a IA falhou:', document.id, readError)
-      skipped.push(`${document.file_name} (não foi possível ler)`)
-    }
-  }
+  const { parts, skipped } = await readDocumentsAsParts(
+    supabase,
+    (data ?? []) as ReadableDocument[],
+    (document) => `Documento: ${document.file_name}`,
+  )
   return { parts, skipped }
 }
 

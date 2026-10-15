@@ -9,11 +9,12 @@
  * Supabase ou biblioteca de servidor.
  */
 
-export type CatalogGroup = 'cliente' | 'processo' | 'advogado' | 'escritorio' | 'data'
+export type CatalogGroup = 'cliente' | 'processo' | 'contrato' | 'advogado' | 'escritorio' | 'data'
 
 export const CATALOG_GROUP_LABELS: Record<CatalogGroup, string> = {
   cliente: 'Cliente',
   processo: 'Processo',
+  contrato: 'Contrato',
   advogado: 'Advogados',
   escritorio: 'Escritório',
   data: 'Datas',
@@ -22,6 +23,7 @@ export const CATALOG_GROUP_LABELS: Record<CatalogGroup, string> = {
 export const CATALOG_GROUPS = [
   'cliente',
   'processo',
+  'contrato',
   'advogado',
   'escritorio',
   'data',
@@ -74,6 +76,23 @@ export const TEMPLATE_FIELD_CATALOG = [
   entry('processo_distribuicao', 'processo', 'Data de distribuição (dd/mm/aaaa)'),
   entry('parte_contraria', 'processo', 'Parte(s) do polo oposto ao do cliente'),
   entry('advogado_contrario', 'processo', 'Advogado da parte contrária'),
+  // Do registro do contrato (migration 69): os mesmos números que alimentam o
+  // Financeiro. Só se preenchem quando a minuta é gerada a partir do contrato.
+  entry('contrato_valor', 'contrato', 'Valor total, já com R$ (ex.: R$ 5.000,00)'),
+  entry('contrato_valor_extenso', 'contrato', 'Valor total por extenso (ex.: cinco mil reais)'),
+  entry('contrato_parcelas', 'contrato', 'Parcelas e valor de cada (ex.: 10 parcelas de R$ 500,00)'),
+  entry('contrato_parcela_valor', 'contrato', 'Valor de cada parcela (ex.: R$ 500,00)'),
+  entry('contrato_primeiro_vencimento', 'contrato', 'Primeiro vencimento (dd/mm/aaaa)'),
+  entry('contrato_exito_percentual', 'contrato', 'Percentual de êxito (ex.: 20%)'),
+  entry(
+    'contrato_exito_percentual_extenso',
+    'contrato',
+    'Percentual de êxito por extenso (ex.: vinte por cento)',
+  ),
+  entry('contrato_inicio', 'contrato', 'Início da vigência (dd/mm/aaaa)'),
+  entry('contrato_fim', 'contrato', 'Fim da vigência (dd/mm/aaaa)'),
+  entry('contrato_prazo', 'contrato', 'Prazo entre início e fim (ex.: 12 meses)'),
+  entry('contrato_reajuste', 'contrato', 'Índice de reajuste (ex.: IPCA)'),
   entry('advogado_nome', 'advogado', 'Nome do primeiro advogado escolhido ao gerar'),
   entry('advogado_oab', 'advogado', 'Número da OAB do primeiro advogado'),
   entry('advogado_oab_uf', 'advogado', 'UF da OAB do primeiro advogado'),

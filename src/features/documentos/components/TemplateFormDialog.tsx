@@ -27,6 +27,7 @@ import {
   type DocumentTemplate,
   type TemplateCategory,
   type TemplateFieldSettings,
+  type TemplatePartyRole,
   type TemplateScope,
 } from '@/types/documentTemplate.types'
 import { useCreateTemplate, useUpdateTemplate } from '../hooks/useDocumentTemplates'
@@ -34,6 +35,7 @@ import { inspectTemplateFile } from '../services/templates.service'
 import { choiceFieldsWithoutOptions } from '../templates/fieldSettings'
 import { TemplateFieldBadges } from './TemplateFieldBadges'
 import { TemplateFieldDefinitions } from './TemplateFieldDefinitions'
+import { TemplatePartyRolesEditor } from './TemplatePartyRolesEditor'
 
 interface TemplateFormDialogProps {
   open: boolean
@@ -93,6 +95,10 @@ function TemplateFormBody({
   )
   // Uma categoria só (Contratos): não há o que escolher.
   const fixedCategory = categories.length === 1
+  // Papéis de parte só existem em modelo de contrato (migration 70).
+  const withParties = categories.includes('contrato')
+  const [parties, setParties] = useState<TemplatePartyRole[]>(template?.parties ?? [])
+  const roles = withParties ? parties : []
   const [file, setFile] = useState<File | null>(null)
   const [inspection, setInspection] = useState<Inspection>({ status: 'idle' })
   const [settings, setSettings] = useState<TemplateFieldSettings>(template?.field_settings ?? {})
@@ -103,7 +109,7 @@ function TemplateFormBody({
   const fileReady = template
     ? inspection.status === 'idle' || inspection.status === 'ok'
     : inspection.status === 'ok'
-  const choicesWithoutOptions = choiceFieldsWithoutOptions(fields, settings)
+  const choicesWithoutOptions = choiceFieldsWithoutOptions(fields, settings, roles)
   const canSave =
     fileReady && name.trim().length > 0 && choicesWithoutOptions.length === 0 && !isPending
 
@@ -128,7 +134,7 @@ function TemplateFormBody({
 
   async function handleSubmit() {
     if (!canSave) return
-    const input = { name, description, category, fieldSettings: settings }
+    const input = { name, description, category, fieldSettings: settings, parties: roles }
     if (template) {
       await updateTemplate.mutateAsync({ template, input: { ...input, file } })
     } else if (file) {
@@ -231,15 +237,22 @@ function TemplateFormBody({
 
         {(inspection.status === 'ok' || (template && inspection.status === 'idle')) && (
           <>
+            {withParties && (
+              <div className="space-y-1.5">
+                <Label>Partes do contrato</Label>
+                <TemplatePartyRolesEditor fields={fields} roles={parties} onChange={setParties} />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Campos encontrados</Label>
-              <TemplateFieldBadges fields={fields} settings={settings} />
+              <TemplateFieldBadges fields={fields} settings={settings} roles={roles} />
             </div>
             <div className="space-y-1.5">
-              <Label>Campos que não são do cadastro</Label>
+              <Label>Campos que não são do cadastro{withParties ? ' nem das partes' : ''}</Label>
               <TemplateFieldDefinitions
                 fields={fields}
                 settings={settings}
+                roles={roles}
                 onChange={setSettings}
               />
             </div>

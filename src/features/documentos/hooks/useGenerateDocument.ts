@@ -9,6 +9,8 @@ import {
   setContractTemplate,
   uploadContractFile,
 } from '@/features/contratos/services/contracts.service'
+import { saveContractTemplateValues } from '@/features/contratos/services/contractParties.service'
+import type { ContractTemplateValues } from '@/types/contract.types'
 import { AI_FILE_TYPES } from '@/features/ia/files/constants'
 import type { DocumentTemplate } from '@/types/documentTemplate.types'
 import { downloadBlob } from '@/utils/download'
@@ -61,12 +63,15 @@ export function useTemplateFieldValues({
   fields,
   clientId,
   processId,
+  contractId = null,
   lawyerIds,
 }: {
   templateId: string | null
   fields: readonly CatalogFieldName[]
   clientId: string | null
   processId: string | null
+  /** Fonte dos campos `{contrato_*}`. */
+  contractId?: string | null
   lawyerIds: readonly string[]
 }) {
   return useQuery({
@@ -77,6 +82,7 @@ export function useTemplateFieldValues({
       fields.join(','),
       clientId ?? '-',
       processId ?? '-',
+      contractId ?? '-',
       lawyerIds.join(','),
     ],
     queryFn: () =>
@@ -84,6 +90,7 @@ export function useTemplateFieldValues({
         fields,
         clientId,
         processId,
+        contractId,
         lawyerIds,
         now: new Date(),
       }),
@@ -95,7 +102,12 @@ export function useTemplateFieldValues({
  * como minuta de um contrato (migration 69). */
 export type GenerateSaveTarget =
   | { kind: 'entity'; clientId: string | null; processId: string | null }
-  | { kind: 'contract'; contractId: string }
+  | {
+      kind: 'contract'
+      contractId: string
+      /** O que foi preenchido — "Gerar nova versão" reabre com isto. */
+      templateValues: ContractTemplateValues
+    }
 
 interface GenerateInput {
   template: Pick<DocumentTemplate, 'id' | 'file_path' | 'category'>
@@ -131,10 +143,13 @@ export function useGenerateDocument() {
         if (!user) throw new Error('Sessão expirada. Entre de novo para salvar.')
         if (saveTo.kind === 'contract') {
           await uploadContractFile(saveTo.contractId, 'minuta', file, user.id)
-          // Só lembra o modelo para a próxima geração: falhar aqui não desfaz
-          // a minuta, que já está salva.
-          await setContractTemplate(saveTo.contractId, template.id).catch((error: unknown) =>
-            console.error('[contratos] template_id não gravado:', error),
+          // Só lembram o modelo e o preenchido para a próxima versão: falhar
+          // aqui não desfaz a minuta, que já está salva.
+          await Promise.all([
+            setContractTemplate(saveTo.contractId, template.id),
+            saveContractTemplateValues(saveTo.contractId, saveTo.templateValues),
+          ]).catch((error: unknown) =>
+            console.error('[contratos] modelo/valores da minuta não gravados:', error),
           )
         } else {
           await uploadDocument(

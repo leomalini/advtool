@@ -1,6 +1,7 @@
 import type {
   ClientAddress,
   ClientWithRelations,
+  ClientType,
   MaritalStatus,
   ClientSex,
 } from '@/types/cliente.types'
@@ -27,9 +28,10 @@ function agree(sex: ClientSex | null, masculine: string, feminine: string): stri
 }
 
 /** Estado civil no gênero do cliente ("casada"), ou null sem cadastro. */
-export function formatMaritalStatus(
-  client: Pick<ClientWithRelations, 'marital_status' | 'sex'>
-): string | null {
+export function formatMaritalStatus(client: {
+  marital_status: MaritalStatus | null
+  sex?: ClientSex | null
+}): string | null {
   if (!client.marital_status) return null
   return MARITAL_STATUS_FORMS[client.marital_status][client.sex === 'feminino' ? 'f' : 'm']
 }
@@ -70,6 +72,46 @@ export function formatAddressLine(address: AddressLineParts | null): string {
 }
 
 /**
+ * O que a qualificação lê de uma pessoa. Serve ao cliente e à parte de um
+ * contrato (migration 70), que não tem o formato do cadastro.
+ */
+export interface QualificationPerson {
+  type: ClientType
+  /** Nome (PF) ou razão social (PJ). */
+  name: string | null
+  /** CPF (PF) ou CNPJ (PJ). */
+  document: string | null
+  rg: string | null
+  rg_issuer: string | null
+  sex: ClientSex | null
+  birth_date: string | null
+  nationality: string | null
+  marital_status: MaritalStatus | null
+  profession: string | null
+  address: AddressLineParts | null
+  /** Quem assina pela pessoa jurídica. */
+  representative: string | null
+}
+
+function clientToPerson(client: ClientWithRelations): QualificationPerson {
+  const isCompany = client.type === 'company'
+  return {
+    type: client.type,
+    name: isCompany ? client.company_name : client.name,
+    document: isCompany ? client.cnpj : client.cpf,
+    rg: client.rg,
+    rg_issuer: client.rg_issuer,
+    sex: client.sex ?? null,
+    birth_date: client.birth_date,
+    nationality: client.nationality,
+    marital_status: client.marital_status,
+    profession: client.profession,
+    address: getPrimaryAddress(client),
+    representative: isCompany ? client.contact_person : null,
+  }
+}
+
+/**
  * Parágrafo de qualificação, pronto para colar numa petição.
  *
  * Cada trecho só entra se o campo correspondente existir — um cadastro com nome
@@ -77,41 +119,46 @@ export function formatAddressLine(address: AddressLineParts | null): string {
  * vazia quando não há nem nome.
  */
 export function buildQualificacao(client: ClientWithRelations): string {
-  return client.type === 'company' ? buildCompany(client) : buildIndividual(client)
+  return buildPersonQualificacao(clientToPerson(client))
 }
 
-function buildIndividual(client: ClientWithRelations): string {
-  const name = client.name?.trim()
+/** A mesma qualificação, para quem não é cliente — a parte de um contrato. */
+export function buildPersonQualificacao(person: QualificationPerson): string {
+  return person.type === 'company' ? buildCompany(person) : buildIndividual(person)
+}
+
+function buildIndividual(person: QualificationPerson): string {
+  const name = person.name?.trim()
   if (!name) return ''
 
-  const sex = client.sex ?? null
+  const sex = person.sex
   const parts: string[] = []
 
-  if (client.nationality?.trim()) parts.push(client.nationality.trim())
+  if (person.nationality?.trim()) parts.push(person.nationality.trim())
 
-  const maritalStatus = formatMaritalStatus(client)
+  const maritalStatus = formatMaritalStatus(person)
   if (maritalStatus) parts.push(maritalStatus)
 
-  if (client.profession?.trim()) parts.push(client.profession.trim())
+  if (person.profession?.trim()) parts.push(person.profession.trim())
 
-  if (client.rg?.trim()) {
-    const issuer = client.rg_issuer?.trim()
+  if (person.rg?.trim()) {
+    const issuer = person.rg_issuer?.trim()
     parts.push(
-      `${agree(sex, 'portador', 'portadora')} do RG nº ${client.rg.trim()}${issuer ? ` ${issuer}` : ''}`
+      `${agree(sex, 'portador', 'portadora')} do RG nº ${person.rg.trim()}${issuer ? ` ${issuer}` : ''}`
     )
   }
 
-  if (client.cpf?.trim()) {
+  if (person.document?.trim()) {
     parts.push(
-      `${agree(sex, 'inscrito', 'inscrita')} no CPF sob o nº ${formatDocument(client.cpf.trim())}`
+      `${agree(sex, 'inscrito', 'inscrita')} no CPF sob o nº ${formatDocument(person.document.trim())}`
     )
   }
 
-  if (client.birth_date) {
-    parts.push(`${agree(sex, 'nascido', 'nascida')} em ${formatBrDate(client.birth_date)}`)
+  if (person.birth_date) {
+    parts.push(`${agree(sex, 'nascido', 'nascida')} em ${formatBrDate(person.birth_date)}`)
   }
 
-  const address = formatAddressLine(getPrimaryAddress(client))
+  const address = formatAddressLine(person.address)
   if (address) {
     parts.push(`${agree(sex, 'residente e domiciliado', 'residente e domiciliada')} na ${address}`)
   }
@@ -119,21 +166,21 @@ function buildIndividual(client: ClientWithRelations): string {
   return parts.length === 0 ? name : `${name}, ${parts.join(', ')}`
 }
 
-function buildCompany(client: ClientWithRelations): string {
-  const name = client.company_name?.trim()
+function buildCompany(person: QualificationPerson): string {
+  const name = person.name?.trim()
   if (!name) return ''
 
   const parts: string[] = ['pessoa jurídica de direito privado']
 
-  if (client.cnpj?.trim()) {
-    parts.push(`inscrita no CNPJ sob o nº ${formatDocument(client.cnpj.trim())}`)
+  if (person.document?.trim()) {
+    parts.push(`inscrita no CNPJ sob o nº ${formatDocument(person.document.trim())}`)
   }
 
-  const address = formatAddressLine(getPrimaryAddress(client))
+  const address = formatAddressLine(person.address)
   if (address) parts.push(`com sede na ${address}`)
 
-  if (client.contact_person?.trim()) {
-    parts.push(`neste ato representada por ${client.contact_person.trim()}`)
+  if (person.representative?.trim()) {
+    parts.push(`neste ato representada por ${person.representative.trim()}`)
   }
 
   return `${name}, ${parts.join(', ')}`

@@ -1,3 +1,4 @@
+import type { ClientSex, ClientType, MaritalStatus } from './cliente.types'
 import type { Profile } from './common.types'
 import { todayISO } from './financialEntry.types'
 
@@ -67,6 +68,8 @@ export interface Contract {
   adjustment_index: string | null
   signed_at: string | null
   notes: string | null
+  /** Migration 70. Validado no app — ver `parseContractTemplateValues`. */
+  template_values: ContractTemplateValues
   created_by: string
   created_at: string
   updated_at: string
@@ -151,6 +154,119 @@ export const CONTRACT_STATUS_ACTION_LABELS: Record<ContractStatus, string> = {
   vigente: 'Marcar como assinado',
   encerrado: 'Encerrar',
   rescindido: 'Rescindir',
+}
+
+// ── Partes (migration 70) ────────────────────────────────────────────────────
+
+/** De onde a parte veio. */
+export type ContractPartySource = 'cliente' | 'escritorio' | 'documentos' | 'manual'
+
+export const CONTRACT_PARTY_SOURCE_LABELS: Record<ContractPartySource, string> = {
+  cliente: 'Cadastro',
+  escritorio: 'Escritório',
+  documentos: 'Documentos',
+  manual: 'Digitada',
+}
+
+/** Endereço da parte — as mesmas partes do endereço do cliente. */
+export interface PartyAddress {
+  street: string | null
+  number: string | null
+  complement: string | null
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
+}
+
+/** Os dados de pessoa de uma parte — o que a qualificação usa. */
+export interface PartyPersonData {
+  person_type: ClientType
+  name: string | null
+  /** CPF ou CNPJ, só dígitos. */
+  document: string | null
+  rg: string | null
+  rg_issuer: string | null
+  sex: ClientSex | null
+  birth_date: string | null
+  nationality: string | null
+  marital_status: MaritalStatus | null
+  profession: string | null
+  address: PartyAddress | null
+  email: string | null
+  phone: string | null
+  representative: string | null
+}
+
+/** Dado da parte → documento de onde veio. */
+export type PartyFieldSources = Partial<Record<keyof PartyPersonData, string>>
+
+export interface ContractParty extends PartyPersonData {
+  id: string
+  contract_id: string
+  position: number
+  role_key: string
+  role_label: string
+  source: ContractPartySource
+  client_id: string | null
+  field_sources: PartyFieldSources
+  created_at: string
+  updated_at: string
+}
+
+/** Papéis comuns, oferecidos ao declarar o modelo e ao adicionar uma parte. */
+export const PARTY_ROLE_PRESETS: { key: string; label: string }[] = [
+  { key: 'contratante', label: 'Contratante' },
+  { key: 'contratado', label: 'Contratado' },
+  { key: 'locador', label: 'Locador' },
+  { key: 'locatario', label: 'Locatário' },
+  { key: 'comprador', label: 'Comprador' },
+  { key: 'vendedor', label: 'Vendedor' },
+  { key: 'fiador', label: 'Fiador' },
+  { key: 'conjuge_anuente', label: 'Cônjuge anuente' },
+  { key: 'testemunha1', label: 'Testemunha 1' },
+  { key: 'testemunha2', label: 'Testemunha 2' },
+]
+
+/** O que o leitor reconhece num documento (`documents.source_kind`). */
+export const SOURCE_KIND_LABELS = {
+  cnh: 'CNH',
+  rg: 'RG',
+  cpf: 'CPF',
+  certidao_nascimento: 'Certidão de nascimento',
+  certidao_casamento: 'Certidão de casamento',
+  comprovante_residencia: 'Comprovante de residência',
+  contrato_social: 'Contrato social',
+  cartao_cnpj: 'Cartão CNPJ',
+  procuracao: 'Procuração',
+  matricula: 'Matrícula do imóvel',
+  iptu: 'IPTU',
+  crlv: 'CRLV / CRV',
+  nota_fiscal: 'Nota fiscal',
+  contrato: 'Contrato',
+  outro: 'Outro documento',
+} as const
+
+export type SourceKind = keyof typeof SOURCE_KIND_LABELS
+
+export const SOURCE_KINDS = Object.keys(SOURCE_KIND_LABELS) as SourceKind[]
+
+export function sourceKindLabel(kind: string | null | undefined): string | null {
+  if (!kind) return null
+  return kind in SOURCE_KIND_LABELS ? SOURCE_KIND_LABELS[kind as SourceKind] : kind
+}
+
+/** O que foi preenchido na última minuta (migration 70). "Gerar nova versão"
+ * reabre a tela de geração com isto. */
+export interface ContractTemplateValues {
+  templateId?: string
+  manual?: Record<string, string>
+  choices?: Record<string, string[]>
+  ai?: Record<string, string>
+  overrides?: Record<string, string>
+  lawyerIds?: string[]
+  /** Campo manual → documento de onde a IA tirou o valor (leitor). */
+  manualSources?: Record<string, string>
 }
 
 /** Percentual como o contrato o escreve: "20%" ou "12,5%". */

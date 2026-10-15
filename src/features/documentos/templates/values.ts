@@ -89,6 +89,7 @@ export function formatChoiceValue(
 export function buildTemplateValues({
   classified,
   cadastro,
+  party = {},
   cadastroOverrides = {},
   manual,
   choices = {},
@@ -97,7 +98,9 @@ export function buildTemplateValues({
   classified: ClassifiedFields
   /** Lidos do banco. */
   cadastro: CatalogValues
-  /** Digitados por cima do cadastro, só para este documento. */
+  /** Das partes do contrato (`partyValues`). */
+  party?: Readonly<Record<string, string | undefined>>
+  /** Digitados por cima do cadastro ou das partes, só para este documento. */
   cadastroOverrides?: Readonly<Record<string, string>>
   /** Valor cru dos campos manuais: número com ponto decimal, data em
    * 'yyyy-MM-dd' ou texto. */
@@ -112,6 +115,11 @@ export function buildTemplateValues({
   for (const name of classified.cadastro) {
     const override = nonEmpty(cadastroOverrides[name])
     values[name] = override ? toTemplateText(override) : cadastro[name]
+  }
+
+  for (const { name } of classified.party) {
+    const override = nonEmpty(cadastroOverrides[name])
+    values[name] = override ? toTemplateText(override) : party[name]
   }
 
   for (const field of classified.manual) {

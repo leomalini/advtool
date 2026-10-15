@@ -118,6 +118,17 @@ export type TemplateFieldKind = TemplateFieldSetting['kind']
 /** Chave = nome do campo no .docx, sem chaves. */
 export type TemplateFieldSettings = Record<string, TemplateFieldSetting>
 
+/**
+ * Um papel de parte que o modelo declara (migration 70): "Locatário", chave
+ * `locatario`. Cada papel ganha os mesmos campos do cliente —
+ * `{locatario_nome}`, `{locatario_qualificacao}`… — preenchidos pelas partes
+ * do contrato que têm esse papel.
+ */
+export interface TemplatePartyRole {
+  key: string
+  label: string
+}
+
 /** Espelha `public.document_templates` (migrations 62 e 66). */
 export interface DocumentTemplate {
   id: string
@@ -132,6 +143,8 @@ export interface DocumentTemplate {
    * (`documentos/templates/catalog.ts`); os demais, `field_settings`. */
   fields: string[]
   field_settings: TemplateFieldSettings
+  /** Papéis de parte que o modelo usa (migration 70). Vazio fora de contrato. */
+  parties: TemplatePartyRole[]
   created_by: string
   created_at: string
   updated_at: string

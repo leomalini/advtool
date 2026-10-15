@@ -7,6 +7,7 @@ import {
 } from '@/features/clientes/utils/qualificacao'
 import { formatCurrency } from '@/types/financialEntry.types'
 import type { ClientContact, ClientWithRelations } from '@/types/cliente.types'
+import type { Contract } from '@/types/contract.types'
 import type { PartyPolo } from '@/types/legalProcess.types'
 import type { OfficeSettings } from '@/types/officeSettings.types'
 import { formatDocument } from '@/utils/format'
@@ -16,7 +17,13 @@ import {
   type CatalogGroup,
   type CatalogValues,
 } from './catalog'
-import { currencyToWords, formatLongDate, formatShortDate, officeTodayIso } from './spellOut'
+import {
+  currencyToWords,
+  formatLongDate,
+  formatShortDate,
+  officeTodayIso,
+  percentToWords,
+} from './spellOut'
 import { joinNames } from './text'
 
 interface ProcessRow {
@@ -95,6 +102,84 @@ function clientValues(client: ClientWithRelations): CatalogValues {
   }
 }
 
+/** Os números do contrato que os campos `{contrato_*}` usam. */
+export type ContractNumbers = Pick<
+  Contract,
+  | 'total_amount'
+  | 'installments'
+  | 'first_due_date'
+  | 'success_fee_percent'
+  | 'start_date'
+  | 'end_date'
+  | 'adjustment_index'
+>
+
+const CONTRACT_NUMBERS_SELECT =
+  'total_amount, installments, first_due_date, success_fee_percent, start_date, end_date, ' +
+  'adjustment_index'
+
+function isoParts(isoDate: string): [number, number, number] {
+  const [year, month, day] = isoDate.slice(0, 10).split('-').map(Number)
+  return [year, month, day]
+}
+
+/**
+ * "12 meses" quando início e fim fecham meses inteiros — 01/01 a 31/12, ou
+ * 10/03 a 10/09 —, senão "45 dias". Contado no calendário, sem fuso.
+ */
+export function describeContractTerm(startIso: string, endIso: string): string | undefined {
+  const [y1, m1, d1] = isoParts(startIso)
+  const [y2, m2, d2] = isoParts(endIso)
+  const start = Date.UTC(y1, m1 - 1, d1)
+  const end = Date.UTC(y2, m2 - 1, d2)
+  if (end < start) return undefined
+
+  const dayAfterEnd = new Date(end + 86_400_000)
+  const closesOnDayBefore = dayAfterEnd.getUTCDate() === d1
+  if (closesOnDayBefore || d2 === d1) {
+    const reference = closesOnDayBefore ? dayAfterEnd : new Date(end)
+    const months =
+      (reference.getUTCFullYear() - y1) * 12 + (reference.getUTCMonth() - (m1 - 1))
+    if (months > 0) return months === 1 ? '1 mês' : `${months} meses`
+  }
+  const days = Math.round((end - start) / 86_400_000) + 1
+  return days === 1 ? '1 dia' : `${days} dias`
+}
+
+/** Valores do grupo `contrato` do catálogo, a partir do registro. */
+export function contractValues(contract: ContractNumbers): CatalogValues {
+  const total = contract.total_amount != null ? Number(contract.total_amount) : null
+  const installments = contract.installments
+  const each =
+    total !== null && installments ? Math.round((total / installments) * 100) / 100 : null
+  const fee = contract.success_fee_percent != null ? Number(contract.success_fee_percent) : null
+
+  return {
+    contrato_valor: total !== null ? formatCurrency(total) : undefined,
+    contrato_valor_extenso: total !== null ? currencyToWords(total) : undefined,
+    contrato_parcelas: installments
+      ? `${installments} ${installments === 1 ? 'parcela' : 'parcelas'}` +
+        (each !== null ? ` de ${formatCurrency(each)}` : '')
+      : undefined,
+    contrato_parcela_valor: each !== null ? formatCurrency(each) : undefined,
+    contrato_primeiro_vencimento: contract.first_due_date
+      ? (formatShortDate(contract.first_due_date) ?? undefined)
+      : undefined,
+    contrato_exito_percentual:
+      fee !== null ? `${fee.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : undefined,
+    contrato_exito_percentual_extenso: fee !== null ? percentToWords(fee) : undefined,
+    contrato_inicio: contract.start_date
+      ? (formatShortDate(contract.start_date) ?? undefined)
+      : undefined,
+    contrato_fim: contract.end_date ? (formatShortDate(contract.end_date) ?? undefined) : undefined,
+    contrato_prazo:
+      contract.start_date && contract.end_date
+        ? describeContractTerm(contract.start_date, contract.end_date)
+        : undefined,
+    contrato_reajuste: nonEmpty(contract.adjustment_index),
+  }
+}
+
 /** "Ana Lima (OAB/ES 12345)". Sem OAB cadastrada, só o nome. */
 function lawyerLabel(lawyer: LawyerRow): string {
   const number = nonEmpty(lawyer.oab_number)
@@ -125,6 +210,16 @@ async function fetchProcess(supabase: SupabaseClient, processId: string) {
     .maybeSingle()
   if (error) throw error
   return (data as unknown as ProcessRow | null) ?? null
+}
+
+async function fetchContract(supabase: SupabaseClient, contractId: string) {
+  const { data, error } = await supabase
+    .from('contracts')
+    .select(CONTRACT_NUMBERS_SELECT)
+    .eq('id', contractId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as unknown as ContractNumbers | null) ?? null
 }
 
 async function fetchLawyers(supabase: SupabaseClient, lawyerIds: readonly string[]) {
@@ -189,6 +284,9 @@ export interface ResolveTemplateFieldsInput {
   fields: readonly CatalogFieldName[]
   clientId: string | null
   processId: string | null
+  /** Contrato de onde saem os campos `{contrato_*}`. Fora de um contrato,
+   * eles ficam em branco. */
+  contractId?: string | null
   /** Na ordem da escolha; o primeiro é o de `{advogado_nome}`. */
   lawyerIds: readonly string[]
   now: Date
@@ -205,7 +303,7 @@ export interface ResolveTemplateFieldsInput {
  */
 export async function resolveTemplateFields(
   supabase: SupabaseClient,
-  { fields, clientId, processId, lawyerIds, now }: ResolveTemplateFieldsInput,
+  { fields, clientId, processId, contractId = null, lawyerIds, now }: ResolveTemplateFieldsInput,
 ): Promise<{ values: CatalogValues; notes: string[] }> {
   const values: CatalogValues = {}
   const notes: string[] = []
@@ -215,15 +313,28 @@ export async function resolveTemplateFields(
 
   const needsClient = wantsGroup('cliente', ['cliente_tipo_parte'])
   const needsProcess = wantsGroup('processo') || wants('cliente_tipo_parte')
+  const needsContract = wantsGroup('contrato')
   const needsLawyers = wantsGroup('advogado')
   const needsOffice = wantsGroup('escritorio') || wants('local_e_data')
 
-  const [client, process, lawyers, officeResult] = await Promise.all([
+  const [client, process, contract, lawyers, officeResult] = await Promise.all([
     needsClient && clientId ? fetchClient(supabase, clientId) : null,
     needsProcess && processId ? fetchProcess(supabase, processId) : null,
+    needsContract && contractId ? fetchContract(supabase, contractId) : null,
     needsLawyers && lawyerIds.length > 0 ? fetchLawyers(supabase, lawyerIds) : [],
     needsOffice ? fetchOffice(supabase) : null,
   ])
+
+  if (needsContract) {
+    if (!contractId) {
+      notes.push(
+        'Os campos {contrato_*} só se preenchem gerando pelo contrato, em Contratos — ' +
+          'aqui ficaram em branco.',
+      )
+    } else if (!contract) {
+      notes.push('Contrato não encontrado ou sem acesso — os campos do contrato ficaram em branco.')
+    } else Object.assign(values, contractValues(contract))
+  }
 
   if (needsClient) {
     if (!clientId) notes.push('Nenhum cliente escolhido — os campos do cliente ficaram em branco.')

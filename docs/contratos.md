@@ -1,9 +1,10 @@
 # Contratos
 
 > **Status:** plano e decisões aprovados em 2026-10-14 (todas as
-> recomendações, todos os extras da v1). **Fase 1 implementada** na branch
-> `feat/contratos-base` — ver "Como ficou a fase 1". Migration 69 **aplicada**
-> no remoto em 2026-10-14.
+> recomendações, todos os extras da v1). **Fase 1** na branch
+> `feat/contratos-base` (migration 69 aplicada no remoto em 2026-10-14).
+> **Fase 2** na branch `feat/contratos-partes`, empilhada na 1 (migration 70
+> aplicada no remoto em 2026-10-15). Ver "Como ficou" de cada fase.
 
 Pedido: um módulo **Contratos** para anexar contratos e criar modelos de
 contrato, como em Documentos, integrado ao Assistente: anexar documentos e, com
@@ -419,6 +420,117 @@ validações (nome, cliente em honorários, número inválido, fim antes do
 início), o payload do insert, do update (sem `status`) e da assinatura,
 "Gerar minuta" só com modelos de contrato, aba Modelos e celular (375 px, sem
 rolagem lateral). Telas logadas ainda não foram usadas contra o banco real.
+
+## Como ficou a fase 2
+
+Branch `feat/contratos-partes`, a partir da fase 1 (`672bdbc`). tsc, lint (0
+erros) e build ok.
+
+### Decisões tomadas antes de começar (2026-10-14)
+
+- **Montar no contrato**, não num assistente em passos: "Novo contrato" cria o
+  rascunho (agora com o modelo) e abre a página dele, que mostra os passos no
+  topo — Modelo, Partes, Valores e vigência, Minuta. O motivo técnico: a IA só
+  lê arquivo que está no Storage (a Vercel recusa corpo acima de 4,5 MB), então
+  o contrato precisa existir antes da leitura; e fechar no meio não perde nada.
+- **Parte lida de documento pode virar cliente na tela**, conferindo antes:
+  "Cadastrar como cliente" abre o formulário de cliente já preenchido.
+- **Teste contra o Gemini real: até 3 pedidos com documentos fictícios** — ver
+  "Verificação": não foi possível.
+
+### Banco — migration 70 (aplicada em 2026-10-15)
+
+Só a 70 estava pendente (`db push --linked --dry-run`); aplicada sem erro e
+conferida com `pnpm db:verify`. Leitura com a service role, sem gravar nada:
+`contract_parties`, `contracts.template_values`, `documents.contract_party_id` e
+`source_kind` e `document_templates.parties` respondem aos selects do app; o
+modelo que já existia ficou com `parties = []`; os 7 documentos seguem lá.
+
+
+- `contract_parties`: uma cópia da qualificação por parte, com o papel, a
+  origem (`cliente`, `escritorio`, `documentos`, `manual`), o `client_id`
+  quando há, e `field_sources` (dado → documento). RLS: ver com
+  `contratos:view`; criar, editar e apagar com `contratos:update`.
+- `contracts.template_values`: o que foi preenchido na última minuta.
+- `documents.contract_party_id` (`set null`) e `source_kind`.
+- `document_templates.parties`: os papéis do modelo.
+
+### Motor de modelos
+
+- Grupo `contrato` no catálogo (`{contrato_valor}`… `{contrato_reajuste}`),
+  lido do registro por `resolveTemplateFields(… contractId)`. Fora de um
+  contrato, sai em branco com aviso. `{contrato_prazo}` diz "12 meses" quando
+  início e fim fecham meses inteiros, senão em dias.
+- Campos de parte (`templates/partyFields.ts`): papel declarado + sufixo do
+  cliente. `classifyTemplateFields(fields, settings, roles)` separa `party`;
+  sem os papéis, tudo segue como antes. Duas partes no mesmo papel entram
+  juntas (nomes com "e"; qualificações separadas por ponto e vírgula).
+- `buildQualificacao` virou `buildPersonQualificacao` por baixo: serve ao
+  cliente (mesmo texto de antes) e à parte.
+- Editor de papéis no cadastro do modelo (só em Contratos): sugere os prefixos
+  achados no arquivo; papel que o arquivo não usa não é salvo.
+
+### Página do contrato
+
+- **Partes:** adicionar do cadastro, o escritório, lendo documentos ou
+  digitando; editar (editar um dado tira dele a marca "lido de…"), tirar,
+  "Atualizar do cadastro" e "Cadastrar como cliente". Aviso quando um papel do
+  modelo está sem parte.
+- **Arquivos** mostram o tipo lido e de quem é ("CNH · Maria Silva").
+- **Gerar minuta / Gerar nova versão:** a tela de geração preenche os campos
+  das partes e do contrato, reabre com o que foi preenchido da última vez e,
+  ao salvar no contrato, guarda isso em `template_values`. Valor sugerido pelo
+  leitor aparece "lido de … — confira" até a minuta ser gerada.
+
+### Leitor de documentos
+
+- `POST /api/contratos/ler-documentos` (`contratos:update`): até 10 documentos
+  do próprio contrato, 50 MB; 1 pedido ao provedor com saída estruturada
+  (`reading/readerSchema.ts` — tudo texto, "" quando não consta).
+- A junção é código (`reading/mergeReading.ts`): pessoa por CPF/CNPJ e, sem
+  ele, pelo nome sem acento; valores diferentes viram opções; cliente já
+  cadastrado é apontado; PJ com CNPJ é completada pela BrasilAPI
+  (`lib/brasilapi/cnpj.ts`, que a rota `/api/cnpj` passou a usar).
+- Tela "Ler documentos": escolhe anexos do contrato ainda não lidos e/ou sobe
+  novos, lê, e mostra para conferir — papel de cada pessoa, cadastro existente
+  ("usar o cadastro e completar o que faltar" ou "só o lido"), conflitos,
+  documentos a guardar e valores para os campos do modelo. Só "Adicionar
+  partes" grava.
+- A leitura dos arquivos para a IA virou `ia/files/documentParts.ts`,
+  compartilhada com o "Redigir com IA".
+- Erro 402 do provedor (créditos esgotados) tem mensagem própria
+  (`isProviderCreditError`).
+
+### Importar contrato pronto
+
+Botão em /contratos. Escolhe o tipo, o contrato (via assinada ou minuta) e,
+se quiser, documentos das partes. Cria o rascunho, sobe, lê no modo
+`importar` (partes do preâmbulo + valores, vigência e data da assinatura) e
+mostra para conferir os dados do contrato e as partes. Cancelar apaga o
+rascunho e os arquivos; por isso o diálogo não fecha por Esc nem pelo X.
+
+### Cliente e processo
+
+Aba **Contratos** nas duas páginas (para quem tem `contratos:view`), com
+"Novo contrato" já ligado. No cliente, entram também os contratos em que ele
+é **parte**.
+
+### Verificação
+
+- **IA real: não testada.** O pedido de teste (documentos fictícios) voltou
+  402 — "prepayment credits are depleted": a conta do Gemini passou ao
+  pré-pago e está sem saldo. Nenhum pedido foi gasto. Enquanto isso, o /ia
+  também deve falhar.
+- **Junção:** rodada no Node com uma resposta simulada para CNH, conta de luz,
+  certidão de casamento e matrícula fictícias — a mesma pessoa saiu uma só
+  (com e sem acento, CPF com e sem máscara), "casada" virou `casado` com a
+  qualificação no feminino, campo desconhecido foi ignorado. A resposta
+  simulada passa no schema real.
+- **Telas** numa página temporária sob `/acompanhar` (apagada): passos, partes,
+  arquivos, editor de papéis, geração com campos de parte, aba do cliente,
+  importação (Esc e X bloqueados) e a conferência da leitura — com o payload
+  gravado conferido (parte com `field_sources`, CNH ligada como `cnh`,
+  documento desmarcado apagado).
 
 ## Em aberto (decidir na fase)
 

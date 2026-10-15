@@ -30,6 +30,9 @@ interface GenerateFillFieldsProps {
   /** Ids das opções escolhidas por campo de opções. */
   choices: Readonly<Record<string, readonly string[]>>
   onChoiceChange: (name: string, optionIds: string[]) => void
+  /** Campo manual → "lido de Matrícula do imóvel": o valor veio do leitor de
+   * documentos e ainda não foi mexido. */
+  readFrom?: Readonly<Record<string, string>>
 }
 
 function ManualFieldControl({
@@ -179,6 +182,7 @@ export function GenerateFillFields({
   onManualChange,
   choices,
   onChoiceChange,
+  readFrom = {},
 }: GenerateFillFieldsProps) {
   return (
     <div className="space-y-4">
@@ -200,6 +204,11 @@ export function GenerateFillFields({
               </span>
               {item.kind === 'choice' && item.field.multiple && (
                 <span className="text-[11px] text-muted-foreground">marque uma ou mais</span>
+              )}
+              {readFrom[field.name] && (
+                <span className="rounded bg-info/10 px-1.5 text-[11px] text-info">
+                  lido de {readFrom[field.name]} — confira
+                </span>
               )}
             </label>
             {item.kind === 'manual' ? (

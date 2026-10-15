@@ -53,7 +53,10 @@ import {
   useTemplateFieldValues,
   type GenerateSaveTarget,
 } from '../hooks/useGenerateDocument'
-import { catalogEntry, type CatalogGroup } from '../templates/catalog'
+import { useContractParties } from '@/features/contratos/hooks/useContracts'
+import { sourceKindLabel, type ContractTemplateValues } from '@/types/contract.types'
+import { catalogEntry, type CatalogFieldName, type CatalogGroup } from '../templates/catalog'
+import { describePartyField, partyValues, rolesWithoutParty } from '../templates/partyFields'
 import { DRAFT_MAX_DOCUMENTS } from '../templates/drafting'
 import { classifyTemplateFields, fillFieldsInOrder } from '../templates/fieldSettings'
 import { buildTemplateValues, missingFields } from '../templates/values'
@@ -76,6 +79,8 @@ interface GenerateDocumentDialogProps {
   scope?: TemplateScope
   /** Gerado a partir de um contrato: "salvar" guarda a minuta nele. */
   contractId?: string
+  /** O que foi preenchido na última minuta do contrato (migration 70). */
+  savedValues?: ContractTemplateValues
 }
 
 const SCOPE_LABELS: Record<TemplateScope, string> = {
@@ -96,6 +101,7 @@ export function GenerateDocumentDialog({
   processId,
   scope = 'documentos',
   contractId,
+  savedValues,
 }: GenerateDocumentDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -113,6 +119,7 @@ export function GenerateDocumentDialog({
             fixedProcessId={processId}
             scope={scope}
             contractId={contractId}
+            savedValues={savedValues}
             onClose={() => onOpenChange(false)}
           />
         )}
@@ -141,6 +148,7 @@ function GenerateDocumentBody({
   fixedProcessId,
   scope,
   contractId,
+  savedValues,
   onClose,
 }: {
   initialTemplateId?: string
@@ -148,6 +156,7 @@ function GenerateDocumentBody({
   fixedProcessId?: string
   scope: TemplateScope
   contractId?: string
+  savedValues?: ContractTemplateValues
   onClose: () => void
 }) {
   const { user } = useAuth()
@@ -163,26 +172,52 @@ function GenerateDocumentBody({
   const generate = useGenerateDocument()
   const draft = useDraftTemplateTexts()
 
+  // O que foi preenchido na última minuta deste contrato (migration 70) vale
+  // como ponto de partida — se o modelo for o mesmo.
+  const restored =
+    savedValues?.templateId && savedValues.templateId === initialTemplateId ? savedValues : null
+
   const [panel, setPanel] = useState<Panel>('form')
   const [templateId, setTemplateId] = useState<string | null>(initialTemplateId ?? null)
   /** undefined = ainda não escolhido: vale o cliente do processo. */
   const [clientChoice, setClientChoice] = useState<string | null | undefined>(undefined)
   const [processChoice, setProcessChoice] = useState<string | null>(null)
   /** null = ainda não escolhido: vale a sugestão (quem gera, se tiver OAB). */
-  const [lawyerChoice, setLawyerChoice] = useState<string[] | null>(null)
-  const [overrides, setOverrides] = useState<Record<string, string>>({})
-  const [manual, setManual] = useState<Record<string, string>>({})
-  const [choices, setChoices] = useState<Record<string, string[]>>({})
-  const [aiTexts, setAiTexts] = useState<Record<string, string>>({})
+  const [lawyerChoice, setLawyerChoice] = useState<string[] | null>(
+    restored?.lawyerIds?.length ? restored.lawyerIds : null,
+  )
+  const [overrides, setOverrides] = useState<Record<string, string>>(restored?.overrides ?? {})
+  const [manual, setManual] = useState<Record<string, string>>(restored?.manual ?? {})
+  const [choices, setChoices] = useState<Record<string, string[]>>(restored?.choices ?? {})
+  const [aiTexts, setAiTexts] = useState<Record<string, string>>(restored?.ai ?? {})
   const [notes, setNotes] = useState('')
   const [documentIds, setDocumentIds] = useState<string[]>([])
   const [draftingFields, setDraftingFields] = useState<string[] | null>(null)
 
   const template = templates.find((item) => item.id === templateId) ?? null
   const classified = useMemo(
-    () => (template ? classifyTemplateFields(template.fields, template.field_settings) : null),
+    () =>
+      template
+        ? classifyTemplateFields(template.fields, template.field_settings, template.parties)
+        : null,
     [template],
   )
+  const { data: contractParties = [] } = useContractParties(contractId)
+  const party = useMemo(
+    () => (classified ? partyValues(classified.party, contractParties) : {}),
+    [classified, contractParties],
+  )
+  const missingRoles = classified ? rolesWithoutParty(classified.party, contractParties) : []
+
+  // Valor que o leitor de documentos sugeriu e ninguém mexeu ainda: a tela o
+  // marca com a origem, para ser conferido antes do download.
+  const { data: contractDocuments = [] } = useDocumentsForEntity({ contractId })
+  const readFrom: Record<string, string> = {}
+  for (const [field, documentId] of Object.entries(restored?.manualSources ?? {})) {
+    if (manual[field] === undefined || manual[field] !== restored?.manual?.[field]) continue
+    const document = contractDocuments.find((item) => item.id === documentId)
+    if (document) readFrom[field] = sourceKindLabel(document.source_kind) ?? document.file_name
+  }
   const fillFields = useMemo(
     () => (template && classified ? fillFieldsInOrder(template.fields, classified) : []),
     [template, classified],
@@ -217,6 +252,7 @@ function GenerateDocumentBody({
     fields: classified?.cadastro ?? [],
     clientId,
     processId,
+    contractId: contractId ?? null,
     lawyerIds,
   })
 
@@ -233,6 +269,7 @@ function GenerateDocumentBody({
     ? buildTemplateValues({
         classified,
         cadastro: resolution.data?.values ?? {},
+        party,
         cadastroOverrides: overrides,
         manual,
         choices,
@@ -340,7 +377,20 @@ function GenerateDocumentBody({
     const saveTo: GenerateSaveTarget | null = !save
       ? null
       : contractId
-        ? { kind: 'contract', contractId }
+        ? {
+            kind: 'contract',
+            contractId,
+            // "Gerar nova versão" reabre com isto (migration 70).
+            templateValues: {
+              templateId: template.id,
+              manual,
+              choices,
+              ai: aiTexts,
+              overrides,
+              lawyerIds,
+              // Gerar a minuta é a conferência: a marca "lido de…" sai.
+            },
+          }
         : { kind: 'entity', clientId, processId }
     generate.mutate(
       { template, values, fileName, saveTo },
@@ -551,7 +601,43 @@ function GenerateDocumentBody({
                         isLoading={resolution.isLoading}
                         overrides={overrides}
                         onOverride={setOverride}
+                        describe={(field) => catalogEntry(field as CatalogFieldName).description}
                       />
+                    )}
+                  </Section>
+                )}
+
+                {classified.party.length > 0 && (
+                  <Section title="Partes do contrato">
+                    {!contractId ? (
+                      <p className="text-xs text-muted-foreground">
+                        Os campos das partes se preenchem gerando pela página do contrato. Aqui
+                        saem como [FALTA].
+                      </p>
+                    ) : (
+                      <>
+                        {missingRoles.length > 0 && (
+                          <p className="flex gap-1.5 rounded bg-warning/15 px-2 py-1 text-xs">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+                            <span className="min-w-0">
+                              Sem parte como {missingRoles.map((role) => role.label).join(', ')}
+                              {' — adicione em Partes, no contrato, ou complete aqui.'}
+                            </span>
+                          </p>
+                        )}
+                        <GenerateCadastroFields
+                          fields={classified.party.map((use) => use.name)}
+                          values={party}
+                          isLoading={false}
+                          overrides={overrides}
+                          onOverride={setOverride}
+                          describe={(field) => {
+                            const use = classified.party.find((item) => item.name === field)
+                            return use ? describePartyField(use) : field
+                          }}
+                          missingLabel="sem dado nas partes"
+                        />
+                      </>
                     )}
                   </Section>
                 )}
@@ -568,6 +654,7 @@ function GenerateDocumentBody({
                       onChoiceChange={(name, ids) =>
                         setChoices((current) => ({ ...current, [name]: ids }))
                       }
+                      readFrom={readFrom}
                     />
                   </Section>
                 )}

@@ -20,6 +20,7 @@ import { CurrencyInput } from '@/components/shared/CurrencyInput'
 import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { ProcessoCombobox } from '@/features/processos/components/ProcessoCombobox'
 import { useLegalProcesses } from '@/features/processos/hooks/useLegalProcesses'
+import { useDocumentTemplates } from '@/features/documentos/hooks/useDocumentTemplates'
 import { useProfiles } from '@/hooks/useProfiles'
 import { cn } from '@/lib/utils'
 import { contractSchema, type ContractInput } from '@/schemas/contract.schema'
@@ -72,6 +73,8 @@ export function ContractForm({
 }: ContractFormProps) {
   const { data: profiles = [] } = useProfiles()
   const { data: processos = [] } = useLegalProcesses()
+  const { data: templates = [] } = useDocumentTemplates()
+  const contractTemplates = templates.filter((template) => template.category === 'contrato')
   const [files, setFiles] = useState<PendingContractFile[]>([])
   const {
     register,
@@ -90,6 +93,7 @@ export function ContractForm({
       client_id: '',
       legal_process_id: '',
       responsible_id: '',
+      template_id: '',
       total_amount: null,
       installments: null,
       first_due_date: '',
@@ -216,6 +220,35 @@ export function ContractForm({
           )}
         </div>
       )}
+
+      <div className="space-y-2">
+        <Label>Modelo da minuta</Label>
+        <Controller
+          name="template_id"
+          control={control}
+          render={({ field }) => (
+            <Select
+              value={toSelectValue(field.value || null)}
+              onValueChange={(value) => field.onChange(fromSelectValue(value) ?? '')}
+            >
+              <SelectTrigger className="w-full min-w-0 *:data-[slot=select-value]:min-w-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_VALUE}>Sem modelo — só registrar</SelectItem>
+                {contractTemplates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    <span className="block min-w-0 truncate">{template.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Os papéis do modelo (Contratante, Locatário…) guiam as partes, e a minuta sai dele.
+        </p>
+      </div>
 
       <section className="space-y-3 border-t pt-4">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
