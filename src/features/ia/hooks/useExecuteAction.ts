@@ -17,6 +17,7 @@ import { documentKeys } from '@/features/documentos/hooks/useDocuments'
 import { createTemplate } from '@/features/documentos/services/templates.service'
 import { templateKeys } from '@/features/documentos/hooks/useDocumentTemplates'
 import { TemplateSyntaxError } from '@/features/documentos/templates/errors'
+import { TEMPLATE_SCOPE_HREFS, templateScopeOf } from '@/types/documentTemplate.types'
 import { downloadAiFileAsFile } from '../services/aiFiles.service'
 import type { ActionOutput, ActionToolName, actionTools } from '../tools/actions'
 
@@ -171,7 +172,12 @@ export function useExecuteAction() {
               userId,
             )
             queryClient.invalidateQueries({ queryKey: templateKeys.all })
-            return { ok: true, id: template.id, link: '/documentos?aba=modelos' }
+            // Modelo de contrato mora em Contratos → Modelos.
+            return {
+              ok: true,
+              id: template.id,
+              link: TEMPLATE_SCOPE_HREFS[templateScopeOf(input.categoria)],
+            }
           } catch (error) {
             // Campo mal formado no .docx: o motivo vai para o card e para o
             // modelo, que pode explicar ao usuário o que corrigir.

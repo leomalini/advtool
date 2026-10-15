@@ -125,7 +125,8 @@ export const actionTools = {
   cadastrar_modelo: tool({
     description:
       'Propõe cadastrar um .docx anexado nesta conversa como modelo de documento do escritório ' +
-      '(Documentos → Modelos), para reutilizar. O usuário confirma na tela. Os campos entre ' +
+      '(Documentos → Modelos; os de contrato, em Contratos → Modelos), para reutilizar. O ' +
+      'usuário confirma na tela. Os campos entre ' +
       'chaves são lidos do arquivo; quais são manuais e quais a IA redige se ajusta depois, na ' +
       'tela do modelo.',
     inputSchema: z.object({

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { uploadDocument, deleteDocument, getDocumentUrl } from '../services/documents.service'
 import { documentKeys } from './useDocuments'
 import { financialEntryKeys } from '@/features/financeiro/hooks/useFinancialEntries'
+import { contractKeys } from '@/features/contratos/hooks/useContracts'
 import { useAuth } from '@/hooks/useAuth'
 import type { DocumentUploadInput } from '@/schemas/document.schema'
 
@@ -17,6 +18,8 @@ export function useInvalidateDocumentSurfaces() {
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
     // As listas do Financeiro contam os anexos de cada lançamento (o clipe).
     queryClient.invalidateQueries({ queryKey: financialEntryKeys.all })
+    // A lista de contratos mostra se já há versão assinada.
+    queryClient.invalidateQueries({ queryKey: contractKeys.all })
   }
 }
 

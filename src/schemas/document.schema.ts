@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { contractFileRoleSchema } from './contract.schema'
 
 export const documentCategorySchema = z.enum([
   'peticao',
@@ -23,6 +24,9 @@ export const documentUploadSchema = z.object({
   event_id: optionalUuid,
   /** Exclusivo: anexo de lançamento não leva os outros vínculos (migration 63). */
   financial_entry_id: optionalUuid,
+  /** Exclusivo, como o de lançamento, e sempre com o papel (migration 69). */
+  contract_id: optionalUuid,
+  contract_file_role: contractFileRoleSchema.optional().nullable(),
 })
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>

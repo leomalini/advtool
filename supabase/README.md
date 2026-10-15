@@ -49,6 +49,9 @@ Financeiro seguem `financeiro:view` / `:update` / `:delete`, tanto no bucket qua
 em `public.documents`. Quem não vê o Financeiro (o estagiário) também não vê esses
 arquivos.
 
+Do mesmo jeito, a pasta `contratos/` (**migration 69**): arquivos de contrato
+seguem `contratos:view` / `:update` / `:delete`.
+
 ## Verificação
 
 Após aplicar tudo, confirme em **Table Editor** que existem:

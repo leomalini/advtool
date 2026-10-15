@@ -1,4 +1,5 @@
 import type { Profile } from './common.types'
+import type { ContractFileRole } from './contract.types'
 import type { Action, Resource } from './permission.types'
 
 export type DocumentCategory =
@@ -42,6 +43,10 @@ export interface DocumentRecord {
   /** Lançamento dono do anexo. Exclusivo: com ele preenchido, os demais
    * vínculos ficam vazios (migration 63). */
   financial_entry_id: string | null
+  /** Contrato dono do arquivo. Exclusivo como o lançamento (migration 69). */
+  contract_id: string | null
+  /** Minuta, assinado ou anexo — preenchido se e só se há `contract_id`. */
+  contract_file_role: ContractFileRole | null
   category: DocumentCategory
   file_name: string
   /** Caminho no bucket 'attachments' — nunca uma URL pública: o bucket é
@@ -78,6 +83,14 @@ export interface DocumentWithRelations extends DocumentRecord {
     client: ClientSummary | null
     legal_process: LegalProcessSummary | null
   } | null
+  /** Contrato dono do arquivo. Cliente e processo vêm dele, pelo mesmo
+   * motivo do lançamento. */
+  contract?: {
+    id: string
+    title: string
+    client: ClientSummary | null
+    legal_process: LegalProcessSummary | null
+  } | null
   uploader?: Pick<Profile, 'id' | 'full_name'> | null
 }
 
@@ -88,17 +101,28 @@ export interface PendingAttachments {
   category: DocumentCategory
 }
 
+/** O dono que decide a permissão de um documento. */
+export interface DocumentOwner {
+  financial_entry_id?: string | null
+  contract_id?: string | null
+}
+
 /**
- * Permissão que governa um documento — a mesma escolha das policies da
- * migration 63: anexo de lançamento segue o Financeiro; o resto, o Documentos.
- * Esconder o botão é cosmético; quem impede é a RLS.
+ * Permissão que governa um documento — a mesma escolha das policies das
+ * migrations 63 e 69: anexo de lançamento segue o Financeiro; arquivo de
+ * contrato, o Contratos; o resto, o Documentos. Anexar a um lançamento ou
+ * contrato é editá-lo (`update`). Esconder o botão é cosmético; quem impede é
+ * a RLS.
  */
 export function documentPermission(
-  financialEntryId: string | null | undefined,
+  owner: DocumentOwner,
   operation: 'upload' | 'delete'
 ): { resource: Resource; action: Action } {
-  if (financialEntryId) {
+  if (owner.financial_entry_id) {
     return { resource: 'financeiro', action: operation === 'upload' ? 'update' : 'delete' }
+  }
+  if (owner.contract_id) {
+    return { resource: 'contratos', action: operation === 'upload' ? 'update' : 'delete' }
   }
   return { resource: 'documentos', action: operation === 'upload' ? 'create' : 'delete' }
 }

@@ -23,10 +23,11 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { DOCUMENT_CATEGORY_LABELS } from '@/types/document.types'
 import {
-  TEMPLATE_CATEGORIES,
+  TEMPLATE_SCOPE_CATEGORIES,
   type DocumentTemplate,
   type TemplateCategory,
   type TemplateFieldSettings,
+  type TemplateScope,
 } from '@/types/documentTemplate.types'
 import { useCreateTemplate, useUpdateTemplate } from '../hooks/useDocumentTemplates'
 import { inspectTemplateFile } from '../services/templates.service'
@@ -39,6 +40,8 @@ interface TemplateFormDialogProps {
   onOpenChange: (open: boolean) => void
   /** Modelo em edição. Sem ele, a tela cria um modelo novo. */
   template?: DocumentTemplate | null
+  /** A vitrine de onde a tela foi aberta: decide as categorias oferecidas. */
+  scope: TemplateScope
 }
 
 /** Cadastro e edição de um modelo: arquivo, nome, categoria e a definição dos
@@ -47,13 +50,20 @@ export function TemplateFormDialog({
   open,
   onOpenChange,
   template = null,
+  scope,
 }: TemplateFormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         {/* Montado a cada abertura: o formulário começa limpo (ou com o modelo
             em edição) sem precisar de reset. */}
-        {open && <TemplateFormBody template={template} onClose={() => onOpenChange(false)} />}
+        {open && (
+          <TemplateFormBody
+            template={template}
+            categories={TEMPLATE_SCOPE_CATEGORIES[scope]}
+            onClose={() => onOpenChange(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -67,16 +77,22 @@ type Inspection =
 
 function TemplateFormBody({
   template,
+  categories,
   onClose,
 }: {
   template: DocumentTemplate | null
+  categories: readonly TemplateCategory[]
   onClose: () => void
 }) {
   const createTemplate = useCreateTemplate()
   const updateTemplate = useUpdateTemplate()
   const [name, setName] = useState(template?.name ?? '')
   const [description, setDescription] = useState(template?.description ?? '')
-  const [category, setCategory] = useState<TemplateCategory>(template?.category ?? 'peticao')
+  const [category, setCategory] = useState<TemplateCategory>(
+    template?.category ?? categories[0]
+  )
+  // Uma categoria só (Contratos): não há o que escolher.
+  const fixedCategory = categories.length === 1
   const [file, setFile] = useState<File | null>(null)
   const [inspection, setInspection] = useState<Inspection>({ status: 'idle' })
   const [settings, setSettings] = useState<TemplateFieldSettings>(template?.field_settings ?? {})
@@ -166,35 +182,39 @@ function TemplateFormBody({
           </p>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
+        <div className={fixedCategory ? 'grid gap-4' : 'grid gap-4 sm:grid-cols-[1fr_180px]'}>
           <div className="space-y-1.5">
             <Label htmlFor="template-name">Nome</Label>
             <Input
               id="template-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Ex.: Procuração ad judicia"
+              placeholder={
+                fixedCategory ? 'Ex.: Honorários advocatícios' : 'Ex.: Procuração ad judicia'
+              }
               maxLength={120}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Categoria</Label>
-            <Select
-              value={category}
-              onValueChange={(value) => setCategory(value as TemplateCategory)}
-            >
-              <SelectTrigger className="h-9" aria-label="Categoria">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TEMPLATE_CATEGORIES.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {DOCUMENT_CATEGORY_LABELS[item]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!fixedCategory && (
+            <div className="space-y-1.5">
+              <Label>Categoria</Label>
+              <Select
+                value={category}
+                onValueChange={(value) => setCategory(value as TemplateCategory)}
+              >
+                <SelectTrigger className="h-9" aria-label="Categoria">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {DOCUMENT_CATEGORY_LABELS[item]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         <div className="space-y-1.5">

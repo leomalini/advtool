@@ -4,6 +4,11 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/r
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
+import { contractKeys } from '@/features/contratos/hooks/useContracts'
+import {
+  setContractTemplate,
+  uploadContractFile,
+} from '@/features/contratos/services/contracts.service'
 import { AI_FILE_TYPES } from '@/features/ia/files/constants'
 import type { DocumentTemplate } from '@/types/documentTemplate.types'
 import { downloadBlob } from '@/utils/download'
@@ -86,12 +91,18 @@ export function useTemplateFieldValues({
   })
 }
 
+/** Onde guardar uma cópia do gerado: nos documentos do cliente/processo, ou
+ * como minuta de um contrato (migration 69). */
+export type GenerateSaveTarget =
+  | { kind: 'entity'; clientId: string | null; processId: string | null }
+  | { kind: 'contract'; contractId: string }
+
 interface GenerateInput {
-  template: Pick<DocumentTemplate, 'file_path' | 'category'>
+  template: Pick<DocumentTemplate, 'id' | 'file_path' | 'category'>
   values: TemplateValues
   fileName: string
-  /** Onde guardar uma cópia em Documentos; null = só baixar. */
-  saveTo: { clientId: string | null; processId: string | null } | null
+  /** null = só baixar. */
+  saveTo: GenerateSaveTarget | null
 }
 
 /**
@@ -118,24 +129,38 @@ export function useGenerateDocument() {
 
       if (saveTo) {
         if (!user) throw new Error('Sessão expirada. Entre de novo para salvar.')
-        await uploadDocument(
-          {
-            category: template.category,
-            client_id: saveTo.clientId,
-            legal_process_id: saveTo.processId,
-            crm_item_id: null,
-            event_id: null,
-          },
-          file,
-          user.id,
-        )
+        if (saveTo.kind === 'contract') {
+          await uploadContractFile(saveTo.contractId, 'minuta', file, user.id)
+          // Só lembra o modelo para a próxima geração: falhar aqui não desfaz
+          // a minuta, que já está salva.
+          await setContractTemplate(saveTo.contractId, template.id).catch((error: unknown) =>
+            console.error('[contratos] template_id não gravado:', error),
+          )
+        } else {
+          await uploadDocument(
+            {
+              category: template.category,
+              client_id: saveTo.clientId,
+              legal_process_id: saveTo.processId,
+              crm_item_id: null,
+              event_id: null,
+            },
+            file,
+            user.id,
+          )
+        }
       }
-      return { missing: rendered.missing, saved: saveTo !== null }
+      return { missing: rendered.missing, savedTo: saveTo?.kind ?? null }
     },
-    onSuccess: ({ saved }) => {
-      if (saved) {
+    onSuccess: ({ savedTo }) => {
+      if (savedTo) {
         queryClient.invalidateQueries({ queryKey: documentKeys.all })
-        toast.success('Documento gerado e salvo em Documentos.')
+        queryClient.invalidateQueries({ queryKey: contractKeys.all })
+        toast.success(
+          savedTo === 'contract'
+            ? 'Minuta gerada e salva no contrato.'
+            : 'Documento gerado e salvo em Documentos.',
+        )
       } else {
         toast.success('Documento gerado.')
       }

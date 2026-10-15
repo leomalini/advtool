@@ -19,6 +19,7 @@ export type Resource =
   | 'agenda'
   | 'tarefas'
   | 'documentos'
+  | 'contratos'
   | 'financeiro'
   | 'pendencias'
   | 'configuracoes'
