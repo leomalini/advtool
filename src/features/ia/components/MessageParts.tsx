@@ -30,11 +30,16 @@ const READ_TOOL_LABELS: Record<string, string> = {
   gerar_documento_de_modelo: 'Gerando documento do modelo',
   gerar_docx: 'Gerando documento Word',
   gerar_pdf: 'Gerando PDF',
+  listar_contratos: 'Consultando contratos',
+  ver_contrato: 'Lendo o contrato',
+  ler_documentos: 'Lendo os documentos',
+  gerar_contrato: 'Gerando o contrato',
 }
 
 /** Tools que devolvem um arquivo gerado — viram card de download. */
 const GENERATOR_TOOLS: ReadonlySet<string> = new Set([
   'gerar_documento_de_modelo',
+  'gerar_contrato',
   'gerar_docx',
   'gerar_pdf',
 ])

@@ -4,7 +4,9 @@
 > recomendações, todos os extras da v1). **Fase 1** na branch
 > `feat/contratos-base` (migration 69 aplicada no remoto em 2026-10-14).
 > **Fase 2** na branch `feat/contratos-partes`, empilhada na 1 (migration 70
-> aplicada no remoto em 2026-10-15). Ver "Como ficou" de cada fase.
+> aplicada no remoto em 2026-10-15). **Fase 3** (Assistente) na branch
+> `feat/contratos-assistente`, empilhada na 2, sem migration. Ver "Como ficou"
+> de cada fase.
 
 Pedido: um módulo **Contratos** para anexar contratos e criar modelos de
 contrato, como em Documentos, integrado ao Assistente: anexar documentos e, com
@@ -531,6 +533,65 @@ Aba **Contratos** nas duas páginas (para quem tem `contratos:view`), com
   importação (Esc e X bloqueados) e a conferência da leitura — com o payload
   gravado conferido (parte com `field_sources`, CNH ligada como `cnh`,
   documento desmarcado apagado).
+
+## Como ficou a fase 3
+
+Branch `feat/contratos-assistente`, a partir da fase 2 (`6ad13f2`). Sem
+migration. tsc e lint (0 erros) ok.
+
+### Tools (`src/features/ia/tools/contracts.ts`)
+
+| Tool | O que faz |
+|---|---|
+| `listar_contratos` | Filtros por cliente, processo, status, tipo, "vencendo até" e nome; devolve a situação calculada (vencendo, vencido) |
+| `ver_contrato` | Números, vigência, partes com a qualificação e arquivos com o papel e o tipo lido |
+| `ler_documentos` | O mesmo leitor da tela (`runReader` + `matchClients` + `enrichCompanies`), sobre anexos de qualquer mensagem da conversa ou documentos cadastrados, até 10 e 50 MB. Devolve as pessoas com os dados já no formato de `gerar_contrato`, os conflitos à parte, o que falta e quem já é cliente. 1 pedido a mais à IA |
+| `gerar_contrato` | Modelo cadastrado ou .docx anexado; cada parte é `cliente_id`, `escritorio: true` ou `dados`; os números entram nos `{contrato_*}` sem passar pelo banco (o contrato ainda não existe). Num .docx anexado, valem como papéis os das partes pedidas que o arquivo usa |
+
+`gerar_documento_de_modelo` e `gerar_contrato` agora dividem a mesma geração
+(`renderAndSave` em `tools/templates.ts`); o primeiro deixa os campos de parte
+em `[FALTA]` com aviso. `listar_modelos` mostra os `papeis` de cada modelo.
+
+### Ações confirmadas
+
+| Ação | Na confirmação |
+|---|---|
+| `cadastrar_cliente` | Confere o CPF/CNPJ antes (`findClientByDocument`) — se já existe, recusa e aponta `completar_cliente`. Valida com o mesmo zod do formulário de cliente; sem CPF/CNPJ completo, não cadastra |
+| `completar_cliente` | Só preenche campos vazios (`clientCompletionPatch`): nome e documento nunca mudam; endereço só entra se não houver nenhum, porque a lista de endereços é regravada inteira |
+| `registrar_contrato` | Cria o contrato como rascunho (ou aguardando assinatura — nunca assinado), as partes (do cadastro, do escritório ou dos dados) e copia da conversa a minuta e os anexos escolhidos, ligando cada anexo à sua parte. Se o contrato for criado e um arquivo falhar, a ação diz isso em vez de desfazer |
+
+O card de confirmação mostra a pessoa linha a linha (CPF, RG, estado civil,
+endereço…) e, no contrato, as partes e quantos arquivos vão junto.
+
+### Prompt e anexos
+
+- Seção "Contratos" no prompt: modelo com papéis → `gerar_contrato`; ler com
+  `ler_documentos`; mostrar o que foi lido e de onde antes de usar; conflito e
+  papel ambíguo se perguntam; cliente é por `cliente_id`, e a outra parte não
+  vira cliente sem o usuário pedir; números só os informados; registrar só
+  como rascunho.
+- Anexos por mensagem: de 5 para **10**, com teto de **50 MB** somados.
+
+### Verificação
+
+- tsc, lint (0 erros) e build ok.
+- **Geração:** um modelo de locação fictício passou pelo mesmo caminho de
+  `gerar_contrato` no Node (classificar com os papéis → partes → números →
+  .docx) e o texto saiu certo: locador com a qualificação completa, dois
+  locatários juntos ("…; e …"), fiador sem parte em `[FALTA]` com aviso,
+  "R$ 72.000,00 (setenta e dois mil reais), em 36 parcelas de R$ 2.000,00",
+  "36 meses, de 01/11/2026 a 31/10/2029", e os campos do imóvel. O cadastro de
+  cliente montado a partir dos dados passa no zod do formulário; com CPF
+  incompleto, não é montado. O CEP sem hífen passou a ser formatado.
+- **IA real: não testada** — a conta do Gemini segue sem créditos (402).
+  Nem `ler_documentos` nem uma conversa com as tools novas rodaram contra o
+  modelo.
+- Os três cards de confirmação foram conferidos numa página temporária (já
+  apagada): pessoa linha a linha com o estado civil no gênero certo e o CEP
+  formatado; em "Completar", nome e CPF não aparecem, porque não mudam; no
+  contrato, partes, minuta e anexos.
+- As ações (`cadastrar_cliente`, `completar_cliente`, `registrar_contrato`) não
+  foram executadas contra o banco.
 
 ## Em aberto (decidir na fase)
 

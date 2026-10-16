@@ -9,6 +9,7 @@ import type {
 } from '@/types/contract.types'
 import type { MaritalStatus } from '@/types/cliente.types'
 import type { ManualFieldFormat } from '@/types/documentTemplate.types'
+import { normalizeZip } from '../utils/partyToolInput'
 import type { ReaderContract, ReaderOutput, ReaderPerson } from './readerSchema'
 import type {
   FieldOption,
@@ -77,7 +78,7 @@ function toAddress(person: ReaderPerson): PartyAddress | null {
     neighborhood: clean(person.bairro),
     city: clean(person.cidade),
     state: clean(person.uf)?.toUpperCase().slice(0, 2) ?? null,
-    zip: clean(person.cep),
+    zip: normalizeZip(person.cep),
   }
   // Só cidade ou só CEP não é endereço que sirva a uma qualificação.
   return address.street || (address.city && address.zip) ? address : null

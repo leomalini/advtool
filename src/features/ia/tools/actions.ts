@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { taskPrioritySchema } from '@/schemas/task.schema'
 import { documentCategorySchema } from '@/schemas/document.schema'
 import { templateCategorySchema } from '@/schemas/documentTemplate.schema'
+import { contractKindSchema } from '@/schemas/contract.schema'
+import { partyToolDataSchema } from '@/features/contratos/utils/partyToolInput'
+import { SOURCE_KINDS } from '@/types/contract.types'
 
 /**
  * Ações que a IA pode PROPOR. Nenhuma tem `execute`: a chamada volta ao
@@ -36,6 +39,92 @@ const actionOutputSchema = z.discriminatedUnion('ok', [
 ])
 
 export type ActionOutput = z.infer<typeof actionOutputSchema>
+
+// ── Contratos (docs/contratos.md, fase 3) ────────────────────────────────────
+
+/** Uma parte do contrato a registrar — a mesma forma de gerar_contrato. */
+const contractPartyActionSchema = z.object({
+  papel: z.string().regex(/^[a-z][a-z0-9_]*$/).max(40),
+  papel_rotulo: z.string().max(60).describe('Nome do papel, ex.: Locatário.'),
+  cliente_id: z.string().uuid().optional(),
+  escritorio: z.boolean().optional(),
+  dados: partyToolDataSchema.optional(),
+  /** Para o card de confirmação. */
+  nome: z.string().max(200).describe('Nome da parte, para exibição.'),
+})
+
+export const contractActionTools = {
+  cadastrar_cliente: tool({
+    description:
+      'Propõe cadastrar como CLIENTE uma pessoa lida de documentos (ou informada pelo usuário). ' +
+      'Exige CPF/CNPJ. O usuário confere na tela. Antes, veja se já não é cliente ' +
+      '(ler_documentos aponta "cliente_cadastrado"; ou buscar_clientes) — se for, use ' +
+      'completar_cliente. Só para quem é cliente do escritório, não para a outra parte.',
+    inputSchema: z.object({
+      dados: partyToolDataSchema,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+
+  completar_cliente: tool({
+    description:
+      'Propõe completar o cadastro de um cliente existente com dados lidos de documentos: só ' +
+      'os campos VAZIOS são preenchidos — nada que já está no cadastro muda. O usuário confirma.',
+    inputSchema: z.object({
+      cliente_id: z.string().uuid(),
+      cliente_nome: z.string().describe('Nome do cliente, para exibição.'),
+      dados: partyToolDataSchema,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+
+  registrar_contrato: tool({
+    description:
+      'Propõe registrar o contrato em Contratos, como rascunho (ou aguardando assinatura): ' +
+      'tipo, nome, cliente, números, as partes e os arquivos desta conversa — a minuta gerada ' +
+      'e os documentos lidos que o usuário quiser guardar. O usuário confirma. Nunca registre ' +
+      'como assinado: isso o usuário faz na tela, com a data e a via assinada.',
+    inputSchema: z.object({
+      tipo: contractKindSchema,
+      titulo: z.string().min(1).max(200),
+      status: z.enum(['rascunho', 'aguardando_assinatura']).optional(),
+      cliente_id: z.string().uuid().optional(),
+      processo_id: z.string().uuid().optional(),
+      modelo_id: z.string().uuid().optional().describe('Modelo usado na minuta.'),
+      valor_total: z.number().nonnegative().optional(),
+      parcelas: z.number().int().min(1).max(360).optional(),
+      primeiro_vencimento: dateSchema.optional(),
+      exito_percentual: z.number().min(0).max(100).optional(),
+      inicio: dateSchema.optional(),
+      fim: dateSchema.optional(),
+      reajuste: z.string().max(40).optional(),
+      partes: z.array(contractPartyActionSchema).max(10),
+      minuta_arquivo_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('A minuta gerada por gerar_contrato nesta conversa.'),
+      anexos: z
+        .array(
+          z.object({
+            arquivo_id: z.string().uuid().describe('Anexo desta conversa.'),
+            tipo: z.enum(SOURCE_KINDS as [string, ...string[]]).optional(),
+            parte: z
+              .number()
+              .int()
+              .min(0)
+              .optional()
+              .describe('Índice (a partir de 0) da parte de quem é o documento.'),
+          }),
+        )
+        .max(10)
+        .optional()
+        .describe('Documentos lidos que o usuário quer guardar no contrato.'),
+      ...displayFields,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+}
 
 export const actionTools = {
   criar_tarefa: tool({
@@ -142,6 +231,8 @@ export const actionTools = {
     }),
     outputSchema: actionOutputSchema,
   }),
+
+  ...contractActionTools,
 }
 
 export type ActionToolName = keyof typeof actionTools

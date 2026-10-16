@@ -26,6 +26,11 @@ export interface ReadableDocument {
   file_name: string
   file_path: string
   file_size: number
+  /** Bucket do arquivo. Padrão: `attachments` (Documentos); anexos do chat
+   * ficam em `ai-files`. */
+  bucket?: string
+  /** Texto já extraído na subida (Word/Excel anexado no chat). */
+  extracted_text?: string | null
 }
 
 function clip(text: string, max: number): string {
@@ -55,7 +60,16 @@ export async function readDocumentsAsParts(
       continue
     }
     try {
-      const bytes = await downloadBytes(supabase, DOCUMENTS_BUCKET, document.file_path)
+      const bucket = document.bucket ?? DOCUMENTS_BUCKET
+      if (!isReadAsFile(type.kind) && document.extracted_text) {
+        parts.push({
+          type: 'text',
+          text: `${label(document)}\n\n${clip(document.extracted_text, MAX_DOCUMENT_CHARS)}`,
+        })
+        read.push(document)
+        continue
+      }
+      const bytes = await downloadBytes(supabase, bucket, document.file_path)
       if (isReadAsFile(type.kind)) {
         parts.push({ type: 'text', text: label(document) })
         parts.push({

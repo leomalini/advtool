@@ -215,9 +215,12 @@ function combine(suffix: PartyFieldSuffix, values: string[]): string | undefined
  * (dois locatários) entram juntas, na ordem do contrato; papel sem parte fica
  * `undefined` e sai `[FALTA: campo]`.
  */
+/** O que `partyValues` precisa de uma parte — gravada ou montada pelo Assistente. */
+export type PartyForValues = PartyPersonData & Pick<ContractParty, 'role_key' | 'position'>
+
 export function partyValues(
   uses: readonly PartyFieldUse[],
-  parties: readonly ContractParty[],
+  parties: readonly PartyForValues[],
 ): Record<string, string | undefined> {
   const values: Record<string, string | undefined> = {}
   const ordered = [...parties].sort((a, b) => a.position - b.position)

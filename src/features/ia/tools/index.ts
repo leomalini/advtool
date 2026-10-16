@@ -11,6 +11,7 @@ import type { ToolClient } from './shared'
 import { createDocxTools } from './docx'
 import { createPdfTools } from './pdf'
 import { createTemplateTools, type TemplateToolsContext } from './templates'
+import { createContractTools } from './contracts'
 
 export type AssistantToolsContext = FileToolsContext & TemplateToolsContext
 
@@ -31,6 +32,7 @@ export function createAssistantTools(supabase: ToolClient, context: AssistantToo
     ...createTeamTools(supabase),
     ...createFileTools(supabase, context),
     ...createTemplateTools(supabase, context),
+    ...createContractTools(supabase, context),
     ...createDocxTools(supabase, context),
     ...createPdfTools(supabase, context),
     ...actionTools,
