@@ -67,6 +67,9 @@ export interface CalendarEvent extends BaseEntity {
   recurrence_series_id: string | null
   recurrence_until: string | null
   recurrence_count: number | null
+  /** Compromisso de vencimento de um contrato, mantido pelo banco
+   * (migration 71). Nulo em todo evento criado na Agenda. */
+  contract_id?: string | null
   is_retroactive: boolean
   retroactive_completed_at: string | null
   // Joins

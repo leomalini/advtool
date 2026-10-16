@@ -5,8 +5,10 @@
 > `feat/contratos-base` (migration 69 aplicada no remoto em 2026-10-14).
 > **Fase 2** na branch `feat/contratos-partes`, empilhada na 1 (migration 70
 > aplicada no remoto em 2026-10-15). **Fase 3** (Assistente) na branch
-> `feat/contratos-assistente`, empilhada na 2, sem migration. Ver "Como ficou"
-> de cada fase.
+> `feat/contratos-assistente`, empilhada na 2, sem migration. **Fase 4**
+> (Financeiro e avisos) na branch `feat/contratos-financeiro-avisos`,
+> empilhada na 3 (migration 71 aplicada no remoto em 2026-10-16). Ver "Como ficou" de cada
+> fase.
 
 Pedido: um módulo **Contratos** para anexar contratos e criar modelos de
 contrato, como em Documentos, integrado ao Assistente: anexar documentos e, com
@@ -593,14 +595,103 @@ endereço…) e, no contrato, as partes e quantos arquivos vão junto.
 - As ações (`cadastrar_cliente`, `completar_cliente`, `registrar_contrato`) não
   foram executadas contra o banco.
 
+## Como ficou a fase 4
+
+Branch `feat/contratos-financeiro-avisos`, a partir da fase 3 (`9bb8312`).
+
+### Decisões tomadas antes de começar (2026-10-16)
+
+| Tema | Escolha |
+|---|---|
+| Êxito no lançamento | **R$ 0 com a condição escrita** ("30% do proveito econômico"), em condição especial. Quem dá a baixa informa o valor |
+| Avisos | **No prazo e ao vencer:** um ao entrar nos dias de antecedência e outro no dia seguinte ao fim, se o contrato continuar vigente |
+| Renovação automática | **Só avisar.** O texto do aviso muda; nenhuma data anda sozinha |
+
+`pg_cron` 1.6.4 está disponível no projeto (conferido no remoto, ainda não
+instalado antes desta fase).
+
+### Banco — migration 71 (aplicada em 2026-10-16)
+
+- `financial_entries.contract_id` (`on delete set null`: apagar o contrato não
+  apaga dinheiro lançado).
+- `events.contract_id` (`on delete cascade`, um por contrato) e o trigger
+  `sync_contract_event` em `contracts`: contrato `vigente` com fim ganha um
+  compromisso de dia inteiro "Fim do contrato em dd/mm/aaaa: …" em
+  `end_date − notice_days` (ou hoje, se esse dia já passou), do tipo
+  Compromisso, para o responsável. Mudar fim ou antecedência move o
+  compromisso; mudar nome, responsável ou vínculos não mexe na data; deixar
+  de ser vigente o tira. Contrato já terminado não ganha compromisso. Os
+  contratos vigentes de antes da migration recebem o compromisso nela.
+- `notify_contract_expirations()` e o job `contratos-avisos-de-vencimento`
+  (`pg_cron`, `0 11 * * *` = 8h de Brasília): grava em `notifications`
+  `contrato_vencendo` ("Contrato vence em N dias") e `contrato_vencido`
+  ("Contrato terminou e segue vigente"), um por contrato e data de fim, sem
+  coluna nova — o que já foi avisado se reconhece pela data do aviso.
+  Prorrogar o fim abre um prazo novo, e um aviso novo.
+- As três funções são `security definer` e têm o `execute` revogado de
+  `anon` e `authenticated`: só o trigger e o job as chamam.
+
+### Financeiro
+
+- **Prévia ao assinar** (`ContractEntriesDialog`): depois de "Marcar como
+  assinado", em honorários e contratos do escritório, se houver valor ou
+  êxito e nada lançado ainda. Parcelas mensais a partir do 1º vencimento (ou
+  da assinatura), centavos que sobram na última, 31/01 + 1 mês = 28/02; êxito
+  em R$ 0. Cada linha se edita ou sai; um insert só para todas.
+- Sem `financeiro:create`, a prévia vira o aviso "peça a quem cuida do
+  Financeiro". A assinatura não depende disso: são passos separados.
+- **Seção Financeiro no contrato:** a mesma aba de lançamentos do cliente e
+  do processo, filtrada pelo contrato (lançamento novo nasce ligado a ele),
+  com "Lançar parcelas" para quem pulou a prévia e o aviso quando os números
+  do contrato deixam de bater com as parcelas lançadas. Some no contrato do
+  cliente com terceiros.
+- O detalhe do lançamento ganhou "Ver o contrato". Lançamento em R$ 0 não tem
+  baixa por clique (lista, aba e detalhe): o aviso pede o valor, e o detalhe
+  abre a edição.
+
+### Agenda, sino e Assistente
+
+- O detalhe do compromisso mostra "Ver o contrato". Mudar o contrato atualiza
+  as telas da Agenda.
+- O sino tem ícones para os dois avisos novos.
+- `ver_contrato` devolve os lançamentos ligados (sem acesso ao Financeiro, a
+  lista vem vazia).
+
+### Verificação
+
+- tsc e lint ok.
+- **Prévia:** no Node, 1.000 em 3× a partir de 31/01 → 333,33 / 333,33 /
+  333,34 em 31/01, 28/02 e 31/03, e o êxito de 30% em R$ 0; 36× a partir de
+  30/11 cai em 28/02 em fevereiro e volta a 30 em março; terceiros não gera
+  nada; as parcelas passam no zod do Financeiro (o êxito em R$ 0, de
+  propósito, não — por isso a baixa pede o valor). O aviso de divergência
+  aparece quando o contrato muda de 1.000 em 3× para 1.200 em 4×.
+- **Telas** (página temporária com dados fictícios, já apagada): contrato
+  vigente com 6 parcelas e o total mudado depois mostra o aviso "R$ 6.000,00
+  lançados, R$ 7.200,00 no contrato" e a lista com pagas, a vencer e o êxito
+  em condição especial; contrato sem lançamentos oferece "Lançar parcelas";
+  a prévia depois de assinar traz 3 parcelas e o êxito, e tirar uma linha e
+  confirmar grava um insert só com `contract_id`, cliente e as linhas que
+  ficaram; o perfil sem Financeiro vê o aviso "peça a quem cuida do
+  Financeiro" e não vê a seção; a baixa por clique no êxito em R$ 0 não grava
+  e diz o motivo, e no detalhe abre a edição; o compromisso na Agenda mostra
+  "Ver o contrato".
+- **Migration 71 aplicada no remoto em 2026-10-16** (`db push`, só a 71 estava
+  pendente); `db:verify` mostra a 71 no local e no remoto. Conferido no
+  catálogo: as duas colunas `contract_id` (cascade em `events`, set null em
+  `financial_entries`), os dois índices, o trigger `sync_contract_event` em
+  INSERT e UPDATE, as três funções `security definer` sem `execute` para
+  `anon` e `authenticated`, `pg_cron` 1.6.4 e o job
+  `contratos-avisos-de-vencimento` ativo (`0 11 * * *`, usuário `postgres`).
+- O remoto não tinha contrato nenhum: o backfill não criou compromisso, e o
+  trigger e `notify_contract_expirations()` ainda não rodaram com dado de
+  verdade. O primeiro contrato vigente com fim vai mostrar o compromisso na
+  Agenda; o job roda às 8h de Brasília.
+
 ## Em aberto (decidir na fase)
 
-- **Valor do êxito no lançamento:** R$ 0 com a condição escrita ou um valor
-  estimado (por exemplo, o percentual sobre o valor da causa). Estimativa
-  infla o "A receber"; zero o esconde.
 - **Testemunhas da equipe:** o contrato pede CPF da testemunha. Conferir se o
   perfil tem esse dado antes de oferecer "membro do escritório" como fonte.
-- **`pg_cron`:** confirmar que está disponível no projeto antes da fase 4.
 - **Numeração** dos contratos (ex.: 2026/001): só se o escritório usar.
 - **Lista de tipos do leitor:** começa com a da seção acima e cresce com o
   uso.

@@ -68,14 +68,16 @@ export async function getFinancialEntriesForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
   clientId?: string | null
+  contractId?: string | null
 }): Promise<FinancialEntryWithRelations[]> {
-  const { legalProcessId, crmItemIds = [], clientId } = params
+  const { legalProcessId, crmItemIds = [], clientId, contractId } = params
 
   const terms: string[] = []
   if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
   // Guarda: `crm_item_id.in.()` é sintaxe inválida.
   if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
   if (clientId) terms.push(`client_id.eq.${clientId}`)
+  if (contractId) terms.push(`contract_id.eq.${contractId}`)
   if (terms.length === 0) return []
 
   const query = supabase
@@ -124,6 +126,39 @@ export async function createFinancialEntry(
   })
 
   return data as unknown as FinancialEntry
+}
+
+/**
+ * Vários lançamentos de uma vez — as parcelas de um contrato. Um insert só:
+ * ou entram todos, ou nenhum, e a prévia pode ser confirmada de novo.
+ */
+export async function createFinancialEntries(
+  inputs: FinancialEntryInput[],
+  userId: string
+): Promise<FinancialEntry[]> {
+  if (inputs.length === 0) return []
+  const rows = inputs.map((input) => {
+    const payload = nullifyEmpty(input) as Record<string, unknown>
+    reconcileSettlementFields(payload)
+    return { ...payload, created_by: userId }
+  })
+
+  const { data, error } = await supabase.from('financial_entries').insert(rows).select('*')
+  if (error) throw error
+
+  const created = data as unknown as FinancialEntry[]
+  await Promise.all(
+    created.map((entry) =>
+      recordActivity({
+        type: 'financial_entry_created',
+        entity_type: 'financial_entry',
+        entity_id: entry.id,
+        entity_title: entry.description,
+        actor_id: userId,
+      })
+    )
+  )
+  return created
 }
 
 export async function updateFinancialEntry(input: UpdateFinancialEntryInput): Promise<void> {

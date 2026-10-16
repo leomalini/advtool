@@ -32,14 +32,18 @@ import { getDisplayName } from '@/utils/profile'
 import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useDocumentTemplates } from '@/features/documentos/hooks/useDocumentTemplates'
+import { useFinancialEntriesForEntity } from '@/features/financeiro/hooks/useFinancialEntries'
 import {
   useContract,
   useContractParties,
   useContractStatusChanges,
 } from '../hooks/useContracts'
 import { useDeleteContract } from '../hooks/useContractMutations'
+import { buildContractEntryDrafts } from '../utils/contractEntries'
 import { ContractAssemblySteps, type AssemblyStep } from './ContractAssemblySteps'
+import { ContractEntriesDialog } from './ContractEntriesDialog'
 import { ContractFilesSection } from './ContractFilesSection'
+import { ContractFinanceSection } from './ContractFinanceSection'
 import { ContractPartiesSection } from './ContractPartiesSection'
 import { ReadDocumentsDialog } from './ReadDocumentsDialog'
 import { ContractFormDialog } from './ContractFormDialog'
@@ -85,11 +89,15 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   const { data: parties = [] } = useContractParties(contractId)
   const { data: documents = [] } = useDocumentsForEntity({ contractId })
   const { data: templates = [] } = useDocumentTemplates()
+  const { data: entries = [] } = useFinancialEntriesForEntity({ contractId })
   const deleteContract = useDeleteContract()
   const [editOpen, setEditOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [readOpen, setReadOpen] = useState(false)
+  // Aberta pela assinatura, a prévia diz isso no texto e conta as parcelas a
+  // partir da data assinada — o contrato em cache ainda não a tem.
+  const [entriesDialog, setEntriesDialog] = useState<{ signedAt: string | null } | null>(null)
 
   if (isLoading) {
     return (
@@ -125,6 +133,14 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
 
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  /** Ao assinar, a prévia só abre se houver o que lançar e nada lançado ainda:
+   * reabrir e assinar de novo não oferece as parcelas duas vezes. */
+  function offerEntriesAfterSigning(signedAt: string) {
+    if (!contract || entries.length > 0) return
+    const drafts = buildContractEntryDrafts({ ...contract, signed_at: signedAt })
+    if (drafts.length > 0) setEntriesDialog({ signedAt })
   }
 
   const steps: AssemblyStep[] = [
@@ -225,7 +241,7 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
 
               <div className="flex flex-wrap items-center gap-2">
                 <Can resource="contratos" action="update">
-                  <ContractStatusActions contract={contract} />
+                  <ContractStatusActions contract={contract} onSigned={offerEntriesAfterSigning} />
                   <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                     <Pencil className="h-3.5 w-3.5" />
                     Editar
@@ -288,6 +304,14 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
                   partyNames={partyNames}
                 />
               </div>
+              {/* Sem ver o Financeiro, a RLS devolve a lista vazia: a seção
+                  diria "nenhum lançamento" de um contrato que tem. */}
+              <Can resource="financeiro" action="view">
+                <ContractFinanceSection
+                  contract={contract}
+                  onOpenEntries={() => setEntriesDialog({ signedAt: null })}
+                />
+              </Can>
 
               {contract.notes && (
                 <section className="space-y-2 rounded-xl border border-border bg-card p-5">
@@ -377,6 +401,13 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
         savedValues={contract.template_values}
       />
 
+      <ContractEntriesDialog
+        open={entriesDialog !== null}
+        onOpenChange={(open) => !open && setEntriesDialog(null)}
+        contract={{ ...contract, signed_at: entriesDialog?.signedAt ?? contract.signed_at }}
+        afterSigning={!!entriesDialog?.signedAt}
+      />
+
       <ReadDocumentsDialog
         open={readOpen}
         onOpenChange={setReadOpen}
@@ -396,7 +427,10 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
             ? '.'
             : fileCount === 1
               ? ', junto com o arquivo anexado.'
-              : `, junto com os ${fileCount} arquivos anexados.`)
+              : `, junto com os ${fileCount} arquivos anexados.`) +
+          (entries.length > 0
+            ? ' Os lançamentos ficam no Financeiro, sem o vínculo com o contrato.'
+            : '')
         }
         isLoading={deleteContract.isPending}
         onConfirm={() =>

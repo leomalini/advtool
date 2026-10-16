@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale'
 import {
   Calendar,
   Check,
+  FileSignature,
   Gavel,
   Hourglass,
   Pencil,
@@ -25,6 +26,8 @@ import {
   describeEntryDeletion,
   formatCurrency,
   getFinancialSituation,
+  needsAmountBeforePayment,
+  ZERO_AMOUNT_PAYMENT_REASON,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
@@ -291,7 +294,20 @@ export function FinancialEntryDetailModal({
                   </InfoRow>
                 )}
 
-                {!entry.client && !processo && (
+                {/* Só o link: quem não vê Contratos cai na tela de "não
+                    encontrado", e o lançamento não depende disso. */}
+                {entry.contract_id && (
+                  <InfoRow icon={<FileSignature className="h-4 w-4 text-muted-foreground/60" />}>
+                    <Link href={`/contratos/${entry.contract_id}`} className="group block">
+                      <p className="text-sm group-hover:underline">Ver o contrato</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Lançado a partir do contrato
+                      </p>
+                    </Link>
+                  </InfoRow>
+                )}
+
+                {!entry.client && !processo && !entry.contract_id && (
                   <p className="text-xs text-muted-foreground">
                     Lançamento avulso — sem cliente ou processo vinculado.
                   </p>
@@ -348,6 +364,12 @@ export function FinancialEntryDetailModal({
                       }
                       if (!isPaid && charges.live) {
                         setConfirmMarkPaid(true)
+                        return
+                      }
+                      // Êxito em R$ 0: a baixa passa pela edição, com o valor.
+                      if (needsAmountBeforePayment(entry)) {
+                        toast.info(ZERO_AMOUNT_PAYMENT_REASON)
+                        setEditing(true)
                         return
                       }
                       updateEntry.mutate({
