@@ -4,7 +4,11 @@ import {
   removeDocumentFiles,
   uploadDocument,
 } from '@/features/documentos/services/documents.service'
-import type { ContractInput, UpdateContractInput } from '@/schemas/contract.schema'
+import {
+  parseContractTemplateValues,
+  type ContractInput,
+  type UpdateContractInput,
+} from '@/schemas/contract.schema'
 import type {
   Contract,
   ContractFileRole,
@@ -12,7 +16,7 @@ import type {
   ContractStatusChange,
   ContractWithRelations,
 } from '@/types/contract.types'
-import type { DocumentCategory } from '@/types/document.types'
+import type { DocumentCategory, DocumentRecord } from '@/types/document.types'
 
 const supabase = createClient()
 
@@ -43,7 +47,48 @@ export async function getContracts(): Promise<ContractWithRelations[]> {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data as unknown as ContractWithRelations[]
+  return (data as unknown as ContractWithRelations[]).map(withParsedValues)
+}
+
+/** `template_values` é jsonb validado no app (migration 70). */
+function withParsedValues<T extends { template_values: unknown }>(row: T): T {
+  return { ...row, template_values: parseContractTemplateValues(row.template_values) }
+}
+
+/**
+ * Contratos de um cliente ou processo: os ligados direto a ele e — no caso do
+ * cliente — também aqueles em que ele é PARTE (o locador de um contrato que o
+ * escritório redigiu para outro cliente, por exemplo).
+ */
+export async function getContractsForEntity(params: {
+  clientId?: string | null
+  legalProcessId?: string | null
+}): Promise<ContractWithRelations[]> {
+  const { clientId, legalProcessId } = params
+  const terms: string[] = []
+  if (clientId) terms.push(`client_id.eq.${clientId}`)
+  if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
+  if (terms.length === 0) return []
+
+  if (clientId) {
+    const { data: asParty, error: partyError } = await supabase
+      .from('contract_parties')
+      .select('contract_id')
+      .eq('client_id', clientId)
+    if (partyError) throw partyError
+    const ids = [...new Set((asParty ?? []).map((row) => row.contract_id as string))]
+    // Guarda: `id.in.()` é sintaxe inválida.
+    if (ids.length > 0) terms.push(`id.in.(${ids.join(',')})`)
+  }
+
+  const { data, error } = await supabase
+    .from('contracts')
+    .select(CONTRACT_SELECT)
+    .or(terms.join(','))
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data as unknown as ContractWithRelations[]).map(withParsedValues)
 }
 
 export async function getContractById(id: string): Promise<ContractWithRelations | null> {
@@ -54,7 +99,7 @@ export async function getContractById(id: string): Promise<ContractWithRelations
     .maybeSingle()
 
   if (error) throw error
-  return data as unknown as ContractWithRelations | null
+  return data ? withParsedValues(data as unknown as ContractWithRelations) : null
 }
 
 export async function getContractStatusChanges(
@@ -130,8 +175,8 @@ export async function uploadContractFile(
   role: ContractFileRole,
   file: File,
   userId: string
-): Promise<void> {
-  await uploadDocument(
+): Promise<DocumentRecord> {
+  return uploadDocument(
     {
       category: contractFileCategory(role),
       contract_id: contractId,

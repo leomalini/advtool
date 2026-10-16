@@ -4,6 +4,7 @@ import {
   TEMPLATE_CATEGORIES,
   type TemplateFieldSetting,
   type TemplateFieldSettings,
+  type TemplatePartyRole,
 } from '@/types/documentTemplate.types'
 
 export const templateCategorySchema = z.enum(TEMPLATE_CATEGORIES)
@@ -43,6 +44,30 @@ export const templateFieldSettingSchema: z.ZodType<TemplateFieldSetting> = z.dis
     }),
   ],
 )
+
+/** Chave de papel: vira prefixo de campo no .docx (`{locatario_nome}`). */
+export const PARTY_ROLE_KEY_PATTERN = /^[a-z][a-z0-9_]*$/
+
+export const templatePartyRoleSchema = z.object({
+  key: z.string().max(40).regex(PARTY_ROLE_KEY_PATTERN, 'Só letras minúsculas, números e _'),
+  label: z.string().trim().min(1).max(60),
+})
+
+/**
+ * `parties` como veio do banco. Mesma tolerância de `parseFieldSettings`: o
+ * papel inválido sai, os outros ficam, e chave repetida vale uma vez só.
+ */
+export function parsePartyRoles(raw: unknown): TemplatePartyRole[] {
+  if (!Array.isArray(raw)) return []
+  const roles: TemplatePartyRole[] = []
+  for (const item of raw) {
+    const parsed = templatePartyRoleSchema.safeParse(item)
+    if (parsed.success && !roles.some((role) => role.key === parsed.data.key)) {
+      roles.push(parsed.data)
+    }
+  }
+  return roles
+}
 
 /**
  * `field_settings` como veio do banco. Entrada que não bate com o schema é

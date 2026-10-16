@@ -27,6 +27,7 @@ function toFormValues(contract: Contract): Partial<ContractInput> {
     client_id: contract.client_id ?? '',
     legal_process_id: contract.legal_process_id ?? '',
     responsible_id: contract.responsible_id ?? '',
+    template_id: contract.template_id ?? '',
     total_amount: contract.total_amount,
     installments: contract.installments,
     first_due_date: contract.first_due_date ?? '',
@@ -47,9 +48,16 @@ interface ContractFormDialogProps {
   /** Contrato em edição. Sem ele, a tela registra um contrato novo e abre o
    * detalhe dele. */
   contract?: Contract | null
+  /** Contrato novo já ligado a algo — a aba Contratos do cliente ou do processo. */
+  initialValues?: Partial<ContractInput>
 }
 
-export function ContractFormDialog({ open, onOpenChange, contract = null }: ContractFormDialogProps) {
+export function ContractFormDialog({
+  open,
+  onOpenChange,
+  contract = null,
+  initialValues,
+}: ContractFormDialogProps) {
   const router = useRouter()
   // Aqui, e não no formulário: o diálogo existe desde que a página abriu, então
   // a sessão já foi lida quando ele abre. Um `useAuth` montado junto com o
@@ -91,7 +99,9 @@ export function ContractFormDialog({ open, onOpenChange, contract = null }: Cont
         {open && (
           <ContractForm
             defaultValues={
-              contract ? toFormValues(contract) : { responsible_id: user?.id ?? '' }
+              contract
+                ? toFormValues(contract)
+                : { responsible_id: user?.id ?? '', ...initialValues }
             }
             onSubmit={(data, files) => {
               handleSubmit(data, files).catch(() => {

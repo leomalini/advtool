@@ -1,25 +1,28 @@
 import { createClient } from '@/lib/supabase/client'
 import { AI_FILE_TYPES, aiFileTypeFromName, sanitizeFileName } from '@/features/ia/files/constants'
-import { parseFieldSettings } from '@/schemas/documentTemplate.schema'
+import { parseFieldSettings, parsePartyRoles } from '@/schemas/documentTemplate.schema'
 import type {
   DocumentTemplate,
   TemplateCategory,
   TemplateFieldSettings,
+  TemplatePartyRole,
 } from '@/types/documentTemplate.types'
 import { settingsForFields } from '../templates/fieldSettings'
+import { rolesInUse } from '../templates/partyFields'
 
 const supabase = createClient()
 
 const BUCKET = 'attachments'
 const TEMPLATE_SELECT =
-  'id, name, description, category, file_path, file_name, fields, field_settings, created_by, ' +
-  'created_at, updated_at'
+  'id, name, description, category, file_path, file_name, fields, field_settings, parties, ' +
+  'created_by, created_at, updated_at'
 
 function toTemplate(row: Record<string, unknown>): DocumentTemplate {
   return {
     ...(row as unknown as DocumentTemplate),
     fields: (row.fields as string[] | null) ?? [],
     field_settings: parseFieldSettings(row.field_settings),
+    parties: parsePartyRoles(row.parties),
   }
 }
 
@@ -71,6 +74,14 @@ export interface TemplateFormInput {
   description: string
   category: TemplateCategory
   fieldSettings: TemplateFieldSettings
+  /** Papéis de parte (migration 70). Só os que o arquivo usa são gravados. */
+  parties: TemplatePartyRole[]
+}
+
+/** Papéis e definições como vão para o banco — ambos sem órfãos. */
+function persistedDefinitions(fields: readonly string[], input: TemplateFormInput) {
+  const parties = rolesInUse(fields, input.parties)
+  return { parties, field_settings: settingsForFields(fields, input.fieldSettings, parties) }
 }
 
 export async function createTemplate(
@@ -93,7 +104,7 @@ export async function createTemplate(
       file_path: filePath,
       file_name: input.file.name,
       fields,
-      field_settings: settingsForFields(fields, input.fieldSettings),
+      ...persistedDefinitions(fields, input),
       created_by: userId,
     })
     .select(TEMPLATE_SELECT)
@@ -133,7 +144,7 @@ export async function updateTemplate(
       name: input.name.trim(),
       description: input.description.trim() || null,
       category: input.category,
-      field_settings: settingsForFields(fields, input.fieldSettings),
+      ...persistedDefinitions(fields, input),
       ...(replacement
         ? { file_path: replacement.path, file_name: replacement.file.name, fields }
         : {}),

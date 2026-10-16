@@ -15,7 +15,7 @@ import {
   resolveTemplateFields,
 } from '@/features/documentos/templates/resolveFields'
 import { buildTemplateValues } from '@/features/documentos/templates/values'
-import { parseFieldSettings } from '@/schemas/documentTemplate.schema'
+import { parseFieldSettings, parsePartyRoles } from '@/schemas/documentTemplate.schema'
 import { DOCUMENT_CATEGORY_LABELS } from '@/types/document.types'
 import { MANUAL_FIELD_FORMAT_LABELS, type TemplateCategory } from '@/types/documentTemplate.types'
 import { AI_FILE_TYPES, AI_FILES_BUCKET } from '../files/constants'
@@ -37,6 +37,7 @@ interface TemplateRow {
   file_path: string
   fields: string[] | null
   field_settings: unknown
+  parties: unknown
 }
 
 /** O modelo como o Assistente o descreve: o que o sistema preenche, o que
@@ -44,6 +45,16 @@ interface TemplateRow {
 function describeFields(classified: ClassifiedFields) {
   return {
     campos_do_cadastro: classified.cadastro,
+    // Partes de contrato (migration 70): o Assistente ainda não as preenche —
+    // é a fase 3 de docs/contratos.md. Saem [FALTA] aqui.
+    ...(classified.party.length > 0
+      ? {
+          campos_das_partes: classified.party.map((field) => field.name),
+          aviso_partes:
+            'Preenchidos pelas partes do contrato, gerando pela página do contrato em ' +
+            'Contratos. Gerado aqui, saem como [FALTA].',
+        }
+      : {}),
     campos_manuais: classified.manual.map((field) => ({
       campo: field.name,
       rotulo: field.label,
@@ -135,7 +146,7 @@ async function loadSource(
   if (templateId) {
     const { data, error } = await supabase
       .from('document_templates')
-      .select('id, name, description, category, file_path, fields, field_settings')
+      .select('id, name, description, category, file_path, fields, field_settings, parties')
       .eq('id', templateId)
       .maybeSingle()
     if (error) return toolError('o modelo', error)
@@ -144,7 +155,11 @@ async function loadSource(
     return {
       name: row.name,
       bytes: await downloadBytes(supabase, DOCUMENTS_BUCKET, row.file_path),
-      classified: classifyTemplateFields(row.fields ?? [], parseFieldSettings(row.field_settings)),
+      classified: classifyTemplateFields(
+        row.fields ?? [],
+        parseFieldSettings(row.field_settings),
+        parsePartyRoles(row.parties),
+      ),
     }
   }
 
@@ -176,7 +191,7 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
       execute: async ({ termo }) => {
         let query = supabase
           .from('document_templates')
-          .select('id, name, description, category, fields, field_settings')
+          .select('id, name, description, category, fields, field_settings, parties')
           .order('name')
         if (termo?.trim()) query = query.ilike('name', `%${termo.trim().replace(/[%_]/g, ' ')}%`)
 
@@ -190,7 +205,11 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
             categoria: DOCUMENT_CATEGORY_LABELS[row.category],
             descricao: row.description,
             ...describeFields(
-              classifyTemplateFields(row.fields ?? [], parseFieldSettings(row.field_settings)),
+              classifyTemplateFields(
+        row.fields ?? [],
+        parseFieldSettings(row.field_settings),
+        parsePartyRoles(row.parties),
+      ),
             ),
           })),
         }

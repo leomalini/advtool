@@ -1,23 +1,26 @@
 'use client'
 
-import { ListChecks, PenLine, Sparkles } from 'lucide-react'
+import { ListChecks, PenLine, Sparkles, UserRound } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { TemplateFieldSettings } from '@/types/documentTemplate.types'
+import type { TemplateFieldSettings, TemplatePartyRole } from '@/types/documentTemplate.types'
 import { classifyTemplateFields } from '../templates/fieldSettings'
 
 interface TemplateFieldBadgesProps {
   fields: readonly string[]
   settings: TemplateFieldSettings
+  /** Papéis de parte declarados no modelo (Contratos). */
+  roles?: readonly TemplatePartyRole[]
 }
 
-/** Campos de um modelo nos três tipos, com marcação diferente para não
- * confundir o que o sistema preenche, o que se digita e o que a IA redige. */
-export function TemplateFieldBadges({ fields, settings }: TemplateFieldBadgesProps) {
+/** Campos de um modelo por tipo, com marcação diferente para não confundir o
+ * que o sistema preenche, o que vem das partes, o que se digita e o que a IA
+ * redige. */
+export function TemplateFieldBadges({ fields, settings, roles = [] }: TemplateFieldBadgesProps) {
   if (fields.length === 0) {
     return <p className="text-xs text-muted-foreground">Nenhum campo encontrado no arquivo.</p>
   }
 
-  const { cadastro, manual, choice, ai } = classifyTemplateFields(fields, settings)
+  const { cadastro, party, manual, choice, ai } = classifyTemplateFields(fields, settings, roles)
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -29,6 +32,17 @@ export function TemplateFieldBadges({ fields, settings }: TemplateFieldBadgesPro
           title="Do cadastro — o sistema preenche"
         >
           {`{${field}}`}
+        </Badge>
+      ))}
+      {party.map((field) => (
+        <Badge
+          key={field.name}
+          variant="secondary"
+          className="gap-1 font-mono text-[11px]"
+          title={`Da parte "${field.role.label}" do contrato`}
+        >
+          <UserRound className="h-3 w-3" />
+          {`{${field.name}}`}
         </Badge>
       ))}
       {manual.map((field) => (

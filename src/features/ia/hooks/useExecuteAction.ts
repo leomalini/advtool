@@ -165,8 +165,10 @@ export function useExecuteAction() {
                 description: input.descricao ?? '',
                 category: input.categoria,
                 // Sem definição: cada campo recebe o padrão pelo nome, e o
-                // usuário ajusta na tela do modelo.
+                // usuário ajusta na tela do modelo — inclusive os papéis de
+                // parte, que são declarados lá, não deduzidos.
                 fieldSettings: {},
+                parties: [],
                 file,
               },
               userId,

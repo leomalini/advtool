@@ -1,9 +1,10 @@
 'use client'
 
-import { Copy, PenLine, Sparkles } from 'lucide-react'
+import { Copy, PenLine, Sparkles, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import type { TemplateScope } from '@/types/documentTemplate.types'
 import {
   CATALOG_GROUP_LABELS,
   CATALOG_GROUPS,
@@ -20,8 +21,11 @@ async function copyField(name: string) {
 }
 
 /** Referência dos campos para quem escreve o modelo no Word: os de cadastro,
- * com botão de copiar, e como funcionam os manuais e os de IA. */
-export function TemplateCatalogPanel() {
+ * com botão de copiar, e como funcionam os manuais e os de IA. Os campos do
+ * contrato e os de parte só aparecem na vitrine de Contratos, que é onde se
+ * preenchem. */
+export function TemplateCatalogPanel({ scope }: { scope: TemplateScope }) {
+  const groups = CATALOG_GROUPS.filter((group) => scope === 'contratos' || group !== 'contrato')
   return (
     <Card className="h-fit">
       <CardContent className="space-y-4 p-4 text-sm">
@@ -49,9 +53,20 @@ export function TemplateCatalogPanel() {
               corrido: a IA redige com a instrução que você der, e você revisa antes de baixar.
             </span>
           </p>
+          {scope === 'contratos' && (
+            <p className="flex items-start gap-1.5">
+              <UserRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <span className="font-medium">Partes:</span> declare o papel no modelo
+                (Locatário) e use os campos dele com o sufixo do cliente —{' '}
+                {'{locatario_nome}'}, {'{locatario_qualificacao}'}, {'{locatario_documento}'}… Eles
+                se preenchem com as partes do contrato.
+              </span>
+            </p>
+          )}
         </div>
 
-        {CATALOG_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group} className="space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {CATALOG_GROUP_LABELS[group]}

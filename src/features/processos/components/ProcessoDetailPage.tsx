@@ -89,6 +89,8 @@ import { CrmItemClienteTab } from '@/features/crm/components/CrmItemClienteTab'
 import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
+import { EntityContractsTab } from '@/features/contratos/components/EntityContractsTab'
+import { usePermissions } from '@/hooks/usePermissions'
 import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { Can } from '@/components/shared/Can'
 import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialEntriesTab'
@@ -115,6 +117,7 @@ type EntityTab =
   | 'agenda'
   | 'tarefas'
   | 'documentos'
+  | 'contratos'
   | 'financeiro'
   | 'comentarios'
   | 'cliente'
@@ -142,6 +145,7 @@ const ENTITY_TABS: { id: EntityTab; label: string }[] = [
   // procura um documento não sabe de antemão se ele veio do tribunal ou foi
   // enviado por alguém do escritório.
   { id: 'documentos', label: 'Documentos' },
+  { id: 'contratos', label: 'Contratos' },
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'comentarios', label: 'Comentários' },
   { id: 'cliente', label: 'Cliente' },
@@ -447,6 +451,7 @@ function MonitoringStrip({
 export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const router = useRouter()
   const { data: processo, isLoading, error } = useLegalProcess(processoId)
+  const { can } = usePermissions()
 
   const [tab, setTab] = useState<Tab>('tudo')
   const [search, setSearch] = useState('')
@@ -1022,7 +1027,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                     vinculada — mesma barra, leituras diferentes. */}
                 <span className="mx-2 my-2 w-px shrink-0 bg-border" aria-hidden />
 
-                {ENTITY_TABS.map((t) => (
+                {ENTITY_TABS.filter((t) => t.id !== 'contratos' || can('contratos', 'view')).map((t) => (
                   <button
                     key={t.id}
                     onClick={() => setTab(t.id)}
@@ -1328,6 +1333,13 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   crmItemIds={crmItemIds}
                   lockedLegalProcessId={processo.id}
                   lockedClientId={item?.client_id}
+                  itemLabel="processo"
+                />
+              )}
+              {tab === 'contratos' && (
+                <EntityContractsTab
+                  legalProcessId={processo.id}
+                  defaultClientId={item?.client_id}
                   itemLabel="processo"
                 />
               )}

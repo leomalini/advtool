@@ -14,13 +14,13 @@ import {
 } from '@/components/ui/select'
 import { Can } from '@/components/shared/Can'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useDeleteDocument, useOpenDocument } from '@/features/documentos/hooks/useDocumentMutations'
 import { MAX_FILE_SIZE } from '@/schemas/document.schema'
 import {
   CONTRACT_FILE_ROLE_LABELS,
   CONTRACT_FILE_ROLES,
+  sourceKindLabel,
   type ContractFileRole,
   type ContractWithRelations,
 } from '@/types/contract.types'
@@ -39,8 +39,16 @@ const GROUP_HINTS: Record<ContractFileRole, string> = {
   anexo: 'Documentos das partes, comprovantes',
 }
 
+interface ContractFilesSectionProps {
+  contract: ContractWithRelations
+  /** Abre a tela de geração — mora na página, porque os passos também a abrem. */
+  onGenerate: () => void
+  /** Nome de cada parte, para mostrar de quem é o documento lido. */
+  partyNames: ReadonlyMap<string, string>
+}
+
 /** Os arquivos do contrato, separados pelo papel de cada um. */
-export function ContractFilesSection({ contract }: { contract: ContractWithRelations }) {
+export function ContractFilesSection({ contract, onGenerate, partyNames }: ContractFilesSectionProps) {
   const { data: documents = [], isLoading } = useDocumentsForEntity({ contractId: contract.id })
   const uploadFiles = useUploadContractFiles()
   const deleteDocument = useDeleteDocument()
@@ -51,8 +59,8 @@ export function ContractFilesSection({ contract }: { contract: ContractWithRelat
       ? 'minuta'
       : 'assinado'
   )
-  const [generateOpen, setGenerateOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
+  const hasMinuta = documents.some((document) => document.contract_file_role === 'minuta')
   const [sizeError, setSizeError] = useState<string | null>(null)
 
   const uploadPermission = documentPermission({ contract_id: contract.id }, 'upload')
@@ -88,9 +96,9 @@ export function ContractFilesSection({ contract }: { contract: ContractWithRelat
         </div>
         <Can {...uploadPermission}>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setGenerateOpen(true)}>
+            <Button size="sm" variant="outline" onClick={onGenerate}>
               <FileSignature className="h-3.5 w-3.5" />
-              Gerar minuta
+              {hasMinuta ? 'Gerar nova versão' : 'Gerar minuta'}
             </Button>
             <Select value={role} onValueChange={(value) => setRole(value as ContractFileRole)}>
               <SelectTrigger className="h-8 w-[120px] text-xs" aria-label="Anexar como">
@@ -166,6 +174,15 @@ export function ContractFilesSection({ contract }: { contract: ContractWithRelat
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{document.file_name}</p>
                       <p className="truncate text-xs text-muted-foreground">
+                        {[
+                          sourceKindLabel(document.source_kind),
+                          document.contract_party_id
+                            ? partyNames.get(document.contract_party_id)
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .map((label) => `${label} · `)
+                          .join('')}
                         {formatFileSize(document.file_size)} ·{' '}
                         {format(parseISO(document.created_at), 'dd/MM/yyyy', { locale: ptBR })}
                         {document.uploader && ` · ${getDisplayName(document.uploader.full_name)}`}
@@ -198,16 +215,6 @@ export function ContractFilesSection({ contract }: { contract: ContractWithRelat
           })}
         </div>
       )}
-
-      <GenerateDocumentDialog
-        open={generateOpen}
-        onOpenChange={setGenerateOpen}
-        templateId={contract.template_id ?? undefined}
-        clientId={contract.client_id ?? undefined}
-        processId={contract.legal_process_id ?? undefined}
-        scope="contratos"
-        contractId={contract.id}
-      />
 
       <ConfirmDialog
         open={!!pendingDelete}

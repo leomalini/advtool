@@ -6,8 +6,10 @@ import {
   type TemplateChoiceOption,
   type TemplateFieldSetting,
   type TemplateFieldSettings,
+  type TemplatePartyRole,
 } from '@/types/documentTemplate.types'
 import { isCatalogField, type CatalogFieldName } from './catalog'
+import { matchPartyField, type PartyFieldUse } from './partyFields'
 
 /**
  * Os tipos de campo de um modelo:
@@ -112,6 +114,9 @@ export interface AiFieldDefinition {
 
 export interface ClassifiedFields {
   cadastro: CatalogFieldName[]
+  /** Campos dos papéis que o modelo declara (migration 70) — preenchidos
+   * pelas partes do contrato. */
+  party: PartyFieldUse[]
   manual: ManualFieldDefinition[]
   choice: ChoiceFieldDefinition[]
   ai: AiFieldDefinition[]
@@ -124,12 +129,17 @@ export interface ClassifiedFields {
  * O `x` entra na lista mesmo que o modelo só use a versão por extenso — é nele
  * que quem gera digita o valor —, e um campo com versão por extenso é sempre
  * manual e num formato que tenha extenso.
+ *
+ * `roles`: os papéis de parte do modelo. Sem eles, `{locatario_nome}` é um
+ * campo manual como outro qualquer — é o que vale fora de Contratos.
  */
 export function classifyTemplateFields(
   fields: readonly string[],
   settings: TemplateFieldSettings,
+  roles: readonly TemplatePartyRole[] = [],
 ): ClassifiedFields {
   const cadastro: CatalogFieldName[] = []
+  const party: PartyFieldUse[] = []
   const usage = new Map<string, { direct: boolean; spelled: boolean }>()
   const usageOf = (name: string) => {
     const current = usage.get(name) ?? { direct: false, spelled: false }
@@ -140,6 +150,11 @@ export function classifyTemplateFields(
   for (const field of fields) {
     if (isCatalogField(field)) {
       if (!cadastro.includes(field)) cadastro.push(field)
+      continue
+    }
+    const partyField = matchPartyField(field, roles)
+    if (partyField) {
+      if (!party.some((use) => use.name === field)) party.push(partyField)
       continue
     }
     const base = field.endsWith(SPELLED_SUFFIX) ? field.slice(0, -SPELLED_SUFFIX.length) : null
@@ -173,14 +188,18 @@ export function classifyTemplateFields(
     })
   }
 
-  return { cadastro, manual, choice, ai }
+  return { cadastro, party, manual, choice, ai }
 }
 
-/** Campos definíveis na ordem do documento. `{x_extenso}` aparece como `x`. */
-export function definableFieldNames(fields: readonly string[]): string[] {
+/** Campos definíveis na ordem do documento. `{x_extenso}` aparece como `x`.
+ * Campos de catálogo e de parte não se definem: já têm de onde vir. */
+export function definableFieldNames(
+  fields: readonly string[],
+  roles: readonly TemplatePartyRole[] = [],
+): string[] {
   const names: string[] = []
   for (const field of fields) {
-    if (isCatalogField(field)) continue
+    if (isCatalogField(field) || matchPartyField(field, roles)) continue
     const base = field.endsWith(SPELLED_SUFFIX) ? field.slice(0, -SPELLED_SUFFIX.length) : null
     const name = base && !isCatalogField(base) ? base : field
     if (!names.includes(name)) names.push(name)
@@ -224,8 +243,9 @@ function spellableFormatFor(name: string, setting: TemplateFieldSetting): Spella
 export function settingsForFields(
   fields: readonly string[],
   draft: TemplateFieldSettings,
+  roles: readonly TemplatePartyRole[] = [],
 ): TemplateFieldSettings {
-  const { manual, choice, ai } = classifyTemplateFields(fields, draft)
+  const { manual, choice, ai } = classifyTemplateFields(fields, draft, roles)
   const settings: TemplateFieldSettings = {}
   for (const field of manual) {
     settings[field.name] = { kind: 'manual', label: field.label, format: field.format }
@@ -253,8 +273,9 @@ export function settingsForFields(
 export function choiceFieldsWithoutOptions(
   fields: readonly string[],
   draft: TemplateFieldSettings,
+  roles: readonly TemplatePartyRole[] = [],
 ): string[] {
-  return classifyTemplateFields(fields, draft)
+  return classifyTemplateFields(fields, draft, roles)
     .choice.filter((field) => !field.options.some((option) => option.label.trim()))
     .map((field) => field.name)
 }

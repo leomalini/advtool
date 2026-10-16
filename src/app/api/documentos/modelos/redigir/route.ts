@@ -14,7 +14,7 @@ import {
 } from '@/features/documentos/templates/drafting'
 import { buildDraftingMessage } from '@/features/documentos/templates/draftingContext'
 import { classifyTemplateFields } from '@/features/documentos/templates/fieldSettings'
-import { parseFieldSettings } from '@/schemas/documentTemplate.schema'
+import { parseFieldSettings, parsePartyRoles } from '@/schemas/documentTemplate.schema'
 import type { DocumentTemplate } from '@/types/documentTemplate.types'
 
 /** Segundos. Uma redação com dois ou três PDFs passa fácil de meio minuto. */
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: row, error } = await supabase
     .from('document_templates')
-    .select('name, description, category, fields, field_settings')
+    .select('name, description, category, fields, field_settings, parties')
     .eq('id', templateId)
     .maybeSingle()
   if (error) {
@@ -73,12 +73,14 @@ export async function POST(request: Request) {
 
   const template = row as Pick<DocumentTemplate, 'name' | 'description' | 'category' | 'fields'> & {
     field_settings: unknown
+    parties: unknown
   }
   // Só campos de IA do próprio modelo: o navegador não escolhe o que a IA
   // escreve além do que o modelo define.
   const aiFields = classifyTemplateFields(
     template.fields ?? [],
     parseFieldSettings(template.field_settings),
+    parsePartyRoles(template.parties),
   ).ai.filter((field) => parsed.data.fields.includes(field.name))
   if (aiFields.length === 0) return jsonError('Nenhum campo de IA para redigir.', 400)
 

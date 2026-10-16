@@ -29,9 +29,19 @@ import {
 import { formatCurrency } from '@/types/financialEntry.types'
 import { formatDate, formatDateTime } from '@/utils/date'
 import { getDisplayName } from '@/utils/profile'
-import { useContract, useContractStatusChanges } from '../hooks/useContracts'
+import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
+import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
+import { useDocumentTemplates } from '@/features/documentos/hooks/useDocumentTemplates'
+import {
+  useContract,
+  useContractParties,
+  useContractStatusChanges,
+} from '../hooks/useContracts'
 import { useDeleteContract } from '../hooks/useContractMutations'
+import { ContractAssemblySteps, type AssemblyStep } from './ContractAssemblySteps'
 import { ContractFilesSection } from './ContractFilesSection'
+import { ContractPartiesSection } from './ContractPartiesSection'
+import { ReadDocumentsDialog } from './ReadDocumentsDialog'
 import { ContractFormDialog } from './ContractFormDialog'
 import { ContractSituationBadge } from './ContractSituationBadge'
 import { ContractStatusActions } from './ContractStatusActions'
@@ -72,9 +82,14 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   const router = useRouter()
   const { data: contract, isLoading, error } = useContract(contractId)
   const { data: statusChanges = [] } = useContractStatusChanges(contractId)
+  const { data: parties = [] } = useContractParties(contractId)
+  const { data: documents = [] } = useDocumentsForEntity({ contractId })
+  const { data: templates = [] } = useDocumentTemplates()
   const deleteContract = useDeleteContract()
   const [editOpen, setEditOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
+  const [readOpen, setReadOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -99,6 +114,57 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   const client = clientName(contract)
   const fileCount = contract.documents?.length ?? 0
   const noticeDate = getContractNoticeDate(contract)
+  const template = templates.find((item) => item.id === contract.template_id) ?? null
+  const templateRoles = template?.parties ?? []
+  const missingRoles = templateRoles.filter(
+    (role) => !parties.some((party) => party.role_key === role.key),
+  )
+  const hasMinuta = documents.some((document) => document.contract_file_role === 'minuta')
+  const partyNames = new Map(parties.map((party) => [party.id, party.name ?? party.role_label]))
+  const assembling = contract.status === 'rascunho' || contract.status === 'aguardando_assinatura'
+
+  function scrollTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const steps: AssemblyStep[] = [
+    {
+      key: 'modelo',
+      label: 'Modelo',
+      detail: template ? template.name : 'Sem modelo — escolha em Editar',
+      done: !!template,
+      onClick: () => setEditOpen(true),
+    },
+    {
+      key: 'partes',
+      label: 'Partes',
+      detail:
+        missingRoles.length > 0
+          ? `Falta: ${missingRoles.map((role) => role.label).join(', ')}`
+          : parties.length === 0
+            ? 'Nenhuma parte'
+            : `${parties.length} ${parties.length === 1 ? 'parte' : 'partes'}`,
+      done: parties.length > 0 && missingRoles.length === 0,
+      onClick: () => scrollTo('partes'),
+    },
+    {
+      key: 'valores',
+      label: 'Valores e vigência',
+      detail:
+        contract.total_amount !== null
+          ? formatCurrency(contract.total_amount)
+          : 'Sem valor — complete em Editar',
+      done: contract.total_amount !== null,
+      onClick: () => setEditOpen(true),
+    },
+    {
+      key: 'minuta',
+      label: 'Minuta',
+      detail: hasMinuta ? 'Gerada — veja em Arquivos' : 'Gerar do modelo',
+      done: hasMinuta,
+      onClick: () => (hasMinuta ? scrollTo('arquivos') : setGenerateOpen(true)),
+    },
+  ]
 
   return (
     <div className="-m-6 flex h-full flex-col">
@@ -203,9 +269,25 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
             </div>
           </div>
 
+          {assembling && <ContractAssemblySteps steps={steps} />}
+
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-4">
-              <ContractFilesSection contract={contract} />
+              <div id="partes" className="scroll-mt-4">
+                <ContractPartiesSection
+                  contractId={contract.id}
+                  templateRoles={templateRoles}
+                  documents={documents}
+                  onReadDocuments={() => setReadOpen(true)}
+                />
+              </div>
+              <div id="arquivos" className="scroll-mt-4">
+                <ContractFilesSection
+                  contract={contract}
+                  onGenerate={() => setGenerateOpen(true)}
+                  partyNames={partyNames}
+                />
+              </div>
 
               {contract.notes && (
                 <section className="space-y-2 rounded-xl border border-border bg-card p-5">
@@ -283,6 +365,26 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
       </div>
 
       <ContractFormDialog open={editOpen} onOpenChange={setEditOpen} contract={contract} />
+
+      <GenerateDocumentDialog
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        templateId={contract.template_id ?? undefined}
+        clientId={contract.client_id ?? undefined}
+        processId={contract.legal_process_id ?? undefined}
+        scope="contratos"
+        contractId={contract.id}
+        savedValues={contract.template_values}
+      />
+
+      <ReadDocumentsDialog
+        open={readOpen}
+        onOpenChange={setReadOpen}
+        contract={contract}
+        template={template}
+        existingDocuments={documents}
+        parties={parties}
+      />
 
       <ConfirmDialog
         open={confirmDelete}
