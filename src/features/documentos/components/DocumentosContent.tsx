@@ -36,12 +36,17 @@ const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 const ALL = '__all__'
 const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_110px_100px_76px]'
 
-/** Cliente e processo de um documento. O anexo de lançamento não tem vínculo
- * próprio (migration 63): herda os do lançamento, para não aparecer solto. */
+/** Cliente e processo de um documento. O anexo de lançamento e o arquivo de
+ * contrato não têm vínculo próprio (migrations 63 e 69): herdam os do dono,
+ * para não aparecer soltos. */
 function documentOwners(doc: DocumentWithRelations) {
   return {
-    client: doc.client ?? doc.financial_entry?.client ?? null,
-    legalProcess: doc.legal_process ?? doc.financial_entry?.legal_process ?? null,
+    client: doc.client ?? doc.financial_entry?.client ?? doc.contract?.client ?? null,
+    legalProcess:
+      doc.legal_process ??
+      doc.financial_entry?.legal_process ??
+      doc.contract?.legal_process ??
+      null,
   }
 }
 
@@ -70,6 +75,7 @@ export function DocumentosContent() {
           : null,
         legalProcess?.cnj_number,
         doc.financial_entry?.description,
+        doc.contract?.title,
       ]
         .filter(Boolean)
         .join(' ')
@@ -238,6 +244,7 @@ export function DocumentosContent() {
                             {doc.uploader && ` · ${getDisplayName(doc.uploader.full_name)}`}
                             {doc.financial_entry &&
                               ` · Lançamento: ${doc.financial_entry.description}`}
+                            {doc.contract && ` · Contrato: ${doc.contract.title}`}
                           </p>
                         </div>
                       </div>
@@ -283,7 +290,7 @@ export function DocumentosContent() {
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
-                        <Can {...documentPermission(doc.financial_entry_id, 'delete')}>
+                        <Can {...documentPermission(doc, 'delete')}>
                           <button
                             type="button"
                             title="Excluir"

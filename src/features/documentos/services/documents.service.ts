@@ -18,6 +18,12 @@ const DOCUMENT_SELECT = `
     client:clients(id, type, name, company_name, trade_name),
     legal_process:legal_processes(id, cnj_number)
   ),
+  contract:contracts(
+    id,
+    title,
+    client:clients(id, type, name, company_name, trade_name),
+    legal_process:legal_processes(id, cnj_number)
+  ),
   uploader:profiles!documents_uploaded_by_fkey(id, full_name)
 `
 
@@ -39,12 +45,14 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
  * —, o que tornava impossível saber de quem era um arquivo olhando o caminho.
  * O timestamp evita colisão quando o mesmo arquivo é enviado duas vezes.
  *
- * ⚠️ `lancamentos` vem primeiro e não é só organização: é pela pasta que as
- * policies do bucket reconhecem um anexo de lançamento (migration 63).
+ * ⚠️ `lancamentos` e `contratos` vêm primeiro e não é só organização: é pela
+ * pasta que as policies do bucket reconhecem um anexo de lançamento
+ * (migration 63) e um arquivo de contrato (migration 69).
  */
 function buildFilePath(input: DocumentUploadInput, fileName: string): string {
   const owner: [string, string | null | undefined][] = [
     ['lancamentos', input.financial_entry_id],
+    ['contratos', input.contract_id],
     ['processos', input.legal_process_id],
     ['casos', input.crm_item_id],
     ['clientes', input.client_id],
@@ -82,8 +90,10 @@ export async function getDocumentsForEntity(params: {
   clientId?: string | null
   eventId?: string | null
   financialEntryId?: string | null
+  contractId?: string | null
 }): Promise<DocumentWithRelations[]> {
-  const { legalProcessId, crmItemIds = [], clientId, eventId, financialEntryId } = params
+  const { legalProcessId, crmItemIds = [], clientId, eventId, financialEntryId, contractId } =
+    params
 
   const terms: string[] = []
   if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
@@ -92,6 +102,7 @@ export async function getDocumentsForEntity(params: {
   if (clientId) terms.push(`client_id.eq.${clientId}`)
   if (eventId) terms.push(`event_id.eq.${eventId}`)
   if (financialEntryId) terms.push(`financial_entry_id.eq.${financialEntryId}`)
+  if (contractId) terms.push(`contract_id.eq.${contractId}`)
   if (terms.length === 0) return []
 
   const { data, error } = await supabase
@@ -142,10 +153,12 @@ export async function uploadDocument(
     entity_title: file.name,
     actor_id: userId,
     // O feed é lido por qualquer membro; a marca é o que permite, um dia,
-    // escondê-lo de quem não vê o Financeiro.
+    // escondê-lo de quem não vê o Financeiro ou os Contratos.
     metadata: input.financial_entry_id
       ? { financial_entry_id: input.financial_entry_id }
-      : undefined,
+      : input.contract_id
+        ? { contract_id: input.contract_id }
+        : undefined,
   })
 
   return data as unknown as DocumentRecord
@@ -182,6 +195,18 @@ export async function getFinancialEntryFilePaths(financialEntryId: string): Prom
     .from('documents')
     .select('file_path')
     .eq('financial_entry_id', financialEntryId)
+
+  if (error) throw error
+  return (data ?? []).map((doc) => doc.file_path as string)
+}
+
+/** Caminhos dos arquivos de um contrato, lidos ANTES de excluí-lo — mesmo
+ * motivo de `getFinancialEntryFilePaths` (cascade da migration 69). */
+export async function getContractFilePaths(contractId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('documents')
+    .select('file_path')
+    .eq('contract_id', contractId)
 
   if (error) throw error
   return (data ?? []).map((doc) => doc.file_path as string)

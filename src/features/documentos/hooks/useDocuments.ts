@@ -12,7 +12,8 @@ export const documentKeys = {
     crmItemIds: string[],
     clientId: string | null,
     eventId: string | null,
-    financialEntryId: string | null
+    financialEntryId: string | null,
+    contractId: string | null
   ) =>
     [
       'documents',
@@ -22,6 +23,7 @@ export const documentKeys = {
       clientId ?? '-',
       eventId ?? '-',
       financialEntryId ?? '-',
+      contractId ?? '-',
     ] as const,
 }
 
@@ -32,19 +34,21 @@ export function useDocuments() {
   })
 }
 
-/** Documentos de um caso, processo, cliente, evento ou lançamento — para a aba
- * dos modais. */
+/** Documentos de um caso, processo, cliente, evento, lançamento ou contrato —
+ * para a aba dos modais. */
 export function useDocumentsForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
   clientId?: string | null
   eventId?: string | null
   financialEntryId?: string | null
+  contractId?: string | null
 }) {
   const legalProcessId = params.legalProcessId ?? null
   const clientId = params.clientId ?? null
   const eventId = params.eventId ?? null
   const financialEntryId = params.financialEntryId ?? null
+  const contractId = params.contractId ?? null
   // Ordenado para a chave ser estável (ver useEventsForEntity).
   const crmItemIds = [...(params.crmItemIds ?? [])].sort()
 
@@ -54,15 +58,24 @@ export function useDocumentsForEntity(params: {
       crmItemIds,
       clientId,
       eventId,
-      financialEntryId
+      financialEntryId,
+      contractId
     ),
     queryFn: () =>
-      getDocumentsForEntity({ legalProcessId, crmItemIds, clientId, eventId, financialEntryId }),
+      getDocumentsForEntity({
+        legalProcessId,
+        crmItemIds,
+        clientId,
+        eventId,
+        financialEntryId,
+        contractId,
+      }),
     enabled:
       !!legalProcessId ||
       crmItemIds.length > 0 ||
       !!clientId ||
       !!eventId ||
-      !!financialEntryId,
+      !!financialEntryId ||
+      !!contractId,
   })
 }

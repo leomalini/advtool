@@ -91,7 +91,10 @@ export function DocumentsTab({
   const [sizeError, setSizeError] = useState<string | null>(null)
 
   // Quem envia segue o dono do arquivo, como a RLS.
-  const uploadPermission = documentPermission(lockedFinancialEntryId, 'upload')
+  const uploadPermission = documentPermission(
+    { financial_entry_id: lockedFinancialEntryId },
+    'upload'
+  )
 
   function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -283,7 +286,7 @@ export function DocumentsTab({
                 >
                   <Download className="w-3.5 h-3.5" />
                 </button>
-                <Can {...documentPermission(doc.financial_entry_id, 'delete')}>
+                <Can {...documentPermission(doc, 'delete')}>
                   <button
                     type="button"
                     title="Excluir"

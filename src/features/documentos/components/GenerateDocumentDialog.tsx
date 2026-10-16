@@ -36,7 +36,11 @@ import { useProfiles } from '@/hooks/useProfiles'
 import { cn } from '@/lib/utils'
 import { getClientDisplayName } from '@/types/cliente.types'
 import { DOCUMENT_CATEGORY_LABELS } from '@/types/document.types'
-import { TEMPLATE_CATEGORIES } from '@/types/documentTemplate.types'
+import {
+  TEMPLATE_SCOPE_CATEGORIES,
+  TEMPLATE_SCOPE_HREFS,
+  type TemplateScope,
+} from '@/types/documentTemplate.types'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import { toSafeFileName } from '@/utils/download'
 import { useDocumentTemplates } from '../hooks/useDocumentTemplates'
@@ -47,6 +51,7 @@ import {
   useProcessClientId,
   useTemplateBytes,
   useTemplateFieldValues,
+  type GenerateSaveTarget,
 } from '../hooks/useGenerateDocument'
 import { catalogEntry, type CatalogGroup } from '../templates/catalog'
 import { DRAFT_MAX_DOCUMENTS } from '../templates/drafting'
@@ -67,6 +72,15 @@ interface GenerateDocumentDialogProps {
   clientId?: string
   /** Processo fixo (página do processo). O cliente vem dele. */
   processId?: string
+  /** Vitrine dos modelos oferecidos: os de contrato só aparecem em Contratos. */
+  scope?: TemplateScope
+  /** Gerado a partir de um contrato: "salvar" guarda a minuta nele. */
+  contractId?: string
+}
+
+const SCOPE_LABELS: Record<TemplateScope, string> = {
+  documentos: 'Documentos → Modelos',
+  contratos: 'Contratos → Modelos',
 }
 
 /**
@@ -80,6 +94,8 @@ export function GenerateDocumentDialog({
   templateId,
   clientId,
   processId,
+  scope = 'documentos',
+  contractId,
 }: GenerateDocumentDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -95,6 +111,8 @@ export function GenerateDocumentDialog({
             initialTemplateId={templateId}
             fixedClientId={clientId}
             fixedProcessId={processId}
+            scope={scope}
+            contractId={contractId}
             onClose={() => onOpenChange(false)}
           />
         )}
@@ -121,16 +139,25 @@ function GenerateDocumentBody({
   initialTemplateId,
   fixedClientId,
   fixedProcessId,
+  scope,
+  contractId,
   onClose,
 }: {
   initialTemplateId?: string
   fixedClientId?: string
   fixedProcessId?: string
+  scope: TemplateScope
+  contractId?: string
   onClose: () => void
 }) {
   const { user } = useAuth()
   const { can } = usePermissions()
-  const { data: templates = [], isLoading: templatesLoading } = useDocumentTemplates()
+  const { data: allTemplates = [], isLoading: templatesLoading } = useDocumentTemplates()
+  const scopeCategories = TEMPLATE_SCOPE_CATEGORIES[scope]
+  const templates = useMemo(
+    () => allTemplates.filter((item) => scopeCategories.includes(item.category)),
+    [allTemplates, scopeCategories],
+  )
   const { data: profiles = [] } = useProfiles()
   const { data: clients = [] } = useClientes()
   const generate = useGenerateDocument()
@@ -218,7 +245,11 @@ function GenerateDocumentBody({
     const client = clients.find((item) => item.id === clientId)
     return client ? getClientDisplayName(client) : null
   })()
-  const canSave = can('documentos', 'create') && (!!clientId || !!processId)
+  // Minuta de contrato só se guarda no contrato: gerada fora dele (Contratos →
+  // Modelos), o arquivo apenas baixa — senão viraria um contrato sem registro.
+  const canSave = contractId
+    ? can('contratos', 'update')
+    : scope === 'documentos' && can('documentos', 'create') && (!!clientId || !!processId)
 
   /** Troca de contexto invalida o que foi digitado por cima do cadastro
    * daquele grupo — um endereço corrigido do cliente A não vale para o B. */
@@ -306,12 +337,17 @@ function GenerateDocumentBody({
   function handleGenerate(save: boolean) {
     if (!template || !classified) return
     const fileName = toSafeFileName([template.name, clientName].filter(Boolean).join(' - '), 'docx')
+    const saveTo: GenerateSaveTarget | null = !save
+      ? null
+      : contractId
+        ? { kind: 'contract', contractId }
+        : { kind: 'entity', clientId, processId }
     generate.mutate(
-      { template, values, fileName, saveTo: save ? { clientId, processId } : null },
+      { template, values, fileName, saveTo },
       {
-        onSuccess: ({ saved }) => {
+        onSuccess: ({ savedTo }) => {
           // Baixar sem salvar deixa a tela aberta: dá para ajustar e baixar de novo.
-          if (saved) onClose()
+          if (savedTo) onClose()
         },
       },
     )
@@ -366,11 +402,11 @@ function GenerateDocumentBody({
                 <p className="text-sm text-muted-foreground">
                   Nenhum modelo cadastrado ainda.{' '}
                   <Link
-                    href="/documentos?aba=modelos"
+                    href={TEMPLATE_SCOPE_HREFS[scope]}
                     className="text-primary underline"
                     onClick={onClose}
                   >
-                    Cadastrar em Documentos → Modelos
+                    Cadastrar em {SCOPE_LABELS[scope]}
                   </Link>
                   .
                 </p>
@@ -385,7 +421,7 @@ function GenerateDocumentBody({
                     />
                   </SelectTrigger>
                   <SelectContent className="max-w-[min(36rem,calc(100vw-2rem))]">
-                    {TEMPLATE_CATEGORIES.map((category) => {
+                    {scopeCategories.map((category) => {
                       const items = templates.filter((item) => item.category === category)
                       if (items.length === 0) return null
                       return (
@@ -598,10 +634,14 @@ function GenerateDocumentBody({
               variant="outline"
               disabled={!template || busy}
               onClick={() => handleGenerate(true)}
-              title="Baixa o .docx e guarda uma cópia nos documentos do cliente/processo"
+              title={
+                contractId
+                  ? 'Baixa o .docx e guarda como minuta do contrato'
+                  : 'Baixa o .docx e guarda uma cópia nos documentos do cliente/processo'
+              }
             >
               <Save className="h-4 w-4" />
-              Baixar e salvar
+              {contractId ? 'Baixar e salvar no contrato' : 'Baixar e salvar'}
             </Button>
           )}
           <Button disabled={!template || busy} onClick={() => handleGenerate(false)}>

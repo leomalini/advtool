@@ -16,6 +16,28 @@ export const TEMPLATE_CATEGORIES = [
 ] as const satisfies readonly TemplateCategory[]
 
 /**
+ * Onde um modelo aparece. Os de contrato moram em Contratos → Modelos; os
+ * demais, em Documentos → Modelos (docs/contratos.md). A tabela e o motor são
+ * os mesmos — muda só a vitrine.
+ */
+export type TemplateScope = 'documentos' | 'contratos'
+
+export const TEMPLATE_SCOPE_CATEGORIES: Record<TemplateScope, readonly TemplateCategory[]> = {
+  documentos: ['peticao', 'procuracao', 'outros'],
+  contratos: ['contrato'],
+}
+
+/** Aba de modelos de cada vitrine — o link do Assistente e da tela de geração. */
+export const TEMPLATE_SCOPE_HREFS: Record<TemplateScope, string> = {
+  documentos: '/documentos?aba=modelos',
+  contratos: '/contratos?aba=modelos',
+}
+
+export function templateScopeOf(category: TemplateCategory): TemplateScope {
+  return category === 'contrato' ? 'contratos' : 'documentos'
+}
+
+/**
  * Formato de um campo MANUAL. Decide o controle da tela de geração e como o
  * valor sai no documento ("R$ 5.000,00", "30%", "24/09/2026").
  */

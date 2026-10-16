@@ -12,7 +12,11 @@ import { Can } from '@/components/shared/Can'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { DOCUMENT_CATEGORY_LABELS } from '@/types/document.types'
-import type { DocumentTemplate } from '@/types/documentTemplate.types'
+import {
+  TEMPLATE_SCOPE_CATEGORIES,
+  type DocumentTemplate,
+  type TemplateScope,
+} from '@/types/documentTemplate.types'
 import { useDeleteTemplate, useDocumentTemplates } from '../hooks/useDocumentTemplates'
 import { useOpenDocument } from '../hooks/useDocumentMutations'
 import { GenerateDocumentDialog } from './GenerateDocumentDialog'
@@ -22,10 +26,13 @@ import { TemplateFormDialog } from './TemplateFormDialog'
 
 /**
  * Modelos .docx do escritório. Aqui se sobe, define os campos, gera e remove
- * modelos; o Assistente usa os mesmos.
+ * modelos; o Assistente usa os mesmos. `scope` diz qual vitrine é esta: os
+ * modelos de contrato moram em Contratos, os demais em Documentos.
  */
-export function TemplatesContent() {
-  const { data: templates = [], isLoading } = useDocumentTemplates()
+export function TemplatesContent({ scope = 'documentos' }: { scope?: TemplateScope }) {
+  const { data: allTemplates = [], isLoading } = useDocumentTemplates()
+  const categories = TEMPLATE_SCOPE_CATEGORIES[scope]
+  const templates = allTemplates.filter((template) => categories.includes(template.category))
   const deleteTemplate = useDeleteTemplate()
   const openDocument = useOpenDocument()
   const [formOpen, setFormOpen] = useState(false)
@@ -42,10 +49,19 @@ export function TemplatesContent() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Gere pelo botão <span className="font-medium text-foreground">Gerar</span> (aqui, no
-          cliente ou no processo) ou peça no Assistente. O sistema preenche o cadastro, você
-          completa os campos manuais e a IA redige os campos de texto — fonte, margens e timbre do
-          modelo ficam como estão.
+          {scope === 'contratos' ? (
+            <>
+              Para guardar a minuta no contrato, gere pelo próprio contrato; o{' '}
+              <span className="font-medium text-foreground">Gerar</span> daqui só baixa o arquivo.
+            </>
+          ) : (
+            <>
+              Gere pelo botão <span className="font-medium text-foreground">Gerar</span> (aqui, no
+              cliente ou no processo) ou peça no Assistente.
+            </>
+          )}{' '}
+          O sistema preenche o cadastro, você completa os campos manuais e a IA redige os campos
+          de texto — fonte, margens e timbre do modelo ficam como estão.
         </p>
         <Can resource="documentos" action="create">
           <Button size="sm" onClick={() => openForm(null)}>
@@ -138,7 +154,12 @@ export function TemplatesContent() {
         <TemplateCatalogPanel />
       </div>
 
-      <TemplateFormDialog open={formOpen} onOpenChange={setFormOpen} template={editing} />
+      <TemplateFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        template={editing}
+        scope={scope}
+      />
 
       <GenerateDocumentDialog
         open={generating !== null}
@@ -146,6 +167,7 @@ export function TemplatesContent() {
           if (!open) setGenerating(null)
         }}
         templateId={generating?.id}
+        scope={scope}
       />
 
       <ConfirmDialog
