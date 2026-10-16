@@ -40,6 +40,11 @@ import {
   type ContractStatus,
   type PartyPersonData,
 } from '@/types/contract.types'
+import {
+  FINANCIAL_SITUATION_LABELS,
+  getFinancialSituation,
+  type FinancialEntry,
+} from '@/types/financialEntry.types'
 import type { OfficeSettings } from '@/types/officeSettings.types'
 import { AI_FILES_BUCKET } from '../files/constants'
 import { getAiFile } from '../files/storage'
@@ -252,11 +257,11 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
 
     ver_contrato: tool({
       description:
-        'Detalhes de um contrato: números, vigência, as partes com a qualificação e os arquivos ' +
-        '(minuta, versão assinada, anexos).',
+        'Detalhes de um contrato: números, vigência, as partes com a qualificação, os arquivos ' +
+        '(minuta, versão assinada, anexos) e os lançamentos do Financeiro ligados a ele.',
       inputSchema: z.object({ id: z.string().uuid() }),
       execute: async ({ id }) => {
-        const [contract, parties, documents] = await Promise.all([
+        const [contract, parties, documents, entries] = await Promise.all([
           supabase.from('contracts').select(CONTRACT_COLUMNS).eq('id', id).maybeSingle(),
           supabase.from('contract_parties').select('*').eq('contract_id', id).order('position'),
           supabase
@@ -264,11 +269,30 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
             .select('id, file_name, contract_file_role, source_kind')
             .eq('contract_id', id)
             .order('created_at'),
+          supabase
+            .from('financial_entries')
+            .select(
+              'description, type, amount, status, settlement_kind, due_date, ' +
+                'condition_description, paid_at',
+            )
+            .eq('contract_id', id)
+            .order('due_date', { ascending: true, nullsFirst: false }),
         ])
         if (contract.error) return toolError('o contrato', contract.error)
         if (!contract.data) return { error: 'Contrato não encontrado ou sem acesso.' }
         if (parties.error) return toolError('as partes', parties.error)
         if (documents.error) return toolError('os arquivos', documents.error)
+        type EntryRow = Pick<
+          FinancialEntry,
+          | 'description'
+          | 'type'
+          | 'amount'
+          | 'status'
+          | 'settlement_kind'
+          | 'due_date'
+          | 'condition_description'
+          | 'paid_at'
+        >
 
         return {
           ...describeContract(contract.data as unknown as ContractRow),
@@ -292,6 +316,19 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
             papel: CONTRACT_FILE_ROLE_LABELS[document.contract_file_role],
             tipo: sourceKindLabel(document.source_kind),
           })),
+          // Sem acesso ao Financeiro a RLS devolve lista vazia, não erro: a
+          // falha de verdade não derruba o resto do contrato.
+          lancamentos: entries.error
+            ? null
+            : ((entries.data ?? []) as unknown as EntryRow[]).map((entry) => ({
+                descricao: entry.description,
+                tipo: entry.type,
+                valor: Number(entry.amount),
+                situacao: FINANCIAL_SITUATION_LABELS[getFinancialSituation(entry)],
+                vencimento: entry.settlement_kind === 'scheduled' ? entry.due_date : null,
+                condicao: entry.condition_description,
+                pago_em: entry.paid_at,
+              })),
         }
       },
     }),

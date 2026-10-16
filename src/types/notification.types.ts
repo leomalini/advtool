@@ -10,6 +10,10 @@ export type NotificationKind =
   // pede decisão (valor diferente, link cancelado, pagamento em dobro).
   | 'pagamento_recebido'
   | 'pagamento_alerta'
+  // Rotina diária de contratos (migration 71): entrou no prazo de aviso, ou
+  // passou do fim e continua vigente.
+  | 'contrato_vencendo'
+  | 'contrato_vencido'
   | (string & {})
 
 export interface Notification {
@@ -23,7 +27,7 @@ export interface Notification {
   link: string | null
   entity_type: string | null
   entity_id: string | null
-  /** 'webhook' | 'sync' | 'cadastro'. */
+  /** 'webhook' | 'sync' | 'cadastro' | 'rotina' (job agendado, migration 71). */
   source: string | null
   /** Compartilhado, não por usuário — mesma convenção de `publications.read_at`. */
   read_at: string | null

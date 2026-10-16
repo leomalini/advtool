@@ -30,6 +30,7 @@ export const financialEntrySchema = z
     client_id: optionalUuid,
     crm_item_id: optionalUuid,
     legal_process_id: optionalUuid,
+    contract_id: optionalUuid,
   })
   // As mesmas duas regras dos CHECKs da migration 40. Existem nos dois lugares
   // de propósito: o banco garante a integridade, o zod dá a mensagem no campo

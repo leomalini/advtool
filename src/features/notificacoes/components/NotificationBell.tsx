@@ -11,6 +11,8 @@ import {
   BrushCleaning,
   CheckCheck,
   CircleAlert,
+  FileClock,
+  FileExclamationPoint,
   Gavel,
   Newspaper,
   TriangleAlert,
@@ -47,6 +49,8 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   webhook_erro: TriangleAlert,
   pagamento_recebido: BadgeCheck,
   pagamento_alerta: CircleAlert,
+  contrato_vencendo: FileClock,
+  contrato_vencido: FileExclamationPoint,
 }
 
 function relativeTime(iso: string): string {

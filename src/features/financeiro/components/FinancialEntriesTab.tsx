@@ -13,6 +13,8 @@ import {
   describeEntryDeletion,
   formatCurrency,
   getFinancialSituation,
+  needsAmountBeforePayment,
+  ZERO_AMOUNT_PAYMENT_REASON,
   type FinancialEntryWithRelations,
 } from '@/types/financialEntry.types'
 import type { PendingAttachments } from '@/types/document.types'
@@ -37,10 +39,12 @@ interface FinancialEntriesTabProps {
   legalProcessId?: string | null
   crmItemIds?: string[]
   clientId?: string | null
+  contractId?: string | null
   /** Onde novos lançamentos são gravados. */
   lockedLegalProcessId?: string | null
   lockedCrmItemId?: string | null
   lockedClientId?: string | null
+  lockedContractId?: string | null
   itemLabel?: string
 }
 
@@ -70,15 +74,18 @@ export function FinancialEntriesTab({
   legalProcessId,
   crmItemIds,
   clientId,
+  contractId,
   lockedLegalProcessId,
   lockedCrmItemId,
   lockedClientId,
+  lockedContractId,
   itemLabel = 'item',
 }: FinancialEntriesTabProps) {
   const { data: entries = [], isLoading, isError } = useFinancialEntriesForEntity({
     legalProcessId,
     crmItemIds,
     clientId,
+    contractId,
   })
   const createEntry = useCreateFinancialEntry()
   const updateEntry = useUpdateFinancialEntry()
@@ -104,6 +111,7 @@ export function FinancialEntriesTab({
       legal_process_id: lockedLegalProcessId ?? data.legal_process_id,
       crm_item_id: lockedCrmItemId ?? data.crm_item_id,
       client_id: lockedClientId ?? data.client_id,
+      contract_id: lockedContractId ?? data.contract_id,
       attachments,
       generatePaymentLink,
     })
@@ -218,7 +226,9 @@ export function FinancialEntriesTab({
                   : null
                 : charges.live
                   ? CHARGE_BLOCK_REASONS.markPaidWithLiveLink
-                  : null
+                  : needsAmountBeforePayment(entry)
+                    ? ZERO_AMOUNT_PAYMENT_REASON
+                    : null
               const deleteBlockedBy = charges.paid
                 ? CHARGE_BLOCK_REASONS.deletePaidOnline
                 : charges.live

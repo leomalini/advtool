@@ -29,8 +29,9 @@ interface ContractSignDialogProps {
 /**
  * "Marcar como assinado": a data da assinatura e, se houver, o PDF assinado.
  *
- * A fase 4 do plano (docs/contratos.md) acrescenta aqui a prévia dos
- * lançamentos do Financeiro.
+ * Depois de confirmar, a página do contrato oferece a prévia dos lançamentos
+ * (ContractEntriesDialog) — num passo à parte, para a assinatura não depender
+ * de permissão no Financeiro.
  */
 export function ContractSignDialog({
   open,

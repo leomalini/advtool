@@ -23,6 +23,7 @@ import {
   RefreshCw,
   History,
   CalendarClock,
+  FileSignature,
   X,
 } from "lucide-react";
 import { resolveEventType } from "@/types/event.types";
@@ -191,6 +192,18 @@ export function EventDetailModal({
                       {formatDateTime(event.fatal_deadline)}
                     </p>
                   </div>
+                </InfoRow>
+              )}
+
+              {/* Contract expiry — kept by the database (migration 71). */}
+              {event.contract_id && (
+                <InfoRow icon={<FileSignature className="h-4 w-4 text-muted-foreground/60" />}>
+                  <Link href={`/contratos/${event.contract_id}`} className="group block">
+                    <p className="text-sm group-hover:underline">Ver o contrato</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Aviso de vencimento: anda com as datas do contrato
+                    </p>
+                  </Link>
                 </InfoRow>
               )}
 

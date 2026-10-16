@@ -2,7 +2,10 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { eventKeys } from '@/features/agenda/hooks/useEvents'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
+import { useInvalidateFinancialSurfaces } from '@/features/financeiro/hooks/useFinancialEntryMutations'
+import { createFinancialEntries } from '@/features/financeiro/services/financialEntries.service'
 import { useAuth } from '@/hooks/useAuth'
 import type { ContractInput, UpdateContractInput } from '@/schemas/contract.schema'
 import {
@@ -17,6 +20,7 @@ import {
   updateContract,
   uploadContractFile,
 } from '../services/contracts.service'
+import { contractEntryInputs, type ContractEntryDraft } from '../utils/contractEntries'
 import { contractKeys } from './useContracts'
 
 /** Toda superfície que mostra contrato — mesma forma dos demais invalidadores. */
@@ -28,7 +32,38 @@ export function useInvalidateContractSurfaces() {
     queryClient.invalidateQueries({ queryKey: contractKeys.all })
     // Os arquivos do contrato aparecem em /documentos e saem com ele.
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
+    // O compromisso de vencimento anda com o contrato (trigger, migration 71).
+    queryClient.invalidateQueries({ queryKey: eventKeys.all })
   }
+}
+
+/** Os lançamentos confirmados na prévia do contrato. */
+export function useCreateContractEntries() {
+  const invalidate = useInvalidateFinancialSurfaces()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: async ({
+      contract,
+      drafts,
+    }: {
+      contract: Parameters<typeof contractEntryInputs>[0]
+      drafts: ContractEntryDraft[]
+    }) => {
+      if (!user) throw new Error('Sessão expirada. Entre de novo.')
+      return createFinancialEntries(contractEntryInputs(contract, drafts), user.id)
+    },
+    onSuccess: (created) => {
+      invalidate()
+      toast.success(
+        created.length === 1
+          ? 'Lançamento criado no Financeiro.'
+          : `${created.length} lançamentos criados no Financeiro.`
+      )
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Erro ao lançar no Financeiro.'),
+  })
 }
 
 /** Arquivo escolhido no formulário, para subir depois de o contrato existir. */

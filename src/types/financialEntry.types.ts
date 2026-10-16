@@ -51,6 +51,9 @@ export interface FinancialEntry {
   client_id: string | null
   crm_item_id: string | null
   legal_process_id: string | null
+  /** Contrato que originou o lançamento (migration 71). Editar o contrato não
+   * reescreve o lançamento. */
+  contract_id: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -150,6 +153,20 @@ export function getCashFlowDate(
   entry: Pick<FinancialEntry, 'status' | 'due_date' | 'paid_at'>
 ): string | null {
   return entry.status === 'pago' ? (entry.paid_at ?? entry.due_date) : entry.due_date
+}
+
+/**
+ * O êxito lançado de um contrato fica em R$ 0 até se saber o valor (migration
+ * 71). Dar baixa nele assim gravaria um recebimento de zero: os botões de
+ * baixa pedem o valor antes.
+ */
+export const ZERO_AMOUNT_PAYMENT_REASON =
+  'Informe o valor recebido antes da baixa: edite o lançamento.'
+
+export function needsAmountBeforePayment(
+  entry: Pick<FinancialEntry, 'status' | 'amount'>
+): boolean {
+  return entry.status !== 'pago' && Number(entry.amount) === 0
 }
 
 export function formatCurrency(value: number): string {

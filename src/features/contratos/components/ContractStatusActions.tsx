@@ -25,13 +25,22 @@ import { ContractSignDialog } from './ContractSignDialog'
 const CLOSING_STATUSES = new Set<ContractStatus>(['encerrado', 'rescindido'])
 
 const CLOSING_DESCRIPTIONS: Partial<Record<ContractStatus, string>> = {
-  encerrado: 'O contrato deixa de valer e sai dos avisos de vencimento.',
-  rescindido: 'O contrato foi desfeito antes do fim e sai dos avisos de vencimento.',
+  encerrado: 'O contrato deixa de valer e sai da Agenda e dos avisos de vencimento.',
+  rescindido:
+    'O contrato foi desfeito antes do fim e sai da Agenda e dos avisos de vencimento. ' +
+    'Lançamentos em aberto continuam no Financeiro.',
+}
+
+interface ContractStatusActionsProps {
+  contract: ContractWithRelations
+  /** Depois de "Marcar como assinado" dar certo — a página oferece a prévia
+   * dos lançamentos. */
+  onSigned?: (signedAt: string) => void
 }
 
 /** O próximo passo do ciclo como botão principal; os demais status num menu,
  * para corrigir um clique errado ou pular etapas. */
-export function ContractStatusActions({ contract }: { contract: ContractWithRelations }) {
+export function ContractStatusActions({ contract, onSigned }: ContractStatusActionsProps) {
   const changeStatus = useChangeContractStatus()
   const [signOpen, setSignOpen] = useState(false)
   const [closing, setClosing] = useState<ContractStatus | null>(null)
@@ -102,7 +111,12 @@ export function ContractStatusActions({ contract }: { contract: ContractWithRela
         onConfirm={(signedAt, signedFile) =>
           changeStatus.mutate(
             { id: contract.id, status: 'vigente', signedAt, signedFile },
-            { onSuccess: () => setSignOpen(false) }
+            {
+              onSuccess: () => {
+                setSignOpen(false)
+                onSigned?.(signedAt)
+              },
+            }
           )
         }
       />

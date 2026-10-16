@@ -31,6 +31,8 @@ import {
   formatCurrency,
   getCashFlowDate,
   getFinancialSituation,
+  needsAmountBeforePayment,
+  ZERO_AMOUNT_PAYMENT_REASON,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
 import type { PendingAttachments } from '@/types/document.types'
@@ -608,7 +610,9 @@ export function FinanceiroContent({
                       : null
                     : charges.live
                       ? CHARGE_BLOCK_REASONS.markPaidWithLiveLink
-                      : null
+                      : needsAmountBeforePayment(entry)
+                        ? ZERO_AMOUNT_PAYMENT_REASON
+                        : null
 
                   return (
                     <div
