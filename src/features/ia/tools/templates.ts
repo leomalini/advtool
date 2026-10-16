@@ -5,19 +5,32 @@ import {
   renderTemplate,
   TemplateSyntaxError,
 } from '@/features/documentos/templates/docx'
+import { catalogEntry } from '@/features/documentos/templates/catalog'
 import {
   classifyTemplateFields,
   type ChoiceFieldDefinition,
   type ClassifiedFields,
 } from '@/features/documentos/templates/fieldSettings'
 import {
+  partyValues,
+  rolesWithoutParty,
+  type PartyForValues,
+} from '@/features/documentos/templates/partyFields'
+import {
+  contractValues,
   getProcessClientId,
   resolveTemplateFields,
+  type ContractNumbers,
 } from '@/features/documentos/templates/resolveFields'
 import { buildTemplateValues } from '@/features/documentos/templates/values'
 import { parseFieldSettings, parsePartyRoles } from '@/schemas/documentTemplate.schema'
 import { DOCUMENT_CATEGORY_LABELS } from '@/types/document.types'
-import { MANUAL_FIELD_FORMAT_LABELS, type TemplateCategory } from '@/types/documentTemplate.types'
+import {
+  MANUAL_FIELD_FORMAT_LABELS,
+  type TemplateCategory,
+  type TemplateFieldSettings,
+  type TemplatePartyRole,
+} from '@/types/documentTemplate.types'
 import { AI_FILE_TYPES, AI_FILES_BUCKET } from '../files/constants'
 import { downloadBytes, getAiFile, saveGeneratedFile } from '../files/storage'
 import { clientLabel, toolError, type ToolClient } from './shared'
@@ -45,14 +58,15 @@ interface TemplateRow {
 function describeFields(classified: ClassifiedFields) {
   return {
     campos_do_cadastro: classified.cadastro,
-    // Partes de contrato (migration 70): o Assistente ainda não as preenche —
-    // é a fase 3 de docs/contratos.md. Saem [FALTA] aqui.
+    // Partes de contrato (migration 70): quem as preenche é gerar_contrato,
+    // com o papel de cada uma.
     ...(classified.party.length > 0
       ? {
+          papeis: [
+            ...new Map(classified.party.map((field) => [field.role.key, field.role])).values(),
+          ].map((role) => ({ papel: role.key, rotulo: role.label })),
           campos_das_partes: classified.party.map((field) => field.name),
-          aviso_partes:
-            'Preenchidos pelas partes do contrato, gerando pela página do contrato em ' +
-            'Contratos. Gerado aqui, saem como [FALTA].',
+          aviso_partes: 'Modelo de contrato: gere com gerar_contrato, informando as partes.',
         }
       : {}),
     campos_manuais: classified.manual.map((field) => ({
@@ -133,16 +147,21 @@ async function fetchClientName(supabase: ToolClient, clientId: string): Promise<
   return clientLabel(data as Parameters<typeof clientLabel>[0])
 }
 
-type TemplateSource =
-  | { error: string }
-  | { name: string; bytes: Uint8Array; classified: ClassifiedFields }
+export interface LoadedTemplate {
+  name: string
+  bytes: Uint8Array
+  fields: string[]
+  settings: TemplateFieldSettings
+  /** Papéis de parte declarados — o .docx anexado não declara nenhum. */
+  roles: TemplatePartyRole[]
+}
 
-/** O modelo cadastrado ou o .docx anexado na conversa, já com os campos
- * classificados. O anexo não tem definição gravada: vale o padrão pelo nome. */
-async function loadSource(
+/** O modelo cadastrado ou o .docx anexado na conversa. O anexo não tem
+ * definição gravada: vale o padrão pelo nome. */
+export async function loadSource(
   supabase: ToolClient,
   { templateId, fileId }: { templateId?: string; fileId?: string },
-): Promise<TemplateSource> {
+): Promise<LoadedTemplate | { error: string }> {
   if (templateId) {
     const { data, error } = await supabase
       .from('document_templates')
@@ -155,11 +174,9 @@ async function loadSource(
     return {
       name: row.name,
       bytes: await downloadBytes(supabase, DOCUMENTS_BUCKET, row.file_path),
-      classified: classifyTemplateFields(
-        row.fields ?? [],
-        parseFieldSettings(row.field_settings),
-        parsePartyRoles(row.parties),
-      ),
+      fields: row.fields ?? [],
+      settings: parseFieldSettings(row.field_settings),
+      roles: parsePartyRoles(row.parties),
     }
   }
 
@@ -172,7 +189,178 @@ async function loadSource(
   return {
     name: file.file_name.replace(/\.docx$/i, ''),
     bytes,
-    classified: classifyTemplateFields(inspectTemplateFields(bytes), {}),
+    fields: inspectTemplateFields(bytes),
+    settings: {},
+    roles: [],
+  }
+}
+
+/** Os campos que quem gera preenche — compartilhados por gerar_documento_de_modelo
+ * e gerar_contrato. */
+export const fillInputShape = {
+  advogados_ids: z
+    .array(z.string().uuid())
+    .max(5)
+    .optional()
+    .describe(
+      'Advogados do documento (ids de membros_do_escritorio); o primeiro assina. Omita ' +
+        'se o usuário não disser — vale quem pede, se tiver OAB.',
+    ),
+  valores: z
+    .array(z.object({ campo: z.string(), valor: z.string().max(5000) }))
+    .optional()
+    .describe(
+      'Campos MANUAIS, só com valores que o usuário informou ou que vieram de um documento ' +
+        'lido e mostrado a ele. Valor em reais, número, percentual ou data como está escrito.',
+    ),
+  escolhas: z
+    .array(
+      z.object({
+        campo: z.string(),
+        opcoes: z.array(z.string().max(200)).min(1).max(20),
+      }),
+    )
+    .optional()
+    .describe(
+      'Campos de OPÇÕES: os rótulos escolhidos, exatamente como listar_modelos mostra. ' +
+        'Só o que o usuário pediu.',
+    ),
+  textos: z
+    .array(
+      z.object({
+        campo: z.string().describe('Nome do campo de IA, sem chaves.'),
+        texto: z.string().max(30000),
+      }),
+    )
+    .optional()
+    .describe(
+      'Campos de IA: texto simples, sem Markdown, parágrafos separados por linha em branco.',
+    ),
+  nome_arquivo: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Nome do arquivo sem extensão. Padrão: "<modelo> - <cliente>".'),
+}
+
+interface FillInput {
+  advogados_ids?: string[]
+  valores?: { campo: string; valor: string }[]
+  escolhas?: { campo: string; opcoes: string[] }[]
+  textos?: { campo: string; texto: string }[]
+  nome_arquivo?: string
+}
+
+export interface RenderRequest extends FillInput {
+  source: LoadedTemplate
+  /** Papéis com que os campos são classificados. */
+  roles: TemplatePartyRole[]
+  clientId: string | null
+  processId: string | null
+  /** Números do contrato para `{contrato_*}` — o contrato ainda não existe
+   * quando o Assistente gera a minuta. */
+  contractNumbers?: ContractNumbers
+  /** Partes para os campos dos papéis. */
+  parties?: PartyForValues[]
+}
+
+/**
+ * Preenche o modelo e deixa o .docx na conversa. Cada valor só entra no tipo de
+ * campo a que pertence: dado de cadastro sai do banco, número do contrato do
+ * registro (ou do pedido), parte das partes — nunca do texto livre do modelo.
+ */
+export async function renderAndSave(
+  supabase: ToolClient,
+  context: TemplateToolsContext,
+  request: RenderRequest,
+) {
+  const { source } = request
+  const classified = classifyTemplateFields(source.fields, source.settings, request.roles)
+  const lawyerIds = request.advogados_ids ?? (await defaultLawyerIds(supabase, context.userId))
+
+  // Com os números em mãos, o grupo `contrato` não passa pelo banco — nem
+  // gera o aviso de "só pelo contrato".
+  const cadastroFields = request.contractNumbers
+    ? classified.cadastro.filter((field) => catalogEntry(field).group !== 'contrato')
+    : classified.cadastro
+  const { values: cadastro, notes } = await resolveTemplateFields(supabase, {
+    fields: cadastroFields,
+    clientId: request.clientId,
+    processId: request.processId,
+    lawyerIds,
+    now: new Date(),
+  })
+  if (request.contractNumbers) Object.assign(cadastro, contractValues(request.contractNumbers))
+
+  const manualNames = new Set(classified.manual.map((field) => field.name))
+  const aiNames = new Set(classified.ai.map((field) => field.name))
+  const manual: Record<string, string> = {}
+  const ai: Record<string, string> = {}
+  const ignored: string[] = []
+  for (const { campo, valor } of request.valores ?? []) {
+    const name = campo.replace(/[{}]/g, '').trim()
+    if (manualNames.has(name)) manual[name] = valor
+    else ignored.push(name)
+  }
+  for (const { campo, texto } of request.textos ?? []) {
+    const name = campo.replace(/[{}]/g, '').trim()
+    if (aiNames.has(name)) ai[name] = texto
+    else ignored.push(name)
+  }
+  const choices: Record<string, string[]> = {}
+  for (const { campo, opcoes } of request.escolhas ?? []) {
+    const name = campo.replace(/[{}]/g, '').trim()
+    const field = classified.choice.find((item) => item.name === name)
+    if (!field) {
+      ignored.push(name)
+      continue
+    }
+    const { ids, warnings } = resolveChoices(field, opcoes)
+    choices[name] = ids
+    notes.push(...warnings)
+  }
+
+  const party = partyValues(classified.party, request.parties ?? [])
+  const missingRoles = rolesWithoutParty(classified.party, request.parties ?? [])
+  if (missingRoles.length > 0) {
+    notes.push(
+      request.parties
+        ? `Sem parte como ${missingRoles.map((role) => role.label).join(', ')}.`
+        : 'Os campos das partes só se preenchem com gerar_contrato.',
+    )
+  }
+
+  const rendered = renderTemplate(
+    source.bytes,
+    buildTemplateValues({ classified, cadastro, party, manual, choices, ai }),
+  )
+
+  const displayName =
+    cadastro.cliente_nome ??
+    (request.clientId ? await fetchClientName(supabase, request.clientId) : null) ??
+    request.parties?.[0]?.name ??
+    null
+  // Sem cliente, "preenchido" distingue o arquivo gerado do anexo que serviu
+  // de modelo — os dois ficam lado a lado na conversa.
+  const baseName =
+    request.nome_arquivo?.trim() || `${source.name} - ${displayName ?? 'preenchido'}`
+  const fileName = `${baseName.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'documento'}.docx`
+
+  const saved = await saveGeneratedFile(supabase, {
+    userId: context.userId,
+    conversationId: context.conversationId,
+    fileName,
+    mediaType: AI_FILE_TYPES.docx.mediaType,
+    bytes: rendered.bytes,
+  })
+
+  return {
+    arquivo_id: saved.id,
+    nome: fileName,
+    modelo: source.name,
+    campos_faltando: rendered.missing,
+    campos_ignorados: ignored,
+    avisos: notes,
   }
 }
 
@@ -206,10 +394,10 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
             descricao: row.description,
             ...describeFields(
               classifyTemplateFields(
-        row.fields ?? [],
-        parseFieldSettings(row.field_settings),
-        parsePartyRoles(row.parties),
-      ),
+                row.fields ?? [],
+                parseFieldSettings(row.field_settings),
+                parsePartyRoles(row.parties),
+              ),
             ),
           })),
         }
@@ -236,49 +424,7 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
           .optional()
           .describe('Se omitido e houver processo, vem do processo.'),
         processo_id: z.string().uuid().optional(),
-        advogados_ids: z
-          .array(z.string().uuid())
-          .max(5)
-          .optional()
-          .describe(
-            'Advogados do documento (ids de membros_do_escritorio); o primeiro assina. Omita ' +
-              'se o usuário não disser — vale quem pede, se tiver OAB.',
-          ),
-        valores: z
-          .array(z.object({ campo: z.string(), valor: z.string().max(5000) }))
-          .optional()
-          .describe(
-            'Campos MANUAIS, só com valores que o usuário informou. Valor em reais, número, ' +
-              'percentual ou data como o usuário escreveu.',
-          ),
-        escolhas: z
-          .array(
-            z.object({
-              campo: z.string(),
-              opcoes: z.array(z.string().max(200)).min(1).max(20),
-            }),
-          )
-          .optional()
-          .describe(
-            'Campos de OPÇÕES: os rótulos escolhidos, exatamente como listar_modelos mostra. ' +
-              'Só o que o usuário pediu.',
-          ),
-        textos: z
-          .array(
-            z.object({
-              campo: z.string().describe('Nome do campo de IA, sem chaves.'),
-              texto: z.string().max(30000),
-            }),
-          )
-          .optional()
-          .describe(
-            'Campos de IA: texto simples, sem Markdown, parágrafos separados por linha em branco.',
-          ),
-        nome_arquivo: z
-          .string()
-          .max(120)
-          .optional()
-          .describe('Nome do arquivo sem extensão. Padrão: "<modelo> - <cliente>".'),
+        ...fillInputShape,
       }),
       execute: async ({
         modelo_id,
@@ -299,79 +445,21 @@ export function createTemplateTools(supabase: ToolClient, context: TemplateTools
         try {
           const source = await loadSource(supabase, { templateId: modelo_id, fileId: arquivo_id })
           if ('error' in source) return source
-          const { classified } = source
-
           const clientId =
             cliente_id ?? (processo_id ? await getProcessClientId(supabase, processo_id) : null)
-          const lawyerIds = advogados_ids ?? (await defaultLawyerIds(supabase, context.userId))
-
-          const { values: cadastro, notes } = await resolveTemplateFields(supabase, {
-            fields: classified.cadastro,
+          return await renderAndSave(supabase, context, {
+            source,
+            // Campos de parte saem [FALTA] aqui, com aviso: quem os preenche é
+            // gerar_contrato.
+            roles: source.roles,
             clientId,
             processId: processo_id ?? null,
-            lawyerIds,
-            now: new Date(),
+            advogados_ids,
+            valores,
+            escolhas,
+            textos,
+            nome_arquivo,
           })
-
-          // Cada valor só entra no tipo de campo a que pertence: dado de
-          // cadastro sai do banco, nunca do modelo de linguagem.
-          const manualNames = new Set(classified.manual.map((field) => field.name))
-          const aiNames = new Set(classified.ai.map((field) => field.name))
-          const manual: Record<string, string> = {}
-          const ai: Record<string, string> = {}
-          const ignored: string[] = []
-          for (const { campo, valor } of valores ?? []) {
-            const name = campo.replace(/[{}]/g, '').trim()
-            if (manualNames.has(name)) manual[name] = valor
-            else ignored.push(name)
-          }
-          for (const { campo, texto } of textos ?? []) {
-            const name = campo.replace(/[{}]/g, '').trim()
-            if (aiNames.has(name)) ai[name] = texto
-            else ignored.push(name)
-          }
-          const choices: Record<string, string[]> = {}
-          for (const { campo, opcoes } of escolhas ?? []) {
-            const name = campo.replace(/[{}]/g, '').trim()
-            const field = classified.choice.find((item) => item.name === name)
-            if (!field) {
-              ignored.push(name)
-              continue
-            }
-            const { ids, warnings } = resolveChoices(field, opcoes)
-            choices[name] = ids
-            notes.push(...warnings)
-          }
-
-          const rendered = renderTemplate(
-            source.bytes,
-            buildTemplateValues({ classified, cadastro, manual, choices, ai }),
-          )
-
-          const displayName =
-            cadastro.cliente_nome ?? (clientId ? await fetchClientName(supabase, clientId) : null)
-          // Sem cliente, "preenchido" distingue o arquivo gerado do anexo que
-          // serviu de modelo — os dois ficam lado a lado na conversa.
-          const baseName =
-            nome_arquivo?.trim() || `${source.name} - ${displayName ?? 'preenchido'}`
-          const fileName = `${baseName.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'documento'}.docx`
-
-          const saved = await saveGeneratedFile(supabase, {
-            userId: context.userId,
-            conversationId: context.conversationId,
-            fileName,
-            mediaType: AI_FILE_TYPES.docx.mediaType,
-            bytes: rendered.bytes,
-          })
-
-          return {
-            arquivo_id: saved.id,
-            nome: fileName,
-            modelo: source.name,
-            campos_faltando: rendered.missing,
-            campos_ignorados: ignored,
-            avisos: notes,
-          }
         } catch (error) {
           if (error instanceof TemplateSyntaxError) return { error: error.message }
           console.error('[ia] tool gerar_documento_de_modelo falhou:', error)

@@ -41,9 +41,13 @@ export const AI_FILE_ACCEPT = Object.keys(AI_FILE_TYPES)
  * Documentos — um anexo sempre cabe quando é salvo lá. */
 export const AI_FILE_MAX_BYTES = 25 * 1024 * 1024
 
-/** Por mensagem. O Gemini aceita até 100 MB por pedido; cinco de 25 MB já
- * passariam disso, mas o caso real é um ou dois documentos. */
-export const AI_FILES_PER_MESSAGE = 5
+/** Por mensagem. Dez, porque um contrato se monta com vários documentos (RG,
+ * certidão, comprovante, matrícula…) — docs/contratos.md. */
+export const AI_FILES_PER_MESSAGE = 10
+
+/** Teto da mensagem inteira. O Gemini aceita até 100 MB por pedido, e o
+ * leitor de documentos manda os mesmos arquivos de novo num pedido próprio. */
+export const AI_FILES_MAX_BYTES_PER_MESSAGE = 50 * 1024 * 1024
 
 export const AI_FILES_BUCKET = 'ai-files'
 

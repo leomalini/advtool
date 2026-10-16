@@ -2,18 +2,13 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
-import { lookupCnpj } from '@/lib/brasilapi/cnpj'
 import { createAssistantModel } from '@/features/ia/model'
 import { isProviderCreditError, isProviderQuotaError } from '@/features/ia/providerErrors'
 import { readDocumentsAsParts, type ReadableDocument } from '@/features/ia/files/documentParts'
 import { classifyTemplateFields } from '@/features/documentos/templates/fieldSettings'
-import { addOption } from '@/features/contratos/reading/mergeReading'
+import { enrichCompanies, matchClients } from '@/features/contratos/reading/enrichReading'
 import { runReader } from '@/features/contratos/reading/runReader'
-import {
-  RECEITA_SOURCE,
-  type ReaderResult,
-  type ReadPerson,
-} from '@/features/contratos/reading/readerTypes'
+import type { ReaderResult } from '@/features/contratos/reading/readerTypes'
 import { parseFieldSettings, parsePartyRoles } from '@/schemas/documentTemplate.schema'
 import { PARTY_ROLE_PRESETS } from '@/types/contract.types'
 import type { TemplatePartyRole } from '@/types/documentTemplate.types'
@@ -24,9 +19,6 @@ export const maxDuration = 180
 /** Por leitura. O Gemini aceita até 100 MB por pedido; a folga cobre o texto. */
 const MAX_DOCUMENTS = 10
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024
-
-/** Consultas de CNPJ por leitura — cada uma é uma ida à BrasilAPI. */
-const MAX_CNPJ_LOOKUPS = 3
 
 const bodySchema = z.object({
   contractId: z.string().uuid(),
@@ -42,77 +34,6 @@ interface TemplateRow {
   fields: string[] | null
   field_settings: unknown
   parties: unknown
-}
-
-/** O cliente que já usa o CPF/CNPJ de cada pessoa — completar em vez de
- * duplicar. Uma consulta para todas. */
-async function matchClients(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  persons: ReadPerson[],
-): Promise<void> {
-  const documents = [
-    ...new Set(persons.map((person) => person.fields.document?.[0]?.value).filter(Boolean)),
-  ] as string[]
-  if (documents.length === 0) return
-
-  const list = documents.join(',')
-  const { data, error } = await supabase
-    .from('clients')
-    .select('id, type, name, company_name, trade_name, cpf_digits, cnpj_digits')
-    .or(`cpf_digits.in.(${list}),cnpj_digits.in.(${list})`)
-  if (error) {
-    // Sem a conferência a leitura ainda serve; só não aponta o cadastro.
-    console.error('[contratos] busca de clientes por documento falhou:', error.code, error.message)
-    return
-  }
-  for (const person of persons) {
-    const document = person.fields.document?.[0]?.value
-    const row = (data ?? []).find(
-      (client) => client.cpf_digits === document || client.cnpj_digits === document,
-    )
-    if (row) {
-      person.clientMatch = {
-        id: row.id as string,
-        name: ((row.type === 'company' ? row.company_name : row.name) as string | null) ?? '',
-      }
-    }
-  }
-}
-
-/** A Receita como mais uma origem para a pessoa jurídica: o que bater com os
- * documentos se junta; o que divergir vira conflito, como qualquer outro. */
-async function enrichCompanies(persons: ReadPerson[]): Promise<void> {
-  const companies = persons
-    .filter((person) => person.personType === 'company')
-    .filter((person) => person.fields.document?.[0]?.value.length === 14)
-    .slice(0, MAX_CNPJ_LOOKUPS)
-
-  await Promise.all(
-    companies.map(async (person) => {
-      const result = await lookupCnpj(person.fields.document?.[0]?.value as string)
-      if (!result.ok) return
-      const { company } = result
-      addOption(person.fields, 'name', company.company_name, RECEITA_SOURCE)
-      addOption(person.fields, 'email', company.email?.toLowerCase(), RECEITA_SOURCE)
-      addOption(person.fields, 'phone', company.phone, RECEITA_SOURCE)
-      if (company.address_street || company.address_city) {
-        addOption(
-          person.fields,
-          'address',
-          {
-            street: company.address_street,
-            number: company.address_number,
-            complement: company.address_complement,
-            neighborhood: company.address_neighborhood,
-            city: company.address_city,
-            state: company.address_state,
-            zip: company.address_zip,
-          },
-          RECEITA_SOURCE,
-        )
-      }
-    }),
-  )
 }
 
 /**

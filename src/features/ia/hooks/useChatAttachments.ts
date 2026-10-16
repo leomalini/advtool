@@ -5,6 +5,7 @@ import type { FileUIPart } from 'ai'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import {
+  AI_FILES_MAX_BYTES_PER_MESSAGE,
   AI_FILES_PER_MESSAGE,
   AI_FILE_MAX_BYTES,
   aiFileTypeFromName,
@@ -43,9 +44,14 @@ export function useChatAttachments(conversationId: string) {
       if (!user) return
 
       const accepted: ChatAttachment[] = []
+      let totalBytes = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
       for (const file of files) {
         if (attachments.length + accepted.length >= AI_FILES_PER_MESSAGE) {
           toast.error(`No máximo ${AI_FILES_PER_MESSAGE} arquivos por mensagem.`)
+          break
+        }
+        if (totalBytes + file.size > AI_FILES_MAX_BYTES_PER_MESSAGE) {
+          toast.error('Os anexos de uma mensagem passam de 50 MB juntos. Mande em duas vezes.')
           break
         }
         if (!aiFileTypeFromName(file.name)) {
@@ -57,6 +63,7 @@ export function useChatAttachments(conversationId: string) {
           continue
         }
         accepted.push({ localId: crypto.randomUUID(), file, status: 'uploading' })
+        totalBytes += file.size
       }
       if (accepted.length === 0) return
 
@@ -76,7 +83,7 @@ export function useChatAttachments(conversationId: string) {
           })
       }
     },
-    [attachments.length, conversationId, update, user],
+    [attachments, conversationId, update, user],
   )
 
   const remove = useCallback((localId: string) => {
