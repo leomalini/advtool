@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRecentMovements } from '../hooks/useLegalProcesses'
@@ -40,6 +41,14 @@ export function MovimentacoesFeed({ onSelectProcess }: MovimentacoesFeedProps) {
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
         <Activity className="w-4 h-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold text-foreground">Movimentações recentes</h3>
+        {/* Este painel é o relance de dentro de /processos: as 30 últimas, sem
+            filtro. O módulo é que tem período, categoria e fila de trabalho. */}
+        <Link
+          href="/movimentacoes"
+          className="ml-auto text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        >
+          Ver todas →
+        </Link>
       </div>
 
       <div className="flex-1 overflow-y-auto">

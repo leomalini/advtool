@@ -90,6 +90,8 @@ import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { EntityContractsTab } from '@/features/contratos/components/EntityContractsTab'
+import { MovementCategoryChip } from '@/features/movimentacoes/components/MovementCategoryChip'
+import { movementText, suggestedTaskTitle } from '@/features/movimentacoes/utils/display'
 import { usePermissions } from '@/hooks/usePermissions'
 import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { Can } from '@/components/shared/Can'
@@ -208,14 +210,6 @@ function partyAsClientDefaults(party: DisplayParty): Partial<ClientWithRelations
     name: party.name,
     cpf: document,
   } as Partial<ClientWithRelations>
-}
-
-/** Título do movimento: `title` quando a origem separou, senão a primeira
- * linha da descrição. */
-function movementTitle(movement: LegalProcessMovement): string {
-  if (movement.title) return movement.title
-  const [firstLine] = movement.description.split('\n')
-  return firstLine
 }
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
@@ -1161,6 +1155,13 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   const isPublicacao = movement.kind === 'publicacao'
                   const unread = isPublicacao && !movement.read_at
                   const docs = docsByMovement.get(movement.id) ?? []
+                  // O mesmo tratamento da listagem: separa o movimento da TPU
+                  // dos complementos e descarta os códigos numéricos.
+                  const {
+                    headline: movementHeadline,
+                    detail: movementDetail,
+                    isTpu: movementIsTpu,
+                  } = movementText(movement)
 
                   return (
                     <div
@@ -1191,6 +1192,10 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/* A MESMA classificação de /movimentacoes, pelo mesmo
+                              componente: um chip divergente entre as duas telas
+                              seria lido como classificação diferente. */}
+                          <MovementCategoryChip category={movement.category} />
                           {unread && (
                             <span className="inline-flex items-center rounded-full border border-warning/30 bg-warning/12 px-1.5 py-0.5 text-[10px] font-medium text-warning">
                               Não lida
@@ -1210,10 +1215,19 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                         </div>
 
                         <p className={cn('text-sm mt-1 leading-relaxed', unread && 'font-medium')}>
-                          {movementTitle(movement)}
+                          {movementHeadline}
                         </p>
 
-                        {movement.title && movement.description !== movement.title && (
+                        {movementDetail && (
+                          <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
+                            {movementDetail}
+                          </p>
+                        )}
+
+                        {/* O texto cru só quando ele acrescenta algo. Na forma
+                            TPU ele repete o título e junta os códigos
+                            numéricos, que não dizem nada a ninguém. */}
+                        {!movementIsTpu && movement.description.trim() !== movementHeadline.trim() && (
                           <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
                             {movement.description}
                           </p>
@@ -1516,7 +1530,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
           </DialogHeader>
           <TaskForm
             defaultValues={
-              taskSource ? { title: movementTitle(taskSource).slice(0, 200) } : undefined
+              taskSource ? { title: suggestedTaskTitle(taskSource) } : undefined
             }
             onSubmit={handleCreateTask}
             isLoading={createTask.isPending}

@@ -88,6 +88,30 @@ export type MovementKind = 'movimentacao' | 'publicacao'
  * dado (migration 68). */
 export type MovementReceivedVia = 'webhook' | 'sync' | 'manual'
 
+/** Natureza do ato, derivada do texto pelo banco (migration 72).
+ *
+ * Espelha o CHECK de `legal_process_movements.category` — se um valor mudar
+ * lá, muda aqui. Os rótulos e o agrupamento visual ficam em
+ * `src/features/movimentacoes/utils/categories.ts`, não aqui: este arquivo é
+ * o vocabulário, não a apresentação. */
+export type MovementCategory =
+  | 'decisao'
+  | 'audiencia'
+  | 'intimacao'
+  | 'prazo'
+  | 'peticao'
+  | 'recurso'
+  | 'expediente'
+  | 'encerramento'
+  | 'outros'
+
+/** Qual audiência do processo o ato designa (migration 74).
+ *
+ * Com `legal_process_id`, é a identidade do compromisso na Agenda: remarcação
+ * do mesmo slot MOVE o evento, slot diferente cria outro — conciliação e
+ * instrução são duas audiências, "Una" redesignada é a mesma. */
+export type MovementHearingSlot = 'una' | 'conciliacao' | 'instrucao' | 'outra'
+
 export interface LegalProcessMovement {
   id: string
   legal_process_id: string
@@ -110,8 +134,24 @@ export interface LegalProcessMovement {
   source: 'manual' | 'busca_processos'
   /** Nula só para um caminho de escrita que não informe — ver a migration 68. */
   received_via: MovementReceivedVia | null
+  /** Derivada por `public.classify_movement()` no insert e mantida por
+   * trigger. Editável à mão: o trigger só dispara quando `title`,
+   * `description` ou `raw_data` mudam. */
+  category: MovementCategory
+  /** O texto manda alguém fazer algo. Heurística ADVISORY de
+   * `public.movement_requires_action()` — alimenta filtro e chip, nunca cria
+   * tarefa nem prazo. */
+  requires_action: boolean
+  /** Nulo quando o ato não designa audiência. Ver `MovementHearingSlot`. */
+  hearing_slot: MovementHearingSlot | null
+  /** Instante da audiência, lido do TEXTO do ato (migration 74) — não confundir
+   * com `movement_date`, que é quando ela foi designada. Nulo quando o texto
+   * não traz data e hora, o que é o caso dos atos no formato codificado da
+   * TPU: essas linhas viram pendência, não evento. */
+  hearing_at: string | null
   raw_data: Record<string, unknown> | null
   created_at: string
+  updated_at: string
 }
 
 export type PartyPolo = 'ativo' | 'passivo'
@@ -272,6 +312,10 @@ export type ProcessoIssueKind =
   | 'stale_movements'
   | 'missing_client'
   | 'missing_assignee'
+  /** Audiência designada cuja data não veio no texto do andamento, então o
+   * trigger da migration 74 não teve onde pôr o compromisso. Precisa de
+   * cadastro manual na Agenda. */
+  | 'hearing_without_date'
 
 export interface ProcessoIssue {
   kind: ProcessoIssueKind

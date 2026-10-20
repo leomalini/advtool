@@ -241,6 +241,16 @@ export type BpCnjLookupData = BpProcessoCapa
 /** A movimentação tem `conteudo`, e não `titulo`. */
 export interface BpMovimentacao {
   data: string
+  /** CONFERIDO contra dados reais (171 registros, 20/10/2026), ao contrário do
+   * resto deste bloco, que vem da spec.
+   *
+   * Chega em duas formas: codificada na TPU do CNJ
+   * (`<movimento> — <complemento>: <código>`, 48 dos 171) ou texto corrido
+   * (123). ⚠️ Em movimento de audiência a origem perde o substantivo inicial:
+   * vem `"de Conciliação — designada: 9"`, sem a palavra "Audiência". Não é
+   * perda nossa — ver o apêndice BuscaProcessos em `docs/ROADMAP-MODULOS.md`.
+   * Quem lida com as duas formas é
+   * `src/features/movimentacoes/utils/movementText.ts`. */
   conteudo: string | null
   classificacao_predita: {
     nome?: string | null

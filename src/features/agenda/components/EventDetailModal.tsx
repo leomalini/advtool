@@ -24,6 +24,7 @@ import {
   History,
   CalendarClock,
   FileSignature,
+  ScanText,
   X,
 } from "lucide-react";
 import { resolveEventType } from "@/types/event.types";
@@ -311,6 +312,18 @@ export function EventDetailModal({
                     >
                       <RefreshCw className="h-3 w-3" />
                       {seriesLabel(event)}
+                    </Badge>
+                  )}
+                  {/* Compromisso criado pelo trigger da migration 74: a data
+                      veio de leitura do texto do andamento, e o escritório
+                      ainda precisa conferi-la nos autos. */}
+                  {event.movement_id && (
+                    <Badge
+                      variant="outline"
+                      className="text-warning border-warning/25 bg-warning/12 gap-1 text-[11px]"
+                    >
+                      <ScanText className="h-3 w-3" />
+                      Data a confirmar
                     </Badge>
                   )}
                   {event.is_retroactive && (

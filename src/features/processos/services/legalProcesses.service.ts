@@ -679,6 +679,24 @@ export async function getLegalProcessesPendencies(): Promise<ProcessoPendency[]>
       }
     }
 
+    // Audiência designada que o trigger da migration 74 não conseguiu agendar,
+    // porque a data não veio no texto do andamento (é o caso dos atos no
+    // formato codificado da TPU). Alta: audiência marcada fora da agenda é
+    // exatamente o que ninguém pode descobrir no dia.
+    const hearingsWithoutDate = processo.movements.filter(
+      (m) => m.hearing_slot !== null && m.hearing_at === null,
+    ).length
+    if (hearingsWithoutDate > 0) {
+      issues.push({
+        kind: 'hearing_without_date',
+        label:
+          hearingsWithoutDate === 1
+            ? 'Audiência designada sem data no andamento'
+            : `${hearingsWithoutDate} audiências designadas sem data no andamento`,
+        severity: 'high',
+      })
+    }
+
     if (item && !item.client_id) {
       issues.push({ kind: 'missing_client', label: 'Sem cliente vinculado', severity: 'medium' })
     }
