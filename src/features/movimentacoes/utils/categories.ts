@@ -67,6 +67,16 @@ interface MovementGroupMeta {
   label: string
   /** Token de `globals.css`, usado como `var(--…)` no recharts. */
   colorVar: string
+  /**
+   * O MESMO token em classes do Tailwind, para o chip da linha ter a cor da
+   * coluna que o representa no gráfico.
+   *
+   * Classes estáticas, não interpoladas: `bg-chart-N/12 text-chart-N` já é o
+   * idioma de badge do projeto (`DashboardCard`, `EntityEventsTab`), e
+   * `@theme inline` expõe `--color-chart-N`, então o scanner do Tailwind as
+   * encontra. Montar a string com template literal as esconderia dele.
+   */
+  chipClass: string
   categories: readonly MovementCategory[]
 }
 
@@ -82,21 +92,27 @@ export const MOVEMENT_GROUPS: Record<MovementGroup, MovementGroupMeta> = {
   decisoes: {
     label: 'Decisões e audiências',
     colorVar: '--chart-1',
+    chipClass: 'bg-chart-1/12 text-chart-1',
     categories: ['decisao', 'audiencia'],
   },
   prazos: {
     label: 'Intimações e prazos',
     colorVar: '--chart-4',
+    chipClass: 'bg-chart-4/12 text-chart-4',
     categories: ['intimacao', 'prazo'],
   },
   partes: {
     label: 'Petições e recursos',
     colorVar: '--chart-5',
+    chipClass: 'bg-chart-5/12 text-chart-5',
     categories: ['peticao', 'recurso'],
   },
   expediente: {
     label: 'Expediente',
     colorVar: '--muted-foreground',
+    // Neutro de propósito: é o balde do que não pede atenção, e pintá-lo
+    // competiria com as três faixas que pedem.
+    chipClass: 'bg-muted text-muted-foreground',
     categories: ['expediente', 'encerramento', 'outros'],
   },
 }
@@ -114,4 +130,9 @@ export function categoryMeta(category: string): MovementCategoryMeta {
 
 export function groupOf(category: string): MovementGroup {
   return categoryMeta(category).group
+}
+
+/** Classes do chip da categoria — a cor do grupo dela no gráfico. */
+export function categoryChipClass(category: string): string {
+  return MOVEMENT_GROUPS[groupOf(category)].chipClass
 }

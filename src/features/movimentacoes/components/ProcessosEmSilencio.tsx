@@ -26,11 +26,18 @@ interface BucketMeta {
   /** Texto do tooltip/aria — o rótulo curto não diz a unidade. */
   description: string
   /**
-   * Rampa ordinal de uma só família (verde → âmbar → vermelho), e não cores
-   * categóricas: `docs/dashboard-visual.md` registra que âmbar ao lado de
-   * vermelho exige azul no meio quando as faixas são categóricas. Aqui a
-   * variável é ordinal, então a intensidade crescente é a codificação certa e
-   * o problema de adjacência não aparece.
+   * Cinco tokens CHEIOS, sem modificador de opacidade.
+   *
+   * A primeira versão usava uma rampa de um só matiz (`/50`, `/35`, `/70`) para
+   * codificar a ordem pela intensidade. Na tela, quatro das cinco faixas
+   * ficaram lavadas e só a de 31–90 dias — a única cheia — aparecia. Rampa
+   * sequencial é pálida na ponta clara por definição, então ela não serve numa
+   * barra de 8px.
+   *
+   * O preço é que a sequência deixa de ser rampa e passa a ser ordinal
+   * categórica. A leitura segue pela posição fixa, pelo rótulo com a contagem
+   * logo abaixo e pelo tooltip — a mitigação que `docs/dashboard-visual.md`
+   * documenta para faixas adjacentes de matizes diferentes.
    */
   className: string
 }
@@ -39,12 +46,12 @@ const BUCKETS: Record<SilenceBucket, BucketMeta> = {
   recente: {
     label: 'até 7 dias',
     description: 'movimentou na última semana',
-    className: 'bg-success/50',
+    className: 'bg-success',
   },
   atencao: {
     label: `8–${STALE_MOVEMENT_DAYS} dias`,
     description: `sem movimentação entre 8 e ${STALE_MOVEMENT_DAYS} dias`,
-    className: 'bg-warning/35',
+    className: 'bg-info',
   },
   parado: {
     label: `${STALE_MOVEMENT_DAYS + 1}–${CRITICAL_DAYS} dias`,
@@ -54,12 +61,15 @@ const BUCKETS: Record<SilenceBucket, BucketMeta> = {
   critico: {
     label: `+${CRITICAL_DAYS} dias`,
     description: `parado há mais de ${CRITICAL_DAYS} dias`,
-    className: 'bg-destructive/70',
+    className: 'bg-destructive',
   },
   nunca: {
+    // Fora da família do vermelho: além de ficar distinguível do `+90`, "nunca
+    // movimentou" lido como ausência — preto no claro, branco no escuro — diz
+    // mais que um vermelho repetido.
     label: 'nunca',
     description: 'nenhuma movimentação registrada',
-    className: 'bg-destructive',
+    className: 'bg-foreground',
   },
 }
 

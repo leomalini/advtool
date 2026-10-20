@@ -1,4 +1,7 @@
-import type { LegalProcessMovementWithContext } from '@/types/legalProcess.types'
+import type {
+  LegalProcessMovement,
+  LegalProcessMovementWithContext,
+} from '@/types/legalProcess.types'
 import { parseMovementText, type MovementText } from './movementText'
 
 const PROCESSOS_WORKFLOW = 'wf-processos'
@@ -64,7 +67,10 @@ export function movementProcessLabel(movimentacao: LegalProcessMovementWithConte
  * separa o que se lê do que é código — ver `movementText.ts`.
  */
 export function movementText(
-  movimentacao: LegalProcessMovementWithContext,
+  // `Pick` e não o tipo inteiro: é só o que a função lê, e assim ela serve
+  // tanto à listagem (que tem o contexto do processo) quanto à timeline dentro
+  // do processo, que só tem a movimentação.
+  movimentacao: Pick<LegalProcessMovement, 'title' | 'description'>,
 ): MovementText {
   return parseMovementText(movimentacao.title?.trim() || movimentacao.description)
 }
@@ -74,7 +80,7 @@ export function movementText(
  * documento — Mandado" diz o que precisa ser feito; só "Expedição de
  * documento" não. */
 export function suggestedTaskTitle(
-  movimentacao: LegalProcessMovementWithContext,
+  movimentacao: Pick<LegalProcessMovement, 'title' | 'description'>,
 ): string {
   const { headline, detail } = movementText(movimentacao)
   return [headline, detail]

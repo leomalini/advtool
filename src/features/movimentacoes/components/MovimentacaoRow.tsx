@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { LegalProcessMovementWithContext } from '@/types/legalProcess.types'
-import { categoryMeta } from '../utils/categories'
+import { MovementCategoryChip } from './MovementCategoryChip'
 import {
   formatMovementDay,
   movementClientName,
@@ -81,8 +81,6 @@ export function MovimentacaoRow({
 }: MovimentacaoRowProps) {
   const [taskTitle, setTaskTitle] = useState(() => suggestedTaskTitle(movimentacao))
 
-  const meta = categoryMeta(movimentacao.category)
-  const CategoryIcon = meta.icon
   const handled = Boolean(movimentacao.handled_at)
   const pending = movimentacao.requires_action && !handled
   const processo = movementProcessLabel(movimentacao)
@@ -120,10 +118,7 @@ export function MovimentacaoRow({
 
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              <CategoryIcon aria-hidden className="h-2.5 w-2.5" />
-              {meta.label}
-            </span>
+            <MovementCategoryChip category={movimentacao.category} />
 
             <span
               className={cn(

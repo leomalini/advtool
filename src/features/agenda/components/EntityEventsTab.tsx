@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Calendar, MapPin, Plus, AlertCircle, RefreshCw } from 'lucide-react'
+import { Calendar, MapPin, Plus, AlertCircle, RefreshCw, ScanText } from 'lucide-react'
 import { RECURRENCE_SHORT_LABELS } from '@/lib/recurrence'
 import { collapseEventSeries } from '../utils/eventSeries'
 import { format, parseISO, isBefore } from 'date-fns'
@@ -186,6 +186,14 @@ export function EntityEventsTab({
                         <RefreshCw className="w-2.5 h-2.5" />
                         {RECURRENCE_SHORT_LABELS[evento.recurrence_type]}
                         {seriesSize > 1 && ` · ${seriesSize} ocorrências`}
+                      </span>
+                    )}
+                    {/* A data deste compromisso saiu de leitura do texto do
+                        andamento (migration 74), não de cadastro conferido. */}
+                    {evento.movement_id && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[10px] font-medium text-warning">
+                        <ScanText className="w-2.5 h-2.5" />
+                        A confirmar
                       </span>
                     )}
                   </div>

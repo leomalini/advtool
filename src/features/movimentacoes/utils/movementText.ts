@@ -47,6 +47,14 @@ export interface MovementText {
   headline: string
   /** Complementos sem os códigos, ou nulo quando não sobra nada legível. */
   detail: string | null
+  /**
+   * O texto estava no formato codificado da TPU.
+   *
+   * Serve para decidir se vale repetir o texto cru em algum lugar: na forma
+   * TPU, o cru só acrescenta os códigos numéricos, que não dizem nada. Em
+   * texto corrido, ele pode trazer informação que o título não tem.
+   */
+  isTpu: boolean
 }
 
 /**
@@ -58,11 +66,11 @@ export interface MovementText {
 export function parseMovementText(text: string): MovementText {
   const trimmed = text.trim()
   const shape = TPU_SHAPE.exec(trimmed)
-  if (!shape) return { headline: trimmed, detail: null }
+  if (!shape) return { headline: trimmed, detail: null, isTpu: false }
 
   const [, movement, complements] = shape
   // A regex garante os dois grupos, mas o tipo não sabe disso.
-  if (!movement || !complements) return { headline: trimmed, detail: null }
+  if (!movement || !complements) return { headline: trimmed, detail: null, isTpu: false }
 
   const readable: string[] = []
   for (const part of complements.split(COMPLEMENT_SEPARATOR)) {
@@ -86,5 +94,6 @@ export function parseMovementText(text: string): MovementText {
   return {
     headline: movement.trim(),
     detail: readable.length > 0 ? readable.join(' · ') : null,
+    isTpu: true,
   }
 }

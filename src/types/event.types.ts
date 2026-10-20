@@ -70,6 +70,13 @@ export interface CalendarEvent extends BaseEntity {
   /** Compromisso de vencimento de um contrato, mantido pelo banco
    * (migration 71). Nulo em todo evento criado na Agenda. */
   contract_id?: string | null
+  /** Movimentação que criou ou moveu este compromisso, mantida pelo banco
+   * (migration 74). Preenchida = a data saiu de LEITURA DO TEXTO do andamento,
+   * não de cadastro conferido — é por isso que a tela mostra "a confirmar".
+   * Nula em todo evento criado na Agenda. */
+  movement_id?: string | null
+  /** Qual audiência do processo o compromisso representa (migration 74). */
+  hearing_slot?: string | null
   is_retroactive: boolean
   retroactive_completed_at: string | null
   // Joins
