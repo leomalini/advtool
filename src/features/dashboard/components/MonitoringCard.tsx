@@ -350,8 +350,10 @@ export function MonitoringCard({ className }: MonitoringCardProps) {
     current === 'movements' ? (
       <>
         <span>{processCounts ? monitoringCoverage(processCounts) : null}</span>
-        <CardLink href="/processos" strong>
-          Ver processos
+        {/* O card agrupa as novidades por processo; quem clica aqui quer os
+            atos em si, que é o que /movimentacoes lista. */}
+        <CardLink href="/movimentacoes" strong>
+          Ver movimentações
         </CardLink>
       </>
     ) : (

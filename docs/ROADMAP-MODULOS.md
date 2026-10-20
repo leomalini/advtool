@@ -360,6 +360,78 @@ Duas coisas distintas compartilham o nome "BuscaProcessos":
 - Tratamento de erro já mapeia status HTTP específicos para mensagens em PT-BR (404/401/403/422/429), classe `BpApiError` própria, timeout fixo de 30s, **sem retry, sem cache de resposta** (só dedupe funcional via checagem da base local antes de chamar a API).
 - `types.ts` se autodeclara não verificado contra respostas reais — tratar como "melhor palpite" até validar.
 
+### O texto da movimentação: formato TPU e o substantivo que a origem perde
+
+Apurado em 20/10/2026 sobre as 171 movimentações da base, ao construir o módulo
+`/movimentacoes`.
+
+**O `conteudo` que a BuscaProcessos entrega vem em duas formas.**
+
+1. **Codificada na TPU** (48 das 171 linhas) — o movimento da Tabela Processual
+   Unificada do CNJ seguido dos complementos, no formato
+   `<movimento> — <complemento>: <código> | <complemento>: <código>`:
+
+   ```
+   Expedição de documento — Outros documentos: 80
+   Conclusão — para decisão: 6
+   Petição — Petição (outras): 57
+   Distribuição — sorteio: 2
+   ```
+
+   Os números são os **códigos do complemento na TPU** — não são datas, nem
+   quantidades, nem nada que o advogado precise ver.
+
+2. **Texto corrido** (123 das 171) — `"Expedição de Mandado - Citação."`,
+   `"Audiência Una designada para 13/10/2026 14:00 ..."`, e o texto integral do
+   DJEN nas linhas maiores (até 1594 caracteres).
+
+**Em 5 linhas o movimento chega sem o substantivo inicial**, e todas as 5 são
+audiência:
+
+```
+de Conciliação — Conciliador(a): 188 | realizada: 13
+de Conciliação — designada: 9
+de Instrução e Julgamento — designada: 9
+```
+
+Falta "Audiência". Os outros movimentos vêm com o nome completo
+("Expedição de documento", "Conclusão", "Petição", "Distribuição", "Remessa",
+"Redistribuição", "Documento"), então a perda é específica desse grupo.
+
+**A perda é da origem, não da nossa ingestão.** Duas provas independentes:
+
+| Comparação | Resultado |
+|---|---|
+| `legal_process_movements.raw_data->>'conteudo'` x `description` | idênticos em **171/171**; zero linhas em que o bruto é maior |
+| `webhook_events.payload->'event_data'->>'conteudo'` x a linha gravada (via `destinations[].id`) | idênticos em **47/47** entregas rastreáveis, 0 divergências |
+
+Ou seja: `sync.ts` e `webhook.ts` gravam `conteudo` verbatim, e o fragmento já
+chega fragmentado.
+
+Efeito colateral útil: o cabeçalho de `types.ts` registra que só o bloco de
+`GET /v1/processos?cpf_cnpj=` havia sido conferido contra uma resposta real — o
+resto vinha da spec OpenAPI. `BpMovimentacao.conteudo` passa a estar conferido
+também, por estes 171 registros.
+
+**O que foi feito, e o que não foi.**
+
+- `src/features/movimentacoes/utils/movementText.ts` separa movimento de
+  complementos e descarta os códigos: a linha da lista mostra
+  "Expedição de documento" com "Outros documentos" embaixo, em vez de
+  `"Expedição de documento — Outros documentos: 80"`. Texto corrido passa
+  intacto (verificado: 123/123). A linha expandida continua mostrando o texto
+  da origem verbatim, sob o rótulo "Texto da origem" — a tela limpa o que
+  exibe, não o que registra.
+- O substantivo faltante **não é inventado**. Quem repõe a informação é o chip
+  de categoria: o classificador da migration 73 reconhece `de Conciliação` e
+  `de Instrução e Julgamento` como audiência, então a linha diz "Audiência"
+  sem afirmar no texto algo que a origem não disse.
+
+**Aberto:** perguntar à BuscaProcessos por que o movimento de audiência chega
+sem o substantivo. Enquanto não houver resposta, o remendo no classificador
+(migration 73) cobre as duas redações observadas e nada mais — redação nova de
+outro tribunal volta a cair em `outros`.
+
 ---
 
 ## Fora de escopo deste roadmap (decisão explícita)

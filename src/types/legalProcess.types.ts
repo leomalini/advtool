@@ -88,6 +88,23 @@ export type MovementKind = 'movimentacao' | 'publicacao'
  * dado (migration 68). */
 export type MovementReceivedVia = 'webhook' | 'sync' | 'manual'
 
+/** Natureza do ato, derivada do texto pelo banco (migration 72).
+ *
+ * Espelha o CHECK de `legal_process_movements.category` — se um valor mudar
+ * lá, muda aqui. Os rótulos e o agrupamento visual ficam em
+ * `src/features/movimentacoes/utils/categories.ts`, não aqui: este arquivo é
+ * o vocabulário, não a apresentação. */
+export type MovementCategory =
+  | 'decisao'
+  | 'audiencia'
+  | 'intimacao'
+  | 'prazo'
+  | 'peticao'
+  | 'recurso'
+  | 'expediente'
+  | 'encerramento'
+  | 'outros'
+
 export interface LegalProcessMovement {
   id: string
   legal_process_id: string
@@ -110,8 +127,17 @@ export interface LegalProcessMovement {
   source: 'manual' | 'busca_processos'
   /** Nula só para um caminho de escrita que não informe — ver a migration 68. */
   received_via: MovementReceivedVia | null
+  /** Derivada por `public.classify_movement()` no insert e mantida por
+   * trigger. Editável à mão: o trigger só dispara quando `title`,
+   * `description` ou `raw_data` mudam. */
+  category: MovementCategory
+  /** O texto manda alguém fazer algo. Heurística ADVISORY de
+   * `public.movement_requires_action()` — alimenta filtro e chip, nunca cria
+   * tarefa nem prazo. */
+  requires_action: boolean
   raw_data: Record<string, unknown> | null
   created_at: string
+  updated_at: string
 }
 
 export type PartyPolo = 'ativo' | 'passivo'

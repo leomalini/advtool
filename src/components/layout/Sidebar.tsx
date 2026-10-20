@@ -15,6 +15,7 @@ import {
   DollarSign,
   Settings,
   AlertCircle,
+  Activity,
   Gavel,
   Newspaper,
   Sparkles,
@@ -35,6 +36,7 @@ import {
 import { useClientesPendencies } from "@/features/clientes/hooks/useClientes";
 import { useLegalProcessesPendencies } from "@/features/processos/hooks/useLegalProcesses";
 import { useUnreadPublicationCount } from "@/features/publicacoes/hooks/usePublications";
+import { useActionRequiredMovementCount } from "@/features/movimentacoes/hooks/useMovements";
 
 interface NavItem {
   href: string;
@@ -53,6 +55,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, resource: "dashboard" },
       { href: "/crm", label: "CRM", icon: Briefcase, resource: "crm" },
       { href: "/processos", label: "Processos", icon: Gavel, resource: "processos" },
+      // Movimentação é sub-entidade de processo (convenção da migration 36) e a
+      // RLS da tabela responde a `processos:*` — daí o recurso repetido, em vez
+      // de um `movimentacoes` que poderia abrir a tela sem poder ler o dado.
+      { href: "/movimentacoes", label: "Movimentações", icon: Activity, resource: "processos" },
       { href: "/publicacoes", label: "Publicações", icon: Newspaper, resource: "publicacoes" },
       { href: "/agenda", label: "Agenda", icon: Calendar, resource: "agenda" },
       { href: "/ia", label: "Assistente", icon: Sparkles, resource: "ia" },
@@ -88,7 +94,21 @@ export function Sidebar() {
   // sem abrir a tela, principalmente agora que a publicação chega sozinha.
   const { data: unreadPublications = 0 } = useUnreadPublicationCount();
 
+  // Mesma razão: o ato que manda manifestar é prazo correndo. Conta o backlog
+  // inteiro, sem recorte de período — a tela abre filtrada, o badge não.
+  const { data: actionRequiredMovements = 0 } = useActionRequiredMovementCount({
+    enabled: can("processos", "view"),
+  });
+
   const pendencyCount = clientPendencies.length + processoPendencies.length;
+
+  /** Os únicos itens com contador. Função em vez de ternário encadeado no
+   * render: a lista tende a crescer. */
+  function badgeFor(href: string): number | undefined {
+    if (href === "/publicacoes") return unreadPublications;
+    if (href === "/movimentacoes") return actionRequiredMovements;
+    return undefined;
+  }
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? "AD";
 
   // Só os grupos que sobraram algum item depois do filtro — um cabeçalho
@@ -196,12 +216,7 @@ export function Sidebar() {
                 </div>
               )}
               {group.items.map(({ href, label, icon: Icon }) =>
-                renderNavItem(
-                  href,
-                  label,
-                  Icon,
-                  href === "/publicacoes" ? unreadPublications : undefined,
-                ),
+                renderNavItem(href, label, Icon, badgeFor(href)),
               )}
             </div>
           ))}
