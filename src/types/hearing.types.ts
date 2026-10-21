@@ -73,10 +73,60 @@ export interface Hearing {
   date_confirmed_at: string | null
   date_confirmed_by: string | null
   closed_at: string | null
+  /** Quando o checklist foi copiado dos modelos (migration 77). Nulo = ainda
+   * não nasceu: falta a data, ou a conferência dela. */
+  checklist_generated_at: string | null
+  /** A exceção do Quadro: pronta mesmo com itens pendentes. */
+  ready_override_at: string | null
+  ready_override_by: string | null
   created_by: string | null
   created_at: string
   updated_at: string
 }
+
+/** Áreas do caso, o vocabulário de `crm_items.legal_area` (migration 53). */
+export const LEGAL_AREAS = [
+  'trabalhista',
+  'civel',
+  'familia',
+  'tributario',
+  'criminal',
+  'previdenciario',
+  'consumidor',
+] as const
+
+export type LegalArea = (typeof LEGAL_AREAS)[number]
+
+export interface HearingChecklistTemplate {
+  id: string
+  /** Nulo = todos os tipos. */
+  kind_id: string | null
+  /** Nulo = todas as áreas. */
+  legal_area: LegalArea | null
+  label: string
+  /** Dias antes da audiência; nulo = sem prazo. */
+  offset_days: number | null
+  creates_task: boolean
+  client_brings: boolean
+  position: number
+  is_system: boolean
+  created_at: string
+}
+
+export interface HearingChecklistItem {
+  id: string
+  template_id: string | null
+  label: string
+  offset_days: number | null
+  client_brings: boolean
+  position: number
+  task_id: string | null
+  done_at: string | null
+  skipped_at: string | null
+  task: { id: string; status: string; due_date: string | null } | null
+}
+
+export type HearingChecklistState = 'done' | 'pending' | 'skipped'
 
 /** O que o evento da Agenda carrega da ficha (embed em `EVENT_SELECT`): o
  * selo "a confirmar", o link para a ficha e o "Entrar na sala" do dashboard. */
@@ -142,6 +192,29 @@ export interface HearingWithContext extends Hearing {
   event: HearingEvent | null
   legal_process: HearingProcess | null
   movement: HearingMovement | null
+  /** Em `position`. Vazio até o checklist nascer. */
+  checklist: HearingChecklistItem[]
+}
+
+export interface ChecklistProgress {
+  /** Feitos ou "não se aplica". */
+  resolved: number
+  total: number
+}
+
+export function checklistProgress(hearing: Pick<HearingWithContext, 'checklist'>): ChecklistProgress {
+  const total = hearing.checklist.length
+  const resolved = hearing.checklist.filter((item) => item.done_at || item.skipped_at).length
+  return { resolved, total }
+}
+
+/** Pronta para a audiência: o checklist nasceu e está todo resolvido, ou
+ * alguém a marcou como pronta mesmo assim. */
+export function isHearingReady(hearing: Pick<HearingWithContext, 'checklist' | 'checklist_generated_at' | 'ready_override_at'>): boolean {
+  if (hearing.ready_override_at) return true
+  if (!hearing.checklist_generated_at) return false
+  const { resolved, total } = checklistProgress(hearing)
+  return resolved === total
 }
 
 export interface HearingDateChange {

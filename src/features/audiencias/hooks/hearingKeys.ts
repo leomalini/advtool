@@ -10,6 +10,8 @@ export const hearingKeys = {
   withoutDate: () => ['hearings', 'without-date'] as const,
   detail: (id: string) => ['hearings', 'detail', id] as const,
   forProcess: (legalProcessId: string) => ['hearings', 'process', legalProcessId] as const,
+  /** Sem data + designadas de qualquer data: o Quadro de preparação. */
+  open: () => ['hearings', 'open'] as const,
   attention: () => ['hearings', 'attention'] as const,
 }
 
@@ -17,4 +19,9 @@ export const hearingKeys = {
  * tipos, que só mudam em Configurações. */
 export const hearingKindKeys = {
   all: ['hearing-kinds'] as const,
+}
+
+/** Modelos de checklist: só mudam em Configurações. */
+export const hearingTemplateKeys = {
+  all: ['hearing-checklist-templates'] as const,
 }

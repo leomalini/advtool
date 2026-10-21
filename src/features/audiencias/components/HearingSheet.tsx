@@ -7,6 +7,7 @@ import {
   Ban,
   CalendarClock,
   CircleCheck,
+  ClipboardList,
   History,
   MapPin,
   RotateCcw,
@@ -53,6 +54,7 @@ import {
   hearingProcessLabel,
   hearingTimeRange,
 } from '../utils/display'
+import { HearingChecklist } from './HearingChecklist'
 import { HearingDetailsForm } from './HearingDetailsForm'
 import { HearingScheduleForm } from './HearingScheduleForm'
 
@@ -303,6 +305,11 @@ function HearingSheetBody({
           {withoutDate && !canSchedule && (
             <p className="text-xs text-muted-foreground">Sem data. Seu perfil não pode agendar.</p>
           )}
+        </Section>
+
+        {/* ── Preparação ── */}
+        <Section title="Checklist" icon={<ClipboardList aria-hidden className="h-3 w-3" />}>
+          <HearingChecklist hearing={hearing} canUpdate={canUpdate} />
         </Section>
 
         {/* ── Detalhes ── */}

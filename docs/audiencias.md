@@ -4,7 +4,10 @@
 > `feat/audiencias-base` (criada da `main` em a516395, PR #45, que trouxe as
 > migrations 74 e 75, aplicadas no remoto). Migration 76 **aplicada no remoto
 > em 2026-10-20**. **Fase 2** na branch `feat/audiencias-processo-dashboard`,
-> empilhada na 1, sem migration. Ver "Como ficou" de cada fase.
+> empilhada na 1, sem migration. **Fase 3** na branch
+> `feat/audiencias-preparacao`, empilhada na 2 — migration 77 **ainda não
+> aplicada** (o push foi barrado pelo classificador do modo automático; o
+> usuário roda). Ver "Como ficou" de cada fase.
 
 Pedido: um módulo **Audiências** separado, com visualizações e funcionalidades
 próprias. As audiências **continuam na Agenda**. Entram também uma **aba
@@ -397,6 +400,66 @@ Sem migration: tudo lê a ficha da 76.
 - As consultas novas rodaram contra a base real com as strings do próprio
   service (leitura): pauta, sem data, por processo com histórico, badge
   (1 + 1) e o `EVENT_SELECT` com a ficha como objeto.
+
+## Como ficou a fase 3
+
+Checklist-padrão aprovado pelo usuário em 2026-10-20, sem alterações.
+
+### Banco — migration 77 (não aplicada)
+
+- `hearing_checklist_templates`: filtros opcionais por tipo e por área (nulo =
+  todos), prazo em dias antes (nulo = sem prazo), "cria tarefa" (exige
+  prazo, por CHECK) e "cliente leva". RLS de apoio: todos leem, só
+  `configuracoes:manage` escreve. Seed com os 15 itens aprovados.
+- `hearing_checklist_items`: a cópia na audiência, com `task_id`,
+  `done_at` e `skipped_at` ("não se aplica"). RLS de `agenda` (marcar é
+  `:update`).
+- `hearings` ganha `checklist_generated_at` e a exceção "pronta"
+  (`ready_override_at`/`_by`).
+- O checklist nasce por gatilho quando a audiência fica designada **e**
+  conferida — cobre os três caminhos (Agenda, Nova audiência, "Conferi nos
+  autos") sem código no app. Uma vez só.
+- Tarefa: título "item — Audiência de X dd/MM", prazo = dia da audiência menos
+  o prazo, **nunca antes de hoje** (tarefa nascida já vencida contaria uma
+  história falsa). Responsável, cliente, card e processo do compromisso.
+  Audiência que já passou não gera tarefa.
+- Remarcar move as tarefas não concluídas — gatilho em
+  `hearing_date_changes`, por onde toda mudança de data passa. Concluir a
+  tarefa em Tarefas marca o item (gatilho em `tasks`); marcar o item conclui a
+  tarefa (RPC). Encerrar a audiência apaga as tarefas ainda `todo`; reativar
+  as recria.
+- RPCs `set_hearing_checklist_item`, `add_hearing_checklist_item`,
+  `remove_hearing_checklist_item`: `security definer` com `agenda:update`
+  conferido à mão, porque mexem na tarefa espelho — quem prepara a audiência
+  não precisa de `tarefas:update` para marcar o item dela.
+- ⚠️ A área vem de `crm_items.legal_area`, **nula nos 8 cards da base**: o
+  item de Família só passa a valer quando a área for preenchida.
+
+### Telas
+
+- **Ficha**: seção Checklist com progresso, marcar, "não se aplica", remover,
+  acrescentar item (com prazo vira tarefa) e "Marcar como pronta mesmo assim"
+  / desfazer. Antes de nascer, explica quando nasce.
+- **Quadro** em `/audiencias` (Pauta | Quadro; `?visao=quadro` abre direto e
+  a URL guarda a visão junto com a ficha). Cinco colunas derivadas, sem
+  arrastar; filtros de responsável e tipo valem nas duas visões.
+- Pílula de progresso ("3/6" ou "Pronta") na pauta, na aba do processo e no
+  card do dashboard.
+- **Configurações → Audiências**: tipos (nome, título na Agenda, duração; a
+  exclusão diz antes se o tipo está em uso) e o checklist-padrão agrupado por
+  tipo.
+- Concluir tarefa em qualquer tela invalida também o cache das audiências.
+
+### Verificação
+
+- `tsc`, `eslint` (sem aviso novo) e `build` sem erro.
+- Telas pela página temporária: Quadro com as cinco colunas e a "pronta por
+  decisão", ficha com checklist 2/6, Configurações; validações (item vazio,
+  prazo acima de 365, tarefa sem prazo desabilitada, duração abaixo de 5),
+  Quadro → ficha → fechar mantendo `visao=quadro`.
+- **Ainda não verificado contra a base**: a migration 77 e as consultas novas
+  (o checklist entra no select de toda ficha — a tela de Audiências depende
+  da 77 aplicada).
 
 ## Em aberto (decidir na fase)
 

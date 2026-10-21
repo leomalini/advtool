@@ -1,7 +1,12 @@
 import { addDays, addMinutes, differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { EventClient } from '@/types/event.types'
-import type { HearingProcessCrmItem, HearingWithContext } from '@/types/hearing.types'
+import {
+  isHearingReady,
+  type HearingChecklistItem,
+  type HearingProcessCrmItem,
+  type HearingWithContext,
+} from '@/types/hearing.types'
 import { parseMovementText } from '@/features/movimentacoes/utils/movementText'
 
 const PROCESSOS_WORKFLOW = 'wf-processos'
@@ -137,4 +142,47 @@ export function hearingNeedsAttention(hearing: HearingWithContext, now: Date): b
   if (hearing.status === 'a_designar') return true
   if (hearing.status !== 'designada' || hearing.date_confirmed_at || !hearing.event) return false
   return parseISO(hearing.event.start_at) >= now
+}
+
+// ── Quadro de preparação ────────────────────────────────────────────────────
+
+export type BoardColumn = 'sem_data' | 'a_confirmar' | 'em_preparacao' | 'pronta' | 'aguardando_resultado'
+
+/** As colunas, na ordem do fluxo, com o que cada uma pede de quem olha. */
+export const BOARD_COLUMNS: readonly { id: BoardColumn; label: string; hint: string }[] = [
+  { id: 'sem_data', label: 'Sem data', hint: 'Informar a data nos autos' },
+  { id: 'a_confirmar', label: 'A confirmar', hint: 'Conferir a data lida do andamento' },
+  { id: 'em_preparacao', label: 'Em preparação', hint: 'Checklist com itens em aberto' },
+  { id: 'pronta', label: 'Pronta', hint: 'Checklist resolvido' },
+  { id: 'aguardando_resultado', label: 'Aguardando resultado', hint: 'A data passou' },
+]
+
+/**
+ * A coluna sai dos dados, sem arrastar (decisão da fase 1): sem data → sem
+ * evento; data passada → aguardando resultado; data não conferida → a
+ * confirmar; checklist resolvido ou marcado como pronta → pronta. Nula para o
+ * que já foi encerrado — sai do Quadro.
+ */
+export function boardColumn(hearing: HearingWithContext, now: Date): BoardColumn | null {
+  if (hearing.status === 'a_designar') return 'sem_data'
+  if (hearing.status !== 'designada' || !hearing.event) return null
+  if (parseISO(hearing.event.end_at) < now) return 'aguardando_resultado'
+  if (!hearing.date_confirmed_at) return 'a_confirmar'
+  return isHearingReady(hearing) ? 'pronta' : 'em_preparacao'
+}
+
+/** "D-7 · 05/11": o prazo do item. Com tarefa, a data é a dela — pode ter sido
+ * mudada em Tarefas, e a ficha não pode contradizer o módulo. */
+export function checklistDueLabel(item: HearingChecklistItem, startAt: string | null): string | null {
+  if (item.offset_days === null) return null
+  const prefix = item.offset_days === 0 ? 'No dia' : `D-${item.offset_days}`
+  if (item.task?.due_date) return `${prefix} · ${formatDayKey(item.task.due_date)}`
+  if (!startAt) return prefix
+  return `${prefix} · ${format(addDays(parseISO(startAt), -item.offset_days), 'dd/MM')}`
+}
+
+/** 'yyyy-MM-dd' → 'dd/MM', sem passar por `Date` (que leria em UTC). */
+function formatDayKey(dayKey: string): string {
+  const [, month, day] = dayKey.split('-')
+  return `${day}/${month}`
 }

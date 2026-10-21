@@ -17,6 +17,7 @@ import {
   hearingProcessLabel,
   windowEnd,
 } from '@/features/audiencias/utils/display'
+import { ChecklistProgressPill } from '@/features/audiencias/components/ChecklistProgressPill'
 import { HEARING_MODALITY_LABELS, isHearingDateUnconfirmed } from '@/types/hearing.types'
 import { CardLink } from './CardLink'
 import { DashboardCard } from './DashboardCard'
@@ -169,6 +170,7 @@ export function UpcomingHearingsCard({ className }: UpcomingHearingsCardProps) {
                           <ScanText aria-hidden className="size-3" />a confirmar
                         </span>
                       )}
+                      <ChecklistProgressPill hearing={hearing} />
                     </span>
                   </span>
                 </Link>

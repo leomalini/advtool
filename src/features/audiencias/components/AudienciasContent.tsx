@@ -21,13 +21,25 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { useProfiles } from '@/hooks/useProfiles'
 import { cn } from '@/lib/utils'
 import { isHearingDateUnconfirmed, type HearingWithContext } from '@/types/hearing.types'
-import { useHearingAgenda, useHearingKinds, useHearingsWithoutDate } from '../hooks/useHearings'
+import {
+  useHearingAgenda,
+  useHearingKinds,
+  useHearingsWithoutDate,
+  useOpenHearings,
+} from '../hooks/useHearings'
 import { dayHeading, windowEnd } from '../utils/display'
 import { HearingRow } from './HearingRow'
 import { HearingSheet } from './HearingSheet'
+import { HearingsBoard } from './HearingsBoard'
 import { HearingsWithoutDate } from './HearingsWithoutDate'
 
 type PautaWindow = '7' | '30' | '90'
+type View = 'pauta' | 'quadro'
+
+const VIEW_OPTIONS: readonly SegmentedOption<View>[] = [
+  { value: 'pauta', label: 'Pauta' },
+  { value: 'quadro', label: 'Quadro' },
+]
 
 const WINDOW_OPTIONS: readonly SegmentedOption<PautaWindow>[] = [
   { value: '7', label: '7 dias' },
@@ -60,6 +72,8 @@ export function AudienciasContent() {
   const { can, isLoading: loadingPermissions } = usePermissions()
   const now = useNow()
 
+  // `?visao=quadro` abre direto no Quadro — o link que se manda a alguém.
+  const [view, setView] = useState<View>(() => (searchParams.get('visao') === 'quadro' ? 'quadro' : 'pauta'))
   const [windowDays, setWindowDays] = useState<PautaWindow>('30')
   const [assigneeId, setAssigneeId] = useState<string | null>(null)
   const [kindId, setKindId] = useState<string | null>(null)
@@ -79,28 +93,47 @@ export function AudienciasContent() {
 
   const agenda = useHearingAgenda(from, to, includeCancelled)
   const withoutDate = useHearingsWithoutDate()
+  // O Quadro tem a sua consulta (sem janela de datas) e só busca quando aberto.
+  const openHearings = useOpenHearings({ enabled: view === 'quadro' })
   const { data: kinds = [] } = useHearingKinds()
   const { data: profiles = [] } = useProfiles()
 
   const parsedFicha = fichaIdSchema.safeParse(searchParams.get('ficha'))
   const openId = parsedFicha.success ? parsedFicha.data : null
 
+  /** A URL guarda a ficha aberta e a visão: recarregar a página, ou mandar o
+   * link, volta ao mesmo lugar. */
+  function urlFor(fichaId: string | null): string {
+    const params = new URLSearchParams()
+    if (view === 'quadro') params.set('visao', 'quadro')
+    if (fichaId) params.set('ficha', fichaId)
+    const query = params.toString()
+    return query ? `${pathname}?${query}` : pathname
+  }
+
   function openHearing(hearing: HearingWithContext) {
-    router.replace(`${pathname}?ficha=${hearing.id}`, { scroll: false })
+    router.replace(urlFor(hearing.id), { scroll: false })
   }
 
   function closeHearing() {
-    router.replace(pathname, { scroll: false })
+    router.replace(urlFor(null), { scroll: false })
   }
 
-  const visible = useMemo(
-    () =>
-      (agenda.data ?? []).filter(
-        (hearing) =>
-          (!assigneeId || hearing.event?.assignees.some((profile) => profile.id === assigneeId)) &&
-          (!kindId || hearing.kind_id === kindId),
-      ),
-    [agenda.data, assigneeId, kindId],
+  // Responsável e tipo valem para as duas visões. Sem data não tem responsável
+  // (não há compromisso), então não some pelo filtro de responsável.
+  const matchesFilters = useMemo(
+    () => (hearing: HearingWithContext) =>
+      (!assigneeId ||
+        !hearing.event ||
+        hearing.event.assignees.some((profile) => profile.id === assigneeId)) &&
+      (!kindId || hearing.kind_id === kindId),
+    [assigneeId, kindId],
+  )
+
+  const visible = useMemo(() => (agenda.data ?? []).filter(matchesFilters), [agenda.data, matchesFilters])
+  const boardRows = useMemo(
+    () => (openHearings.data ?? []).filter(matchesFilters),
+    [openHearings.data, matchesFilters],
   )
 
   const days = useMemo(() => groupByDay(visible), [visible])
@@ -145,12 +178,16 @@ export function AudienciasContent() {
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card px-6 py-2.5">
-        <SegmentedControl
-          label="Período da pauta"
-          options={WINDOW_OPTIONS}
-          value={windowDays}
-          onChange={setWindowDays}
-        />
+        <SegmentedControl label="Visão" options={VIEW_OPTIONS} value={view} onChange={setView} />
+
+        {view === 'pauta' && (
+          <SegmentedControl
+            label="Período da pauta"
+            options={WINDOW_OPTIONS}
+            value={windowDays}
+            onChange={setWindowDays}
+          />
+        )}
 
         <Select value={assigneeId ?? ALL} onValueChange={(value) => setAssigneeId(value === ALL ? null : value)}>
           <SelectTrigger className="h-9 w-[210px] text-sm">
@@ -180,94 +217,120 @@ export function AudienciasContent() {
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-2 pl-1">
-          <Checkbox
-            id="include-cancelled"
-            checked={includeCancelled}
-            onCheckedChange={(checked) => setIncludeCancelled(checked === true)}
-          />
-          <Label htmlFor="include-cancelled" className="text-xs font-normal text-muted-foreground">
-            Mostrar canceladas
-          </Label>
-        </div>
+        {view === 'pauta' && (
+          <div className="flex items-center gap-2 pl-1">
+            <Checkbox
+              id="include-cancelled"
+              checked={includeCancelled}
+              onCheckedChange={(checked) => setIncludeCancelled(checked === true)}
+            />
+            <Label htmlFor="include-cancelled" className="text-xs font-normal text-muted-foreground">
+              Mostrar canceladas
+            </Label>
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-6">
-        <HearingsWithoutDate hearings={withoutDateRows} onOpen={openHearing} canSchedule={canSchedule} />
-
-        {agenda.isError && (
-          <div className="flex flex-col items-center justify-center gap-3 p-10 text-center">
-            <Landmark className="h-7 w-7 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Não foi possível carregar a pauta.</p>
-            <Button size="sm" variant="outline" onClick={() => agenda.refetch()}>
-              Tentar de novo
-            </Button>
-          </div>
-        )}
-
-        {!agenda.isError && agenda.isLoading && (
-          <div className="space-y-2 p-6">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-16 animate-pulse rounded-lg bg-muted/40" />
-            ))}
-          </div>
-        )}
-
-        {!agenda.isError && agenda.isSuccess && days.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-            <Landmark className="h-7 w-7 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              {filtered
-                ? 'Nenhuma audiência com esses filtros no período.'
-                : `Nenhuma audiência nos próximos ${windowDays} dias.`}
-            </p>
-            {filtered && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setAssigneeId(null)
-                  setKindId(null)
-                }}
-              >
-                Limpar filtros
+      {view === 'quadro' && (
+        <div className="flex-1 overflow-y-auto pb-6">
+          {openHearings.isError && (
+            <div className="flex flex-col items-center justify-center gap-3 p-10 text-center">
+              <Landmark className="h-7 w-7 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Não foi possível carregar o quadro.</p>
+              <Button size="sm" variant="outline" onClick={() => openHearings.refetch()}>
+                Tentar de novo
               </Button>
-            )}
-            {!filtered && (
-              <p className="max-w-md text-xs text-muted-foreground">
-                As audiências entram sozinhas quando o andamento designa uma com data, ou quando
-                alguém cria um evento do tipo Audiência na Agenda.
-              </p>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+          {openHearings.isLoading && (
+            <div className="grid grid-cols-5 gap-3 p-4">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-48 animate-pulse rounded-lg bg-muted/40" />
+              ))}
+            </div>
+          )}
+          {openHearings.isSuccess && <HearingsBoard hearings={boardRows} now={now} onOpen={openHearing} />}
+        </div>
+      )}
 
-        {!agenda.isError && days.length > 0 && (
-          <div className={cn('space-y-4 px-4 pt-4', agenda.isFetching && 'opacity-60')}>
-            {days.map(([dayKey, hearings]) => {
-              const heading = dayHeading(dayKey, today)
-              return (
-                <section key={dayKey} aria-label={heading.subtitle} className="overflow-hidden rounded-lg border">
-                  <header className="flex items-baseline gap-2 border-b bg-muted/30 px-4 py-2">
-                    <h2 className="text-sm font-semibold first-letter:uppercase">{heading.title}</h2>
-                    <span className="text-xs text-muted-foreground first-letter:uppercase">
-                      {heading.subtitle}
-                    </span>
-                    <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
-                      {hearings.length} audiênci{hearings.length === 1 ? 'a' : 'as'}
-                    </span>
-                  </header>
-                  <ul className="divide-y divide-border">
-                    {hearings.map((hearing) => (
-                      <HearingRow key={hearing.id} hearing={hearing} now={now} onOpen={openHearing} />
-                    ))}
-                  </ul>
-                </section>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      {view === 'pauta' && (
+        <div className="flex-1 overflow-y-auto pb-6">
+          <HearingsWithoutDate hearings={withoutDateRows} onOpen={openHearing} canSchedule={canSchedule} />
+
+          {agenda.isError && (
+            <div className="flex flex-col items-center justify-center gap-3 p-10 text-center">
+              <Landmark className="h-7 w-7 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Não foi possível carregar a pauta.</p>
+              <Button size="sm" variant="outline" onClick={() => agenda.refetch()}>
+                Tentar de novo
+              </Button>
+            </div>
+          )}
+
+          {!agenda.isError && agenda.isLoading && (
+            <div className="space-y-2 p-6">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-16 animate-pulse rounded-lg bg-muted/40" />
+              ))}
+            </div>
+          )}
+
+          {!agenda.isError && agenda.isSuccess && days.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
+              <Landmark className="h-7 w-7 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                {filtered
+                  ? 'Nenhuma audiência com esses filtros no período.'
+                  : `Nenhuma audiência nos próximos ${windowDays} dias.`}
+              </p>
+              {filtered && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setAssigneeId(null)
+                    setKindId(null)
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              )}
+              {!filtered && (
+                <p className="max-w-md text-xs text-muted-foreground">
+                  As audiências entram sozinhas quando o andamento designa uma com data, ou quando
+                  alguém cria um evento do tipo Audiência na Agenda.
+                </p>
+              )}
+            </div>
+          )}
+
+          {!agenda.isError && days.length > 0 && (
+            <div className={cn('space-y-4 px-4 pt-4', agenda.isFetching && 'opacity-60')}>
+              {days.map(([dayKey, hearings]) => {
+                const heading = dayHeading(dayKey, today)
+                return (
+                  <section key={dayKey} aria-label={heading.subtitle} className="overflow-hidden rounded-lg border">
+                    <header className="flex items-baseline gap-2 border-b bg-muted/30 px-4 py-2">
+                      <h2 className="text-sm font-semibold first-letter:uppercase">{heading.title}</h2>
+                      <span className="text-xs text-muted-foreground first-letter:uppercase">
+                        {heading.subtitle}
+                      </span>
+                      <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+                        {hearings.length} audiênci{hearings.length === 1 ? 'a' : 'as'}
+                      </span>
+                    </header>
+                    <ul className="divide-y divide-border">
+                      {hearings.map((hearing) => (
+                        <HearingRow key={hearing.id} hearing={hearing} now={now} onOpen={openHearing} />
+                      ))}
+                    </ul>
+                  </section>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <HearingSheet hearingId={openId} onClose={closeHearing} />
     </div>

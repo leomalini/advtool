@@ -26,6 +26,7 @@ import {
   hearingNeedsAttention,
   hearingTimeRange,
 } from '../utils/display'
+import { ChecklistProgressPill } from './ChecklistProgressPill'
 import { HearingSheet } from './HearingSheet'
 import { NewHearingDialog } from './NewHearingDialog'
 
@@ -201,6 +202,7 @@ function ProcessHearingRow({
                 {HEARING_MODALITY_LABELS[hearing.modality]}
               </span>
             )}
+            <ChecklistProgressPill hearing={hearing} />
           </span>
 
           {event ? (

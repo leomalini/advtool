@@ -4,6 +4,7 @@ import { Ban, MapPin, ScanText, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { getInitials } from '@/utils/profile'
+import { ChecklistProgressPill } from './ChecklistProgressPill'
 import {
   HEARING_MODALITY_LABELS,
   hearingJoinUrl,
@@ -90,6 +91,8 @@ export function HearingRow({ hearing, now, onOpen }: HearingRowProps) {
                 Data a confirmar
               </span>
             )}
+
+            <ChecklistProgressPill hearing={hearing} />
 
             {cancelled && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">

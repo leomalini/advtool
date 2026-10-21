@@ -6,10 +6,28 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { eventKeys } from '@/features/agenda/hooks/useEvents'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
-import type { HearingDetailsInput } from '@/schemas/hearing.schema'
-import type { HearingKind } from '@/types/hearing.types'
+import { taskKeys } from '@/features/tarefas/hooks/useTasks'
+import type {
+  ChecklistTemplateInput,
+  HearingDetailsInput,
+  HearingKindInput,
+} from '@/schemas/hearing.schema'
+import type { HearingChecklistState, HearingKind } from '@/types/hearing.types'
 import {
+  addChecklistItem,
   confirmHearingDate,
+  countHearingsOfKind,
+  createChecklistTemplate,
+  createHearingKind,
+  deleteChecklistTemplate,
+  deleteHearingKind,
+  getChecklistTemplates,
+  getOpenHearings,
+  removeChecklistItem,
+  setChecklistItemState,
+  setReadyOverride,
+  updateChecklistTemplate,
+  updateHearingKind,
   countHearingsNeedingAttention,
   createHearing,
   getHearing,
@@ -22,7 +40,7 @@ import {
   setHearingCancelled,
   updateHearingDetails,
 } from '../services/hearings.service'
-import { hearingKeys, hearingKindKeys } from './hearingKeys'
+import { hearingKeys, hearingKindKeys, hearingTemplateKeys } from './hearingKeys'
 
 /** `refetchInterval`: o dashboard fica aberto o dia todo; a pauta atualiza
  * pelas mutações. */
@@ -96,6 +114,9 @@ function useInvalidateHearingSurfaces() {
     queryClient.invalidateQueries({ queryKey: hearingKeys.all })
     queryClient.invalidateQueries({ queryKey: eventKeys.all })
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })
+    // O checklist cria, move e apaga tarefas (migration 77) — inclusive por
+    // gatilho, ao agendar, conferir ou cancelar.
+    queryClient.invalidateQueries({ queryKey: taskKeys.all })
   }
 }
 
@@ -175,5 +196,150 @@ export function useSetHearingCancelled() {
       else toast.success(withoutDate ? 'Audiência descartada.' : 'Audiência cancelada e retirada da Agenda.')
     },
     onError: () => toast.error('Não foi possível alterar a audiência.'),
+  })
+}
+
+// ── Quadro ──────────────────────────────────────────────────────────────────
+
+export function useOpenHearings(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: hearingKeys.open(),
+    queryFn: getOpenHearings,
+    enabled: options.enabled,
+  })
+}
+
+// ── Checklist ───────────────────────────────────────────────────────────────
+
+const CHECKLIST_ERROR = 'Não foi possível atualizar o checklist.'
+
+export function useSetChecklistItemState() {
+  const invalidate = useInvalidateHearingSurfaces()
+
+  return useMutation({
+    mutationFn: ({ itemId, state }: { itemId: string; state: HearingChecklistState }) =>
+      setChecklistItemState(itemId, state),
+    onSuccess: invalidate,
+    onError: () => toast.error(CHECKLIST_ERROR),
+  })
+}
+
+export function useAddChecklistItem() {
+  const invalidate = useInvalidateHearingSurfaces()
+
+  return useMutation({
+    mutationFn: addChecklistItem,
+    onSuccess: (_data, { offsetDays }) => {
+      invalidate()
+      toast.success(offsetDays === null ? 'Item acrescentado.' : 'Item acrescentado, com tarefa.')
+    },
+    onError: () => toast.error(CHECKLIST_ERROR),
+  })
+}
+
+export function useRemoveChecklistItem() {
+  const invalidate = useInvalidateHearingSurfaces()
+
+  return useMutation({
+    mutationFn: removeChecklistItem,
+    onSuccess: invalidate,
+    onError: () => toast.error(CHECKLIST_ERROR),
+  })
+}
+
+export function useSetReadyOverride() {
+  const invalidate = useInvalidateHearingSurfaces()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: ({ id, ready }: { id: string; ready: boolean }) => setReadyOverride(id, ready, user!.id),
+    onSuccess: (_data, { ready }) => {
+      invalidate()
+      toast.success(ready ? 'Audiência marcada como pronta.' : 'Marcação de pronta desfeita.')
+    },
+    onError: () => toast.error('Não foi possível alterar a audiência.'),
+  })
+}
+
+// ── Configurações ───────────────────────────────────────────────────────────
+
+export function useChecklistTemplates() {
+  return useQuery({
+    queryKey: hearingTemplateKeys.all,
+    queryFn: getChecklistTemplates,
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+function useInvalidateSettings() {
+  const queryClient = useQueryClient()
+  return () => {
+    queryClient.invalidateQueries({ queryKey: hearingTemplateKeys.all })
+    queryClient.invalidateQueries({ queryKey: hearingKindKeys.all })
+  }
+}
+
+export function useSaveChecklistTemplate() {
+  const invalidate = useInvalidateSettings()
+
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string | null; input: ChecklistTemplateInput }) =>
+      id ? updateChecklistTemplate(id, input) : createChecklistTemplate(input),
+    onSuccess: (_data, { id }) => {
+      invalidate()
+      toast.success(id ? 'Item do modelo atualizado.' : 'Item acrescentado ao modelo.')
+    },
+    onError: () => toast.error('Não foi possível salvar o item do modelo.'),
+  })
+}
+
+export function useDeleteChecklistTemplate() {
+  const invalidate = useInvalidateSettings()
+
+  return useMutation({
+    mutationFn: deleteChecklistTemplate,
+    onSuccess: () => {
+      invalidate()
+      toast.success('Item removido do modelo.')
+    },
+    onError: () => toast.error('Não foi possível remover o item.'),
+  })
+}
+
+export function useSaveHearingKind() {
+  const invalidate = useInvalidateSettings()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string | null; input: HearingKindInput }) =>
+      id ? updateHearingKind(id, input) : createHearingKind(input),
+    onSuccess: (_data, { id }) => {
+      invalidate()
+      // O rótulo do tipo aparece na pauta e na ficha.
+      queryClient.invalidateQueries({ queryKey: hearingKeys.all })
+      toast.success(id ? 'Tipo atualizado.' : 'Tipo criado.')
+    },
+    onError: () => toast.error('Não foi possível salvar o tipo.'),
+  })
+}
+
+export function useHearingKindUsage(kindId: string | null) {
+  return useQuery({
+    queryKey: [...hearingKindKeys.all, 'usage', kindId ?? '-'] as const,
+    queryFn: () => countHearingsOfKind(kindId!),
+    enabled: !!kindId,
+  })
+}
+
+export function useDeleteHearingKind() {
+  const invalidate = useInvalidateSettings()
+
+  return useMutation({
+    mutationFn: deleteHearingKind,
+    onSuccess: () => {
+      invalidate()
+      toast.success('Tipo removido.')
+    },
+    onError: () => toast.error('Não foi possível remover o tipo.'),
   })
 }

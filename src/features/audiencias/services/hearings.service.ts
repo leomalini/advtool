@@ -1,13 +1,19 @@
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types/common.types'
 import type {
+  HearingChecklistState,
+  HearingChecklistTemplate,
   HearingDetail,
   HearingKind,
   HearingModality,
   HearingStatus,
   HearingWithContext,
 } from '@/types/hearing.types'
-import type { HearingDetailsInput } from '@/schemas/hearing.schema'
+import type {
+  ChecklistTemplateInput,
+  HearingDetailsInput,
+  HearingKindInput,
+} from '@/schemas/hearing.schema'
 
 const supabase = createClient()
 
@@ -35,7 +41,11 @@ function hearingSelect(eventJoin: 'inner' | 'left'): string {
         id, workflow_id, title, client:clients(id, type, name, company_name, trade_name)
       )
     ),
-    movement:legal_process_movements!hearings_movement_id_fkey(id, title, description, movement_date)
+    movement:legal_process_movements!hearings_movement_id_fkey(id, title, description, movement_date),
+    checklist:hearing_checklist_items!hearing_checklist_items_hearing_id_fkey(
+      id, template_id, label, offset_days, client_brings, position, task_id, done_at, skipped_at,
+      task:tasks!hearing_checklist_items_task_id_fkey(id, status, due_date)
+    )
   `
 }
 
@@ -49,13 +59,17 @@ const DETAIL_EXTRA = `
 `
 
 /** O PostgREST aninha os responsáveis como `[{ profile }]`; aqui vira a lista
- * de perfis, o formato que `normalizeEventRow` da Agenda também entrega. */
+ * de perfis, o formato que `normalizeEventRow` da Agenda também entrega. O
+ * checklist sai em `position`: ordenar um embed pelo PostgREST exige o nome
+ * da tabela no `referencedTable`, e o alias aqui é outro. */
 function normalizeHearingRow<T extends HearingWithContext>(row: unknown): T {
   const hearing = row as T
-  if (!hearing.event) return hearing
+  const checklist = [...(hearing.checklist ?? [])].sort((a, b) => a.position - b.position)
+  if (!hearing.event) return { ...hearing, checklist }
   const rawAssignees = hearing.event.assignees as unknown as { profile: Profile | null }[] | null
   return {
     ...hearing,
+    checklist,
     event: {
       ...hearing.event,
       assignees: (rawAssignees ?? [])
@@ -286,5 +300,178 @@ export async function setHearingCancelled(id: string, cancelled: boolean): Promi
     p_hearing_id: id,
     p_cancelled: cancelled,
   })
+  if (error) throw error
+}
+
+// ── Quadro de preparação ────────────────────────────────────────────────────
+
+/**
+ * Tudo que ainda vai acontecer ou espera resultado: as sem data e as
+ * designadas, de qualquer data. O Quadro distribui nas colunas
+ * (`boardColumn`); a passada sem resultado é "Aguardando resultado".
+ */
+export async function getOpenHearings(): Promise<HearingWithContext[]> {
+  const { data, error } = await supabase
+    .from('hearings')
+    .select(hearingSelect('left'))
+    .in('status', ['a_designar', 'designada'])
+  if (error) throw error
+
+  return (data ?? []).map((row) => normalizeHearingRow<HearingWithContext>(row))
+}
+
+// ── Checklist ───────────────────────────────────────────────────────────────
+//
+// Pelas RPCs da migration 77, e não por escrita direta: marcar o item mexe na
+// tarefa que ele criou, e a função confere `agenda:update` antes.
+
+export async function setChecklistItemState(itemId: string, state: HearingChecklistState): Promise<void> {
+  const { error } = await supabase.rpc('set_hearing_checklist_item', {
+    p_item_id: itemId,
+    p_state: state,
+  })
+  if (error) throw error
+}
+
+export async function addChecklistItem(params: {
+  hearingId: string
+  label: string
+  offsetDays: number | null
+}): Promise<void> {
+  const { error } = await supabase.rpc('add_hearing_checklist_item', {
+    p_hearing_id: params.hearingId,
+    p_label: params.label,
+    p_offset_days: params.offsetDays,
+  })
+  if (error) throw error
+}
+
+export async function removeChecklistItem(itemId: string): Promise<void> {
+  const { error } = await supabase.rpc('remove_hearing_checklist_item', { p_item_id: itemId })
+  if (error) throw error
+}
+
+/** "Marcar como pronta" com itens pendentes — e o desfazer. */
+export async function setReadyOverride(id: string, ready: boolean, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('hearings')
+    .update({
+      ready_override_at: ready ? new Date().toISOString() : null,
+      ready_override_by: ready ? userId : null,
+    })
+    .eq('id', id)
+    .select('id')
+    .single()
+  if (error) throw error
+}
+
+// ── Configurações: tipos e modelos ──────────────────────────────────────────
+
+/** Mesmo slug de `eventTypes.service.ts`: o id do tipo é texto legível. */
+function slugify(label: string): string {
+  return (
+    label
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'audiencia'
+  )
+}
+
+export async function createHearingKind(input: HearingKindInput): Promise<void> {
+  const existing = await getHearingKinds()
+  const taken = new Set(existing.map((kind) => kind.id))
+  const base = slugify(input.label)
+  let id = base
+  for (let n = 2; taken.has(id); n++) id = `${base}_${n}`
+
+  const { error } = await supabase.from('hearing_kinds').insert({
+    id,
+    label: input.label.trim(),
+    event_title: input.event_title.trim() || null,
+    default_duration_minutes: input.default_duration_minutes,
+    position: existing.length,
+    is_system: false,
+  })
+  if (error) throw error
+}
+
+export async function updateHearingKind(id: string, input: HearingKindInput): Promise<void> {
+  const { error } = await supabase
+    .from('hearing_kinds')
+    .update({
+      label: input.label.trim(),
+      event_title: input.event_title.trim() || null,
+      default_duration_minutes: input.default_duration_minutes,
+    })
+    .eq('id', id)
+    .select('id')
+    .single()
+  if (error) throw error
+}
+
+/** Quantas audiências usam o tipo: a FK é RESTRICT, e a tela diz antes de
+ * tentar, como em Tipos de Evento. */
+export async function countHearingsOfKind(kindId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('hearings')
+    .select('id', { count: 'exact', head: true })
+    .eq('kind_id', kindId)
+  if (error) throw error
+  return count ?? 0
+}
+
+export async function deleteHearingKind(id: string): Promise<void> {
+  const { error } = await supabase.from('hearing_kinds').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function getChecklistTemplates(): Promise<HearingChecklistTemplate[]> {
+  const { data, error } = await supabase
+    .from('hearing_checklist_templates')
+    .select('*')
+    .order('position')
+    .order('created_at')
+  if (error) throw error
+  return (data ?? []) as HearingChecklistTemplate[]
+}
+
+function templateRow(input: ChecklistTemplateInput) {
+  return {
+    kind_id: input.kind_id,
+    legal_area: input.legal_area,
+    label: input.label.trim(),
+    // Sem prazo não há tarefa: o CHECK da migration 77 recusaria.
+    offset_days: input.offset_days,
+    creates_task: input.offset_days !== null && input.creates_task,
+    client_brings: input.client_brings,
+  }
+}
+
+export async function createChecklistTemplate(input: ChecklistTemplateInput): Promise<void> {
+  const existing = await getChecklistTemplates()
+  const position = existing.filter((template) => template.kind_id === input.kind_id).length
+  const { error } = await supabase
+    .from('hearing_checklist_templates')
+    .insert({ ...templateRow(input), position, is_system: false })
+  if (error) throw error
+}
+
+export async function updateChecklistTemplate(id: string, input: ChecklistTemplateInput): Promise<void> {
+  const { error } = await supabase
+    .from('hearing_checklist_templates')
+    .update(templateRow(input))
+    .eq('id', id)
+    .select('id')
+    .single()
+  if (error) throw error
+}
+
+/** Sai só o modelo: os checklists que já nasceram dele ficam como estão
+ * (`template_id` vira nulo). */
+export async function deleteChecklistTemplate(id: string): Promise<void> {
+  const { error } = await supabase.from('hearing_checklist_templates').delete().eq('id', id)
   if (error) throw error
 }
