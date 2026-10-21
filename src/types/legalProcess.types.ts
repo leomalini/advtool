@@ -312,9 +312,9 @@ export type ProcessoIssueKind =
   | 'stale_movements'
   | 'missing_client'
   | 'missing_assignee'
-  /** Audiência designada cuja data não veio no texto do andamento, então o
-   * trigger da migration 74 não teve onde pôr o compromisso. Precisa de
-   * cadastro manual na Agenda. */
+  /** Ficha de audiência sem data (migration 76): designada no andamento, mas
+   * o texto não trouxe data e hora. Resolve-se informando a data em
+   * Audiências, que cria o compromisso na Agenda. */
   | 'hearing_without_date'
 
 export interface ProcessoIssue {

@@ -14,6 +14,7 @@ import {
 } from '../services/tasks.service'
 import { taskKeys } from './useTasks'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
+import { hearingKeys } from '@/features/audiencias/hooks/hearingKeys'
 import { useAuth } from '@/hooks/useAuth'
 import type { CreateTaskInput, UpdateTaskInput } from '@/schemas/task.schema'
 import type { Task, TaskStatus } from '@/types/task.types'
@@ -29,6 +30,9 @@ export function useInvalidateTaskSurfaces() {
     // Uma tarefa vinculada "cobre" um prazo próximo; concluí-la volta a
     // descobrir o prazo. Nos dois sentidos a pendência precisa recalcular.
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })
+    // Tarefa do checklist de uma audiência: concluí-la marca o item no banco
+    // (migration 77), e o progresso da ficha e do Quadro muda junto.
+    queryClient.invalidateQueries({ queryKey: hearingKeys.all })
   }
 }
 

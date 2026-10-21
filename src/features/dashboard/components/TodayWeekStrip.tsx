@@ -2,12 +2,13 @@
 
 import { format, isSameDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { Landmark } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { resolveEventType, type EventTypeRecord } from '@/types/event.types'
 import type { AgendaItem } from '@/features/agenda/utils/agendaItem'
 import type { DaySegment } from '@/features/agenda/utils/daySpan'
 import { pluralize } from '../utils/format'
-import { weekdayShort } from '../utils/today'
+import { hearingOf, weekdayShort } from '../utils/today'
 
 const MAX_DOTS = 3
 
@@ -27,6 +28,16 @@ function ItemDot({
 }) {
   // On the selected (indigo) day a hairline keeps the dots apart from it.
   const ring = onAccent && 'shadow-[0_0_0_1.5px_rgb(255_255_255/0.85)]'
+  // A hearing is drawn as its icon, not a dot: among three dots of colour it
+  // would be lost, and it is the commitment of the week that can't be moved.
+  if (hearingOf(item)) {
+    return (
+      <Landmark
+        aria-hidden
+        className={cn('size-2.5', onAccent ? 'text-primary-foreground' : 'text-chart-2')}
+      />
+    )
+  }
   if (item.kind === 'task') {
     return <span className={cn('size-1.5 rounded-full border border-info bg-card', ring)} />
   }
@@ -64,16 +75,22 @@ export function TodayWeekStrip({
     >
       {days.map((day) => {
         const key = format(day, 'yyyy-MM-dd')
-        const items = (segmentsByDay.get(key) ?? []).map((s) => s.item).filter(isOpenItem)
+        // Hearings first, so the cap of three marks never hides one.
+        const items = (segmentsByDay.get(key) ?? [])
+          .map((s) => s.item)
+          .filter(isOpenItem)
+          .sort((a, b) => Number(hearingOf(b) !== null) - Number(hearingOf(a) !== null))
         const selected = key === selectedKey
         const isToday = isSameDay(day, today)
+        const hearings = items.filter((item) => hearingOf(item) !== null).length
+        const hearingNote = hearings > 0 ? `, ${pluralize(hearings, 'audiência', 'audiências')}` : ''
 
         return (
           <button
             key={key}
             type="button"
             aria-pressed={selected}
-            aria-label={`${format(day, "EEEE, d 'de' MMMM", { locale: ptBR })}: ${pluralize(items.length, 'item', 'itens')}`}
+            aria-label={`${format(day, "EEEE, d 'de' MMMM", { locale: ptBR })}: ${pluralize(items.length, 'item', 'itens')}${hearingNote}`}
             onClick={() => onSelect(key)}
             className={cn(
               'flex flex-col items-center gap-0.5 rounded-lg border py-1.5 transition-colors',
@@ -100,7 +117,8 @@ export function TodayWeekStrip({
             >
               {format(day, 'd')}
             </span>
-            <span className="flex h-1.5 items-center gap-[3px]">
+            {/* `h-2.5`: the hearing icon is a little taller than a dot. */}
+            <span className="flex h-2.5 items-center gap-[3px]">
               {items.slice(0, MAX_DOTS).map((item) => (
                 <ItemDot key={item.id} item={item} eventTypes={eventTypes} onAccent={selected} />
               ))}

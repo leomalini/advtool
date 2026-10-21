@@ -2,7 +2,7 @@
 
 import { Fragment } from 'react'
 import { format, parseISO } from 'date-fns'
-import { AlertCircle, Clock } from 'lucide-react'
+import { AlertCircle, Clock, ScanText, Video } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getAvatarTone, getDisplayName, getInitials } from '@/utils/profile'
 import {
@@ -20,7 +20,8 @@ import {
   segmentMarker,
   type DaySegment,
 } from '@/features/agenda/utils/daySpan'
-import { countdown, minutesUntil } from '../utils/today'
+import { hearingJoinUrl, isHearingDateUnconfirmed } from '@/types/hearing.types'
+import { countdown, hearingOf, minutesUntil } from '../utils/today'
 
 type EventTypeMap = Map<string, EventTypeRecord>
 
@@ -99,6 +100,11 @@ function DayRow({ segment, isToday, now, todayKey, eventTypes, onOpen, onToggleT
   const lateTask = isToday && timed && item.kind === 'task' && !done && start < now
   const fatalToday = item.kind === 'event' && item.event.fatal_deadline === todayKey
 
+  const hearing = hearingOf(item)
+  const unconfirmed = isHearingDateUnconfirmed(hearing)
+  // A sala só interessa no dia, e até a audiência acabar.
+  const joinUrl = isToday && !ended ? hearingJoinUrl(hearing) : null
+
   const color =
     item.kind === 'task' ? 'var(--info)' : resolveEventType(eventTypes, item.event.type).color
   const meta =
@@ -167,6 +173,25 @@ function DayRow({ segment, isToday, now, todayKey, eventTypes, onOpen, onToggleT
           )}
           {lateTask && (
             <span className={cn(PILL, 'bg-destructive/10 text-destructive')}>passou do horário</span>
+          )}
+          {unconfirmed && (
+            <span className={cn(PILL, 'bg-warning/12 text-warning')}>
+              <ScanText aria-hidden className="size-3" />
+              data a confirmar
+            </span>
+          )}
+          {/* Acima do botão esticado (`z-10`), como o check da tarefa: link
+              dentro de botão não é HTML válido. */}
+          {joinUrl && (
+            <a
+              href={joinUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(PILL, 'relative z-10 bg-chart-2/12 text-chart-2 hover:bg-chart-2/20')}
+            >
+              <Video aria-hidden className="size-3" />
+              Entrar na sala
+            </a>
           )}
         </div>
         <p className="truncate text-xs text-muted-foreground">{meta}</p>

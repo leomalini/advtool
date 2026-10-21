@@ -615,10 +615,20 @@ export async function getLegalProcessesPendencies(): Promise<ProcessoPendency[]>
 
   // Uma consulta para cada tabela em vez de uma por processo: o que interessa
   // é só saber se existe trabalho vinculado, então bastam os ids.
-  const [{ data: events }, { data: tasks }] = await Promise.all([
+  const [{ data: events }, { data: tasks }, { data: hearingsWithoutDate }] = await Promise.all([
     supabase.from('events').select('legal_process_id, crm_item_id'),
     supabase.from('tasks').select('legal_process_id, crm_item_id, status'),
+    // A ficha da audiência sem data (migration 76). Quem não tem `agenda:view`
+    // recebe lista vazia da RLS, e a pendência não aparece para esse perfil —
+    // o mesmo que já acontecia com os eventos acima.
+    supabase.from('hearings').select('legal_process_id').eq('status', 'a_designar'),
   ])
+
+  const withoutDateByProcess = new Map<string, number>()
+  for (const row of (hearingsWithoutDate ?? []) as { legal_process_id: string | null }[]) {
+    if (!row.legal_process_id) continue
+    withoutDateByProcess.set(row.legal_process_id, (withoutDateByProcess.get(row.legal_process_id) ?? 0) + 1)
+  }
 
   const linkedProcessIds = new Set<string>()
   const linkedCrmItemIds = new Set<string>()
@@ -679,13 +689,14 @@ export async function getLegalProcessesPendencies(): Promise<ProcessoPendency[]>
       }
     }
 
-    // Audiência designada que o trigger da migration 74 não conseguiu agendar,
-    // porque a data não veio no texto do andamento (é o caso dos atos no
+    // Audiência designada no andamento sem data no texto (é o caso dos atos no
     // formato codificado da TPU). Alta: audiência marcada fora da agenda é
     // exatamente o que ninguém pode descobrir no dia.
-    const hearingsWithoutDate = processo.movements.filter(
-      (m) => m.hearing_slot !== null && m.hearing_at === null,
-    ).length
+    //
+    // Conta FICHAS, não movimentações (migration 76): contando atos, informar a
+    // data à mão não resolvia nada, e o mesmo ato reentregue sem data acendia
+    // a pendência para uma audiência que já estava na pauta.
+    const hearingsWithoutDate = withoutDateByProcess.get(processo.id) ?? 0
     if (hearingsWithoutDate > 0) {
       issues.push({
         kind: 'hearing_without_date',

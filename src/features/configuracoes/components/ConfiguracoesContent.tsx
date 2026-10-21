@@ -20,6 +20,7 @@ import {
   Newspaper,
   Webhook,
   CreditCard,
+  Landmark,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -27,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AREAS_JURIDICAS, ETIQUETAS } from '@/data/mock'
 import { WorkflowsManager } from './WorkflowsManager'
 import { EventTypesManager } from './EventTypesManager'
+import { HearingSettingsManager } from './HearingSettingsManager'
 import { UsersManager } from './UsersManager'
 import { OabMonitoringManager } from './OabMonitoringManager'
 import { WebhooksManager } from './WebhooksManager'
@@ -217,6 +219,7 @@ type TabValue =
   | 'workflows'
   | 'etiquetas'
   | 'tipos-evento'
+  | 'audiencias'
   | 'pagamentos'
   | 'webhooks'
   | 'geral'
@@ -230,6 +233,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
   { value: 'tipos-evento', label: 'Tipos de Evento', icon: CalendarDays },
+  { value: 'audiencias', label: 'Audiências', icon: Landmark },
   { value: 'webhooks', label: 'Webhooks', icon: Webhook },
 ]
 
@@ -502,6 +506,9 @@ export function ConfiguracoesContent({
           </TabsContent>
           <TabsContent value="tipos-evento">
             <EventTypesManager />
+          </TabsContent>
+          <TabsContent value="audiencias">
+            <HearingSettingsManager />
           </TabsContent>
           <TabsContent value="webhooks">
             <WebhooksManager />

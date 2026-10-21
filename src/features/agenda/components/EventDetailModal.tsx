@@ -24,10 +24,12 @@ import {
   History,
   CalendarClock,
   FileSignature,
+  Landmark,
   ScanText,
   X,
 } from "lucide-react";
 import { resolveEventType } from "@/types/event.types";
+import { isHearingDateUnconfirmed } from "@/types/hearing.types";
 import { useEventTypeMap } from "../hooks/useEventTypes";
 import type { CalendarEvent } from "@/types/event.types";
 import { formatDate, formatDateTime } from "@/utils/date";
@@ -106,6 +108,12 @@ export function EventDetailModal({
   }
 
   const { color, label } = resolveEventType(eventTypes, event.type);
+  const hearingUnconfirmed = isHearingDateUnconfirmed(event.hearing);
+  // Excluir o compromisso exclui a ficha (`on delete cascade`): quem só quer
+  // tirar da Agenda precisa saber que existe o cancelar.
+  const deleteDescription = event.hearing
+    ? `"${event.title}" será removido, junto com a ficha da audiência e o histórico de datas. Para tirar da Agenda sem perder a ficha, cancele pela ficha. ${DELETE_DOCUMENTS_NOTICE}`
+    : `"${event.title}" será removido. ${DELETE_DOCUMENTS_NOTICE}`;
   const assignees =
     event.assignees?.length
       ? event.assignees
@@ -208,6 +216,18 @@ export function EventDetailModal({
                 </InfoRow>
               )}
 
+              {/* Hearing record — kept by the database (migration 76). */}
+              {event.hearing && (
+                <InfoRow icon={<Landmark className="h-4 w-4 text-muted-foreground/60" />}>
+                  <Link href={`/audiencias?ficha=${event.hearing.id}`} className="group block">
+                    <p className="text-sm group-hover:underline">Abrir a ficha da audiência</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Conferência da data, modalidade, link da sala e histórico de remarcações
+                    </p>
+                  </Link>
+                </InfoRow>
+              )}
+
               {/* Linked processo */}
               {linkedProcesso && (
                 <InfoRow icon={<Gavel className="h-4 w-4 text-muted-foreground/60" />}>
@@ -281,11 +301,13 @@ export function EventDetailModal({
                 </InfoRow>
               )}
 
-              {/* Flags */}
+              {/* Flags — o "a confirmar" faltava nesta condição desde a 74:
+                  sem outra flag ligada, o selo nunca aparecia. */}
               {(event.is_important ||
                 event.is_urgent ||
                 event.is_recurring ||
-                event.is_retroactive) && (
+                event.is_retroactive ||
+                hearingUnconfirmed) && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {event.is_important && (
                     <Badge
@@ -314,10 +336,9 @@ export function EventDetailModal({
                       {seriesLabel(event)}
                     </Badge>
                   )}
-                  {/* Compromisso criado pelo trigger da migration 74: a data
-                      veio de leitura do texto do andamento, e o escritório
-                      ainda precisa conferi-la nos autos. */}
-                  {event.movement_id && (
+                  {/* A data veio de leitura do texto do andamento e ninguém a
+                      conferiu nos autos ainda — quem diz é a ficha. */}
+                  {hearingUnconfirmed && (
                     <Badge
                       variant="outline"
                       className="text-warning border-warning/25 bg-warning/12 gap-1 text-[11px]"
@@ -407,7 +428,7 @@ export function EventDetailModal({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Excluir evento"
-        description={`"${event.title}" será removido. ${DELETE_DOCUMENTS_NOTICE}`}
+        description={deleteDescription}
         isLoading={deleteEvent.isPending}
         onConfirm={() => runDelete("this")}
       />

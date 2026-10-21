@@ -2,6 +2,13 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendaItem } from '@/features/agenda/utils/agendaItem'
 import { belongsToAllDayStrip } from '@/features/agenda/utils/daySpan'
+import type { EventHearingSummary } from '@/types/hearing.types'
+
+/** A ficha, quando o item é uma audiência (migration 76). O tipo do evento
+ * não serve para isso: `hearing` é um slug que o escritório pode apagar. */
+export function hearingOf(item: AgendaItem): EventHearingSummary | null {
+  return item.kind === 'event' ? (item.event.hearing ?? null) : null
+}
 
 export function greeting(now: Date): string {
   const hour = now.getHours()

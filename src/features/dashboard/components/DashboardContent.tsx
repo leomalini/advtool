@@ -13,6 +13,7 @@ import { TeamCard } from "./TeamCard";
 import { PortalCard } from "./PortalCard";
 import { PendenciesCard } from "./PendenciesCard";
 import { CreditBalanceCard } from "./CreditBalanceCard";
+import { UpcomingHearingsCard } from "./UpcomingHearingsCard";
 import { usePermissions } from "@/hooks/usePermissions";
 import { enterDelay } from "../utils/motion";
 
@@ -45,6 +46,11 @@ export function DashboardContent() {
 
   const aside = visible([
     can("crm", "view") && <PrazosCard key="deadlines" className={cn("order-1", enterDelay(2))} />,
+    // Mesmo `order-1` que Prazos: no celular o empate segue a ordem do DOM, e
+    // as audiências vêm logo depois dos prazos, antes de tudo da coluna larga.
+    can("agenda", "view") && (
+      <UpcomingHearingsCard key="hearings" className={cn("order-1", enterDelay(3))} />
+    ),
     can("pendencias", "view") && (
       <PendenciesCard key="pendencies" className={cn("order-5", enterDelay(3))} />
     ),

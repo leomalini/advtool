@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { resolveEventType } from '@/types/event.types'
 import { useEventTypeMap } from '../hooks/useEventTypes'
 import type { CalendarEvent } from '@/types/event.types'
+import { hearingLeavesAgenda, isHearingDateUnconfirmed } from '@/types/hearing.types'
 import type { EventFormInput } from '@/schemas/event.schema'
 import { useEventsForEntity } from '../hooks/useEvents'
 import { useCreateEvent } from '../hooks/useEventMutations'
@@ -126,7 +127,11 @@ export function EntityEventsTab({
   }
 
   // Uma linha por série, na próxima ocorrência — as demais ficam na Agenda.
-  const linhas = collapseEventSeries(eventos)
+  // Audiência cancelada sai da agenda e fica no módulo de Audiências: esta
+  // aba não filtra `show_in_agenda`, então filtra pela ficha.
+  const linhas = collapseEventSeries(
+    eventos.filter((evento) => !evento.hearing || !hearingLeavesAgenda(evento.hearing.status)),
+  )
 
   return (
     <div className="space-y-5">
@@ -189,8 +194,9 @@ export function EntityEventsTab({
                       </span>
                     )}
                     {/* A data deste compromisso saiu de leitura do texto do
-                        andamento (migration 74), não de cadastro conferido. */}
-                    {evento.movement_id && (
+                        andamento e ninguém a conferiu ainda — quem diz é a
+                        ficha da audiência (migration 76). */}
+                    {isHearingDateUnconfirmed(evento.hearing) && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[10px] font-medium text-warning">
                         <ScanText className="w-2.5 h-2.5" />
                         A confirmar
