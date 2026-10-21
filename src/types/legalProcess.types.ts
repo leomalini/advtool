@@ -164,6 +164,9 @@ export interface PartyClient {
   name: string | null
   company_name: string | null
   trade_name: string | null
+  /** A parte liga a qualquer pessoa cadastrada, cliente ou não (migration
+   * 78) — a tela diz qual e leva à ficha certa. */
+  is_client: boolean
 }
 
 export interface LegalProcessParty {

@@ -153,6 +153,10 @@ export interface CompanyClient extends ClientBase {
 
 export type Client = IndividualClient | CompanyClient
 
+/** As duas faces do mesmo cadastro (migration 78): a tela muda rota, textos e
+ * abas conforme o registro seja cliente ou só pessoa. */
+export type RecordKind = 'client' | 'person'
+
 export interface ClientWithRelations extends ClientBase {
   assignee?: Profile | null
   creator?: Profile

@@ -24,6 +24,8 @@ import {
   User,
   Building2,
   Tag,
+  UserCheck,
+  Contact,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -44,6 +46,8 @@ import { cn } from '@/lib/utils'
 import {
   createIndividualClientSchema,
   createCompanyClientSchema,
+  createIndividualPersonSchema,
+  createCompanyPersonSchema,
   ADDRESS_KINDS,
   LEGAL_AREAS,
   type AddressInput,
@@ -60,6 +64,7 @@ import type {
   ClientSex,
   LegalArea,
   MaritalStatus,
+  RecordKind,
 } from '@/types/cliente.types'
 import {
   getClientDisplayName,
@@ -163,6 +168,43 @@ function TypeToggle({ value, onChange }: { value: ClientType; onChange: (t: Clie
       >
         <Building2 className="w-3.5 h-3.5" />
         Pessoa Jurídica
+      </button>
+    </div>
+  )
+}
+
+// ── Cliente ou pessoa — só quando quem abre o formulário deixa escolher ──────
+
+/** Cadastro feito a partir de uma parte (processo, contrato): a mesma pessoa
+ * pode ser o cliente ou a outra parte, e só quem cadastra sabe (migration 78). */
+function KindToggle({ value, onChange }: { value: RecordKind; onChange: (k: RecordKind) => void }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-muted border border-border rounded-lg p-0.5">
+      <button
+        type="button"
+        onClick={() => onChange('client')}
+        className={cn(
+          'flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
+          value === 'client'
+            ? 'bg-card text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <UserCheck className="w-3.5 h-3.5" />
+        Cliente do escritório
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('person')}
+        className={cn(
+          'flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
+          value === 'person'
+            ? 'bg-card text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <Contact className="w-3.5 h-3.5" />
+        Só pessoa
       </button>
     </div>
   )
@@ -533,6 +575,8 @@ function AddressFields({
 
 function FormShell({
   title,
+  kind,
+  onKindChange,
   isEditing,
   isLoading,
   onClose,
@@ -543,6 +587,8 @@ function FormShell({
   children,
 }: {
   title: string
+  kind: RecordKind
+  onKindChange?: (kind: RecordKind) => void
   isEditing: boolean
   isLoading: boolean
   onClose: () => void
@@ -563,7 +609,7 @@ function FormShell({
           </Button>
           <Button type="submit" size="sm" disabled={isLoading}>
             {isLoading && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
-            {isEditing ? 'Salvar alterações' : 'Cadastrar cliente'}
+            {isEditing ? 'Salvar alterações' : kind === 'person' ? 'Cadastrar pessoa' : 'Cadastrar cliente'}
           </Button>
         </div>
       </DialogHeader>
@@ -578,9 +624,15 @@ function FormShell({
             {/* Empilhado, e não lado a lado: os sete chips de área não cabem
                 em meia coluna sem quebrar em três linhas. */}
             <div className="space-y-4">
+              {!isEditing && onKindChange && (
+                <div className="max-w-sm">
+                  <FieldLabel required>Cadastrar como</FieldLabel>
+                  <KindToggle value={kind} onChange={onKindChange} />
+                </div>
+              )}
               {!isEditing && (
                 <div className="max-w-sm">
-                  <FieldLabel required>Tipo de Cliente</FieldLabel>
+                  <FieldLabel required>{kind === 'person' ? 'Tipo de Pessoa' : 'Tipo de Cliente'}</FieldLabel>
                   <TypeToggle value={type} onChange={onTypeChange} />
                 </div>
               )}
@@ -609,6 +661,8 @@ function PFForm({
   type,
   onTypeChange,
   isEditing,
+  kind,
+  onKindChange,
 }: {
   title: string
   onClose: () => void
@@ -618,11 +672,17 @@ function PFForm({
   type: ClientType
   onTypeChange: (t: ClientType) => void
   isEditing: boolean
+  kind: RecordKind
+  onKindChange?: (kind: RecordKind) => void
 }) {
   const [isFetchingCpf, setIsFetchingCpf] = useState(false)
 
   const form = useForm<CreateIndividualClientInput>({
-    resolver: zodResolver(createIndividualClientSchema),
+    // Pessoa aceita CPF vazio (migration 78). O RHF relê as opções a cada
+    // render, então alternar entre cliente e pessoa troca a validação.
+    resolver: zodResolver(
+      kind === 'person' ? createIndividualPersonSchema : createIndividualClientSchema
+    ),
     defaultValues: {
       type: 'individual',
       name: defaultValues?.name ?? '',
@@ -689,6 +749,8 @@ function PFForm({
     >
       <FormShell
         title={title}
+        kind={kind}
+        onKindChange={onKindChange}
         isEditing={isEditing}
         isLoading={isLoading}
         onClose={onClose}
@@ -708,7 +770,7 @@ function PFForm({
             </div>
 
             <div>
-              <FieldLabel required>CPF</FieldLabel>
+              <FieldLabel required={kind === 'client'}>CPF</FieldLabel>
               <div className="flex gap-2">
                 <Input
                   {...form.register('cpf')}
@@ -726,6 +788,7 @@ function PFForm({
               <DuplicateDocumentWarning
                 document={form.watch('cpf')}
                 excludeId={isEditing ? defaultValues?.id : undefined}
+                kind={kind}
               />
             </div>
           </div>
@@ -913,6 +976,8 @@ function PJForm({
   type,
   onTypeChange,
   isEditing,
+  kind,
+  onKindChange,
 }: {
   title: string
   onClose: () => void
@@ -922,11 +987,15 @@ function PJForm({
   type: ClientType
   onTypeChange: (t: ClientType) => void
   isEditing: boolean
+  kind: RecordKind
+  onKindChange?: (kind: RecordKind) => void
 }) {
   const [isFetchingCnpj, setIsFetchingCnpj] = useState(false)
 
   const form = useForm<CreateCompanyClientInput>({
-    resolver: zodResolver(createCompanyClientSchema),
+    resolver: zodResolver(
+      kind === 'person' ? createCompanyPersonSchema : createCompanyClientSchema
+    ),
     defaultValues: {
       type: 'company',
       company_name: defaultValues?.company_name ?? '',
@@ -1015,6 +1084,8 @@ function PJForm({
     >
       <FormShell
         title={title}
+        kind={kind}
+        onKindChange={onKindChange}
         isEditing={isEditing}
         isLoading={isLoading}
         onClose={onClose}
@@ -1028,7 +1099,7 @@ function PJForm({
           <SectionDivider icon={FileText}>Identificação</SectionDivider>
           <div className="space-y-4">
             <div>
-              <FieldLabel required>CNPJ</FieldLabel>
+              <FieldLabel required={kind === 'client'}>CNPJ</FieldLabel>
               <div className="flex gap-2">
                 <Input
                   {...form.register('cnpj')}
@@ -1046,6 +1117,7 @@ function PJForm({
               <DuplicateDocumentWarning
                 document={form.watch('cnpj')}
                 excludeId={isEditing ? defaultValues?.id : undefined}
+                kind={kind}
               />
             </div>
 
@@ -1149,9 +1221,25 @@ interface ClienteFormProps {
   onSubmit: (data: CreateClientInput) => void
   isLoading?: boolean
   defaultValues?: Partial<ClientWithRelations>
+  /** Cliente ou pessoa (migration 78). Os campos são os mesmos; mudam os
+   * textos e o que o aviso de documento repetido oferece. Quem grava — e
+   * decide o estado do registro — é quem recebe o `onSubmit`. */
+  kind?: RecordKind
+  /** Com ele, o formulário mostra a escolha "Cliente do escritório / Só
+   * pessoa" e quem chama guarda o valor — é o cadastro feito a partir de uma
+   * parte do processo ou do contrato. Sem ele, o tipo é o de `kind`. */
+  onKindChange?: (kind: RecordKind) => void
 }
 
-export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues }: ClienteFormProps) {
+export function ClienteForm({
+  open,
+  onClose,
+  onSubmit,
+  isLoading,
+  defaultValues,
+  kind = 'client',
+  onKindChange,
+}: ClienteFormProps) {
   const initialType = defaultValues?.type === 'company' ? 'company' : 'individual'
   const [type, setType] = useState<ClientType>(initialType)
   // Only a real, persisted client has an id — the combobox's "create new" flow
@@ -1159,7 +1247,14 @@ export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues 
   // NOT be treated as editing an existing client.
   const isEditing = !!defaultValues?.id
   const displayName = isEditing ? getClientDisplayName(defaultValues as ClientWithRelations) : ''
-  const title = isEditing ? (displayName ? `Editar — ${displayName}` : 'Editar Cliente') : 'Novo Cliente'
+  const noun = kind === 'person' ? 'Pessoa' : 'Cliente'
+  const title = isEditing
+    ? displayName
+      ? `Editar — ${displayName}`
+      : `Editar ${noun}`
+    : kind === 'person'
+      ? 'Nova Pessoa'
+      : 'Novo Cliente'
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -1177,6 +1272,8 @@ export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues 
             type={type}
             onTypeChange={setType}
             isEditing={isEditing}
+            kind={kind}
+            onKindChange={onKindChange}
           />
         ) : (
           <PJForm
@@ -1188,6 +1285,8 @@ export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues 
             type={type}
             onTypeChange={setType}
             isEditing={isEditing}
+            kind={kind}
+            onKindChange={onKindChange}
           />
         )}
       </DialogContent>

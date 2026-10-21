@@ -147,6 +147,18 @@ export async function getClients(): Promise<ClientWithRelations[]> {
   return (data as ClientWithRelations[]).map(sortAddresses)
 }
 
+/** Toda pessoa, cliente ou não — a lista de Pessoas (migration 78). Todo
+ * cliente é uma pessoa, então os clientes vêm junto; a tela os marca. */
+export async function getPeople(): Promise<ClientWithRelations[]> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select(CLIENT_SELECT)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data as ClientWithRelations[]).map(sortAddresses)
+}
+
 export async function getClientById(id: string): Promise<ClientWithRelations> {
   const { data, error } = await supabase
     .from('clients')
@@ -316,7 +328,8 @@ export async function createPersonRecord(
  * `.is('client_since', null)` para não reescrever a data de quem já é
  * cliente: converter duas vezes (duas abas abertas) não pode dar uma data
  * nova. Quem não tem `clientes:create` é recusado pelo trigger
- * `guard_client_since`, com uma mensagem que já serve à tela.
+ * `guard_client_since`, com uma mensagem que já serve à tela — por isso o
+ * erro sobe como `Error` com a mensagem do banco.
  */
 export async function convertToClient(id: string, userId: string): Promise<void> {
   const { data, error } = await supabase
@@ -327,7 +340,7 @@ export async function convertToClient(id: string, userId: string): Promise<void>
     .select('name, company_name')
     .maybeSingle()
 
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   if (!data) {
     // Nenhuma linha mudou: ou já era cliente — que é o estado pedido —, ou o
@@ -347,6 +360,47 @@ export async function convertToClient(id: string, userId: string): Promise<void>
     entity_type: 'client',
     entity_id: id,
     entity_title: data.name ?? data.company_name ?? 'Cliente',
+    actor_id: userId,
+  })
+}
+
+/**
+ * Cliente → pessoa ("Mover para Pessoas", migration 78). Existe para a limpeza
+ * das partes contrárias que o "Vincular ou cadastrar" cadastrou como cliente.
+ *
+ * Quem decide se pode é o trigger `guard_client_since`: só quem não é dono de
+ * processo, caso, contrato, lançamento ou link de acompanhamento ativo. A
+ * recusa vem com a lista do que impede, e sobe como `Error` para a tela
+ * mostrar. A regra não é repetida aqui — seriam duas versões dela.
+ */
+export async function convertToPerson(id: string, userId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ client_since: null })
+    .eq('id', id)
+    .not('client_since', 'is', null)
+    .select('name, company_name')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+
+  if (!data) {
+    // Mesmo raciocínio de `convertToClient`: já ser pessoa é o estado pedido.
+    const { data: current, error: readError } = await supabase
+      .from('clients')
+      .select('is_client')
+      .eq('id', id)
+      .maybeSingle()
+    if (readError) throw readError
+    if (current && !current.is_client) return
+    throw new Error('Cliente não encontrado.')
+  }
+
+  await recordActivity({
+    type: 'client_moved_to_person',
+    entity_type: 'client',
+    entity_id: id,
+    entity_title: data.name ?? data.company_name ?? 'Pessoa',
     actor_id: userId,
   })
 }

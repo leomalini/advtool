@@ -22,6 +22,10 @@ interface EntityContractsTabProps {
   defaultClientId?: string | null
   /** O que a aba é: "cliente" ou "processo". */
   itemLabel: string
+  /** Sem "Novo contrato": na ficha de pessoa que não é cliente (migration 78),
+   * a aba lista os contratos em que ela é parte, e um contrato novo nasceria
+   * com ela como cliente. */
+  allowCreate?: boolean
 }
 
 function term(contract: ContractWithRelations): string | null {
@@ -38,6 +42,7 @@ export function EntityContractsTab({
   legalProcessId,
   defaultClientId,
   itemLabel,
+  allowCreate = true,
 }: EntityContractsTabProps) {
   const { data: contracts = [], isLoading } = useContractsForEntity({ clientId, legalProcessId })
   const [createOpen, setCreateOpen] = useState(false)
@@ -53,12 +58,14 @@ export function EntityContractsTab({
             </span>
           )}
         </div>
-        <Can resource="contratos" action="create">
-          <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            Novo contrato
-          </Button>
-        </Can>
+        {allowCreate && (
+          <Can resource="contratos" action="create">
+            <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Novo contrato
+            </Button>
+          </Can>
+        )}
       </div>
 
       {isLoading ? (
@@ -105,14 +112,16 @@ export function EntityContractsTab({
         </ul>
       )}
 
-      <ContractFormDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        initialValues={{
-          client_id: clientId ?? defaultClientId ?? '',
-          legal_process_id: legalProcessId ?? '',
-        }}
-      />
+      {allowCreate && (
+        <ContractFormDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          initialValues={{
+            client_id: clientId ?? defaultClientId ?? '',
+            legal_process_id: legalProcessId ?? '',
+          }}
+        />
+      )}
     </div>
   )
 }

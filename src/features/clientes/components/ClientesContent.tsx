@@ -2,13 +2,26 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Users, Phone, Mail, ArrowRight, Pencil, Trash2, AlertCircle, AlertTriangle } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  Users,
+  Phone,
+  Mail,
+  ArrowRight,
+  Pencil,
+  Trash2,
+  AlertCircle,
+  AlertTriangle,
+  UserCheck,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ClienteForm } from './ClienteForm'
 import { LegalAreaBadges } from './LegalAreaBadges'
+import { ConvertToClientDialog } from './ConvertToClientDialog'
 import {
   Dialog,
   DialogContent,
@@ -18,9 +31,18 @@ import {
 import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import { formatRelative } from '@/utils/date'
-import { useClientes, useClientesPendencies } from '../hooks/useClientes'
-import { useCreateCliente, useUpdateCliente, useDeleteCliente } from '../hooks/useClienteMutations'
-import type { ClientWithRelations, LegalArea } from '@/types/cliente.types'
+import {
+  useCadastroList,
+  useClientesPendencies,
+  type CadastroListScope,
+} from '../hooks/useClientes'
+import {
+  useCreateCliente,
+  useCreatePessoa,
+  useUpdateCliente,
+  useDeleteCliente,
+} from '../hooks/useClienteMutations'
+import type { ClientWithRelations, LegalArea, RecordKind } from '@/types/cliente.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import { getClientDisplayName, getClientDocument } from '@/types/cliente.types'
 import { Can } from '@/components/shared/Can'
@@ -32,6 +54,45 @@ const AREA_FILTRO_ITEMS: { id: LegalArea | 'todas'; label: string }[] = [
     label: cfg.label,
   })),
 ]
+
+/** Só na lista de Pessoas, que mostra todo mundo (migration 78). */
+type KindFilter = 'todas' | 'clientes' | 'pessoas'
+
+const KIND_FILTER_ITEMS: { id: KindFilter; label: string }[] = [
+  { id: 'todas', label: 'Todas' },
+  { id: 'clientes', label: 'Clientes' },
+  { id: 'pessoas', label: 'Só pessoas' },
+]
+
+interface ScopeText {
+  title: string
+  count: (n: number) => string
+  create: string
+  empty: string
+  noun: string
+}
+
+/** Os textos das duas telas. A lista é a mesma — muda o recorte e o nome. */
+const SCOPE_TEXT: Record<CadastroListScope, ScopeText> = {
+  clients: {
+    title: 'Clientes',
+    count: (n) => `${n} clientes cadastrados`,
+    create: 'Novo Cliente',
+    empty: 'Nenhum cliente encontrado',
+    noun: 'clientes',
+  },
+  people: {
+    title: 'Pessoas',
+    count: (n) => `${n} pessoas cadastradas`,
+    create: 'Nova Pessoa',
+    empty: 'Nenhuma pessoa encontrada',
+    noun: 'pessoas',
+  },
+}
+
+function recordKind(client: ClientWithRelations): RecordKind {
+  return client.is_client ? 'client' : 'person'
+}
 
 // ── Skeleton da tabela ───────────────────────────────────────
 
@@ -84,7 +145,7 @@ function DeleteDialog({ client, onConfirm, onCancel, isLoading }: DeleteDialogPr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <AlertCircle className="h-4 w-4" />
-            Remover cliente
+            {client.is_client ? 'Remover cliente' : 'Remover pessoa'}
           </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
@@ -109,12 +170,24 @@ function DeleteDialog({ client, onConfirm, onCancel, isLoading }: DeleteDialogPr
 interface ClienteRowProps {
   cliente: ClientWithRelations
   hasPendency?: boolean
+  /** Na lista de Pessoas: selo "Cliente" e o atalho "Tornar cliente". Na de
+   * Clientes todo mundo é cliente, e o selo seria ruído. */
+  showKind?: boolean
   onVerDetalhe: (c: ClientWithRelations) => void
   onEdit: (c: ClientWithRelations) => void
   onDelete: (c: ClientWithRelations) => void
+  onConvert?: (c: ClientWithRelations) => void
 }
 
-function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: ClienteRowProps) {
+function ClienteRow({
+  cliente,
+  hasPendency,
+  showKind = false,
+  onVerDetalhe,
+  onEdit,
+  onDelete,
+  onConvert,
+}: ClienteRowProps) {
   const name = getClientDisplayName(cliente)
   const doc = getClientDocument(cliente)
   const initials = name.slice(0, 2).toUpperCase()
@@ -142,16 +215,23 @@ function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: Cl
                 </span>
               )}
             </div>
-            <span
-              className={cn(
-                'inline-flex items-center rounded border px-1 py-0 text-xs font-medium',
-                cliente.type === 'company'
-                  ? 'border-warning/25 bg-warning/12 text-warning'
-                  : 'border-border bg-muted text-muted-foreground'
+            <div className="flex items-center gap-1">
+              <span
+                className={cn(
+                  'inline-flex items-center rounded border px-1 py-0 text-xs font-medium',
+                  cliente.type === 'company'
+                    ? 'border-warning/25 bg-warning/12 text-warning'
+                    : 'border-border bg-muted text-muted-foreground'
+                )}
+              >
+                {cliente.type === 'company' ? 'PJ' : 'PF'}
+              </span>
+              {showKind && cliente.is_client && (
+                <span className="inline-flex items-center rounded border border-info/25 bg-info/12 px-1 py-0 text-xs font-medium text-info">
+                  Cliente
+                </span>
               )}
-            >
-              {cliente.type === 'company' ? 'PJ' : 'PF'}
-            </span>
+            </div>
           </div>
         </div>
       </td>
@@ -215,6 +295,19 @@ function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: Cl
           >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
+          {showKind && !cliente.is_client && onConvert && (
+            <Can resource="clientes" action="create">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={() => onConvert(cliente)}
+                title="Tornar cliente"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+              </Button>
+            </Can>
+          )}
           <Can resource="clientes" action="delete">
             <Button
               size="sm"
@@ -243,26 +336,38 @@ function ClienteRow({ cliente, hasPendency, onVerDetalhe, onEdit, onDelete }: Cl
 
 // ── Componente principal ─────────────────────────────────────
 
-export function ClientesContent() {
+/**
+ * A lista de Clientes e a de Pessoas (migration 78). É a mesma tela: Pessoas
+ * mostra todo mundo, com selo e filtro; Clientes, só quem é cliente.
+ */
+export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListScope }) {
   const [search, setSearch] = useState('')
   const [areaFiltro, setAreaFiltro] = useState<LegalArea | 'todas'>('todas')
+  const [kindFilter, setKindFilter] = useState<KindFilter>('todas')
 
   const router = useRouter()
+  const text = SCOPE_TEXT[scope]
+  const isPeople = scope === 'people'
 
   const [editClient, setEditClient] = useState<ClientWithRelations | null>(null)
   const [deleteClient, setDeleteClient] = useState<ClientWithRelations | null>(null)
+  const [convertClient, setConvertClient] = useState<ClientWithRelations | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
-  const { data: clientes = [], isLoading, isError } = useClientes()
+  const { data: clientes = [], isLoading, isError } = useCadastroList(scope)
   const { data: pendencias = [] } = useClientesPendencies()
-  const createMutation = useCreateCliente()
-  const updateMutation = useUpdateCliente(editClient?.id ?? '')
-  const deleteMutation = useDeleteCliente()
+  const createClientMutation = useCreateCliente()
+  const createPersonMutation = useCreatePessoa()
+  const createMutation = isPeople ? createPersonMutation : createClientMutation
+  const editKind: RecordKind = editClient ? recordKind(editClient) : 'client'
+  const updateMutation = useUpdateCliente(editClient?.id ?? '', editKind)
+  const deleteMutation = useDeleteCliente(deleteClient ? recordKind(deleteClient) : 'client')
 
   // O detalhe é uma página própria desde que o modal foi aposentado — a linha
-  // navega em vez de abrir sobreposição.
-  function openDetail(id: string) {
-    router.push(`/clientes/${id}`)
+  // navega em vez de abrir sobreposição. Cliente abre na ficha de cliente
+  // mesmo vindo de Pessoas: é lá que estão processos, financeiro e pendências.
+  function openDetail(client: ClientWithRelations) {
+    router.push(client.is_client ? `/clientes/${client.id}` : `/pessoas/${client.id}`)
   }
 
   const pendingClientIds = useMemo(
@@ -291,9 +396,14 @@ export function ClientesContent() {
 
       const matchArea = areaFiltro === 'todas' || (c.legal_areas ?? []).includes(areaFiltro)
 
-      return matchSearch && matchArea
+      const matchKind =
+        kindFilter === 'todas' ||
+        (kindFilter === 'clientes' && c.is_client) ||
+        (kindFilter === 'pessoas' && !c.is_client)
+
+      return matchSearch && matchArea && matchKind
     })
-  }, [clientes, search, areaFiltro])
+  }, [clientes, search, areaFiltro, kindFilter])
 
   function handleCreate(data: CreateClientInput) {
     createMutation.mutate(data, {
@@ -315,14 +425,16 @@ export function ClientesContent() {
     })
   }
 
+  const hasFilters = search || areaFiltro !== 'todas' || kindFilter !== 'todas'
+
   return (
     <div className="space-y-4">
       {/* ── Header ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Clientes</h2>
+          <h2 className="text-lg font-semibold">{text.title}</h2>
           <p className="text-sm text-muted-foreground">
-            {isLoading ? '...' : `${clientes.length} clientes cadastrados`}
+            {isLoading ? '...' : text.count(clientes.length)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -338,14 +450,33 @@ export function ClientesContent() {
           <Can resource="clientes" action="create">
             <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
-              Novo Cliente
+              {text.create}
             </Button>
           </Can>
         </div>
       </div>
 
-      {/* ── Filtros por área jurídica ── */}
+      {/* ── Filtros: cliente ou não (só em Pessoas) e área jurídica ── */}
       <div className="flex items-center gap-2 flex-wrap">
+        {isPeople && (
+          <>
+            {KIND_FILTER_ITEMS.map((filtro) => (
+              <button
+                key={filtro.id}
+                onClick={() => setKindFilter(filtro.id)}
+                className={cn(
+                  'inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors border',
+                  kindFilter === filtro.id
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'bg-transparent text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground'
+                )}
+              >
+                {filtro.label}
+              </button>
+            ))}
+            <span aria-hidden className="mx-1 h-4 w-px bg-border" />
+          </>
+        )}
         {AREA_FILTRO_ITEMS.map((filtro) => (
           <button
             key={filtro.id}
@@ -368,17 +499,17 @@ export function ClientesContent() {
       ) : isError ? (
         <EmptyState
           icon={AlertCircle}
-          title="Erro ao carregar clientes"
+          title={`Erro ao carregar ${text.noun}`}
           description="Tente recarregar a página."
         />
       ) : clientesFiltrados.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="Nenhum cliente encontrado"
+          title={text.empty}
           description={
-            search || areaFiltro !== 'todas'
+            hasFilters
               ? 'Tente ajustar a busca ou os filtros.'
-              : 'Cadastre o primeiro cliente clicando em "Novo Cliente".'
+              : `Cadastre o primeiro clicando em "${text.create}".`
           }
         />
       ) : (
@@ -400,28 +531,31 @@ export function ClientesContent() {
                   key={cliente.id}
                   cliente={cliente}
                   hasPendency={pendingClientIds.has(cliente.id)}
-                  onVerDetalhe={(c) => openDetail(c.id)}
+                  showKind={isPeople}
+                  onVerDetalhe={openDetail}
                   onEdit={setEditClient}
                   onDelete={setDeleteClient}
+                  onConvert={setConvertClient}
                 />
               ))}
             </tbody>
           </table>
           <div className="border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
-            Exibindo {clientesFiltrados.length} de {clientes.length} clientes
+            Exibindo {clientesFiltrados.length} de {clientes.length} {text.noun}
           </div>
         </div>
       )}
 
-      {/* ── Dialog: Criar cliente ── */}
+      {/* ── Dialog: Criar ── */}
       <ClienteForm
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onSubmit={handleCreate}
         isLoading={createMutation.isPending}
+        kind={isPeople ? 'person' : 'client'}
       />
 
-      {/* ── Dialog: Editar cliente ── */}
+      {/* ── Dialog: Editar ── */}
       {editClient && (
         <ClienteForm
           open={!!editClient}
@@ -429,6 +563,7 @@ export function ClientesContent() {
           onSubmit={handleEdit}
           isLoading={updateMutation.isPending}
           defaultValues={editClient}
+          kind={editKind}
         />
       )}
 
@@ -439,6 +574,17 @@ export function ClientesContent() {
         onCancel={() => setDeleteClient(null)}
         isLoading={deleteMutation.isPending}
       />
+
+      {/* ── Dialog: Tornar cliente — a lista fica onde está e a linha ganha
+          o selo ── */}
+      {convertClient && (
+        <ConvertToClientDialog
+          open={!!convertClient}
+          onOpenChange={(open) => !open && setConvertClient(null)}
+          personId={convertClient.id}
+          personName={getClientDisplayName(convertClient)}
+        />
+      )}
 
     </div>
   )

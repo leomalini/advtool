@@ -15,6 +15,7 @@ export type ActivityType =
   // mesma tabela.
   | 'person_created'
   | 'person_converted'
+  | 'client_moved_to_person'
   | 'task_created'
   | 'task_done'
   | 'task_comment'
