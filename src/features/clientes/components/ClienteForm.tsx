@@ -60,6 +60,7 @@ import type {
   ClientSex,
   LegalArea,
   MaritalStatus,
+  RecordKind,
 } from '@/types/cliente.types'
 import {
   getClientDisplayName,
@@ -533,6 +534,7 @@ function AddressFields({
 
 function FormShell({
   title,
+  kind,
   isEditing,
   isLoading,
   onClose,
@@ -543,6 +545,7 @@ function FormShell({
   children,
 }: {
   title: string
+  kind: RecordKind
   isEditing: boolean
   isLoading: boolean
   onClose: () => void
@@ -563,7 +566,7 @@ function FormShell({
           </Button>
           <Button type="submit" size="sm" disabled={isLoading}>
             {isLoading && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
-            {isEditing ? 'Salvar alterações' : 'Cadastrar cliente'}
+            {isEditing ? 'Salvar alterações' : kind === 'person' ? 'Cadastrar pessoa' : 'Cadastrar cliente'}
           </Button>
         </div>
       </DialogHeader>
@@ -580,7 +583,7 @@ function FormShell({
             <div className="space-y-4">
               {!isEditing && (
                 <div className="max-w-sm">
-                  <FieldLabel required>Tipo de Cliente</FieldLabel>
+                  <FieldLabel required>{kind === 'person' ? 'Tipo de Pessoa' : 'Tipo de Cliente'}</FieldLabel>
                   <TypeToggle value={type} onChange={onTypeChange} />
                 </div>
               )}
@@ -609,6 +612,7 @@ function PFForm({
   type,
   onTypeChange,
   isEditing,
+  kind,
 }: {
   title: string
   onClose: () => void
@@ -618,6 +622,7 @@ function PFForm({
   type: ClientType
   onTypeChange: (t: ClientType) => void
   isEditing: boolean
+  kind: RecordKind
 }) {
   const [isFetchingCpf, setIsFetchingCpf] = useState(false)
 
@@ -689,6 +694,7 @@ function PFForm({
     >
       <FormShell
         title={title}
+        kind={kind}
         isEditing={isEditing}
         isLoading={isLoading}
         onClose={onClose}
@@ -726,6 +732,7 @@ function PFForm({
               <DuplicateDocumentWarning
                 document={form.watch('cpf')}
                 excludeId={isEditing ? defaultValues?.id : undefined}
+                kind={kind}
               />
             </div>
           </div>
@@ -913,6 +920,7 @@ function PJForm({
   type,
   onTypeChange,
   isEditing,
+  kind,
 }: {
   title: string
   onClose: () => void
@@ -922,6 +930,7 @@ function PJForm({
   type: ClientType
   onTypeChange: (t: ClientType) => void
   isEditing: boolean
+  kind: RecordKind
 }) {
   const [isFetchingCnpj, setIsFetchingCnpj] = useState(false)
 
@@ -1015,6 +1024,7 @@ function PJForm({
     >
       <FormShell
         title={title}
+        kind={kind}
         isEditing={isEditing}
         isLoading={isLoading}
         onClose={onClose}
@@ -1046,6 +1056,7 @@ function PJForm({
               <DuplicateDocumentWarning
                 document={form.watch('cnpj')}
                 excludeId={isEditing ? defaultValues?.id : undefined}
+                kind={kind}
               />
             </div>
 
@@ -1149,9 +1160,20 @@ interface ClienteFormProps {
   onSubmit: (data: CreateClientInput) => void
   isLoading?: boolean
   defaultValues?: Partial<ClientWithRelations>
+  /** Cliente ou pessoa (migration 78). Os campos são os mesmos; mudam os
+   * textos e o que o aviso de documento repetido oferece. Quem grava — e
+   * decide o estado do registro — é quem recebe o `onSubmit`. */
+  kind?: RecordKind
 }
 
-export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues }: ClienteFormProps) {
+export function ClienteForm({
+  open,
+  onClose,
+  onSubmit,
+  isLoading,
+  defaultValues,
+  kind = 'client',
+}: ClienteFormProps) {
   const initialType = defaultValues?.type === 'company' ? 'company' : 'individual'
   const [type, setType] = useState<ClientType>(initialType)
   // Only a real, persisted client has an id — the combobox's "create new" flow
@@ -1159,7 +1181,14 @@ export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues 
   // NOT be treated as editing an existing client.
   const isEditing = !!defaultValues?.id
   const displayName = isEditing ? getClientDisplayName(defaultValues as ClientWithRelations) : ''
-  const title = isEditing ? (displayName ? `Editar — ${displayName}` : 'Editar Cliente') : 'Novo Cliente'
+  const noun = kind === 'person' ? 'Pessoa' : 'Cliente'
+  const title = isEditing
+    ? displayName
+      ? `Editar — ${displayName}`
+      : `Editar ${noun}`
+    : kind === 'person'
+      ? 'Nova Pessoa'
+      : 'Novo Cliente'
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -1177,6 +1206,7 @@ export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues 
             type={type}
             onTypeChange={setType}
             isEditing={isEditing}
+            kind={kind}
           />
         ) : (
           <PJForm
@@ -1188,6 +1218,7 @@ export function ClienteForm({ open, onClose, onSubmit, isLoading, defaultValues 
             type={type}
             onTypeChange={setType}
             isEditing={isEditing}
+            kind={kind}
           />
         )}
       </DialogContent>
