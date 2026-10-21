@@ -10,9 +10,11 @@ import type {
 const supabase = createClient()
 
 export async function getContractParties(contractId: string): Promise<ContractParty[]> {
+  // `is_client` do cadastro ligado: a tela diz "cliente" ou "pessoa" e leva à
+  // ficha certa (migration 78).
   const { data, error } = await supabase
     .from('contract_parties')
-    .select('*')
+    .select('*, client:clients(is_client)')
     .eq('contract_id', contractId)
     .order('position')
     .order('created_at')

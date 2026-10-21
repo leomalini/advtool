@@ -10,6 +10,9 @@ import { Can } from '@/components/shared/Can'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import { getClientDisplayName } from '@/types/cliente.types'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
+import { EntityContractsTab } from '@/features/contratos/components/EntityContractsTab'
+import { PartyProcessesTab } from '@/features/processos/components/PartyProcessesTab'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useCliente } from '../hooks/useClientes'
 import { useUpdateCliente } from '../hooks/useClienteMutations'
 import { CadastroHeader } from './CadastroHeader'
@@ -18,13 +21,16 @@ import { ClienteForm } from './ClienteForm'
 import { ClientComments } from './ClientComments'
 import { ConvertToClientDialog } from './ConvertToClientDialog'
 
-type Tab = 'cadastro' | 'notas' | 'arquivos'
+type Tab = 'cadastro' | 'notas' | 'processos' | 'contratos' | 'arquivos'
 
 /** Sem Pendências, Portal, Financeiro, Casos e Agenda: são coisas de cliente.
- * Processos e Contratos em que a pessoa é parte entram com a fase 3. */
+ * Processos e Contratos são aqueles em que a pessoa é PARTE — de quem é o
+ * processo ou o contrato é outra pergunta, e a resposta é sempre um cliente. */
 const TABS: { id: Tab; label: string }[] = [
   { id: 'cadastro', label: 'Cadastro' },
   { id: 'notas', label: 'Notas' },
+  { id: 'processos', label: 'Processos' },
+  { id: 'contratos', label: 'Contratos' },
   { id: 'arquivos', label: 'Arquivos' },
 ]
 
@@ -37,6 +43,7 @@ const TABS: { id: Tab; label: string }[] = [
 export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
   const router = useRouter()
   const { data: pessoa, isLoading, error } = useCliente(pessoaId)
+  const { can } = usePermissions()
 
   const [tab, setTab] = useState<Tab>('cadastro')
   const [editOpen, setEditOpen] = useState(false)
@@ -112,7 +119,11 @@ export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
           {/* ── Abas ── */}
           <div className="rounded-xl border border-border bg-card">
             <div className="flex gap-0 overflow-x-auto border-b border-border px-2">
-              {TABS.map((t) => (
+              {TABS.filter(
+                (t) =>
+                  (t.id !== 'contratos' || can('contratos', 'view')) &&
+                  (t.id !== 'processos' || can('processos', 'view'))
+              ).map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
@@ -132,6 +143,10 @@ export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
               {tab === 'cadastro' && <CadastroTab cliente={pessoa} />}
               {tab === 'notas' && (
                 <ClientComments clientId={pessoaId} entityTitle={name} kind="person" />
+              )}
+              {tab === 'processos' && <PartyProcessesTab personId={pessoaId} />}
+              {tab === 'contratos' && (
+                <EntityContractsTab clientId={pessoaId} itemLabel="cadastro" allowCreate={false} />
               )}
               {tab === 'arquivos' && (
                 <DocumentsTab clientId={pessoaId} lockedClientId={pessoaId} itemLabel="cadastro" />

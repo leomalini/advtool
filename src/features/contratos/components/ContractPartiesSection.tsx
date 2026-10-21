@@ -33,7 +33,11 @@ import {
 import { Can } from '@/components/shared/Can'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ClienteForm } from '@/features/clientes/components/ClienteForm'
-import { useCreateCliente } from '@/features/clientes/hooks/useClienteMutations'
+import {
+  useCreateCliente,
+  useCreatePessoa,
+} from '@/features/clientes/hooks/useClienteMutations'
+import type { RecordKind } from '@/types/cliente.types'
 import { personFieldValues } from '@/features/documentos/templates/partyFields'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import {
@@ -96,10 +100,12 @@ export function ContractPartiesSection({
   const deleteParty = useDeleteContractParty(contractId)
   const refreshParty = useRefreshPartyFromClient(contractId)
   const createClient = useCreateCliente()
+  const createPerson = useCreatePessoa()
   const [adding, setAdding] = useState<AddPartyMode | null>(null)
   const [editing, setEditing] = useState<ContractParty | null>(null)
   const [removing, setRemoving] = useState<ContractParty | null>(null)
   const [registering, setRegistering] = useState<ContractParty | null>(null)
+  const [registeringKind, setRegisteringKind] = useState<RecordKind>('person')
 
   const rolesWithoutParty = templateRoles.filter(
     (role) => !parties.some((party) => party.role_key === role.key),
@@ -111,8 +117,20 @@ export function ContractPartiesSection({
     return sourceKindLabel(document.source_kind) ?? document.file_name
   }
 
+  /** Parte de contrato que não está no cadastro nasce pessoa (migration 78):
+   * fiador, locador e testemunha não são clientes, e como cliente cairiam na
+   * lista de Clientes e nas Pendências. O formulário deixa trocar — o
+   * contratante de honorários, por exemplo, é cliente. */
+  function startRegistering(party: ContractParty) {
+    setRegisteringKind('person')
+    setRegistering(party)
+  }
+
   async function registerAsClient(party: ContractParty, input: CreateClientInput) {
-    const client = await createClient.mutateAsync(input)
+    const client =
+      registeringKind === 'person'
+        ? await createPerson.mutateAsync(input)
+        : await createClient.mutateAsync(input)
     await updateParty.mutateAsync({ id: party.id, patch: { client_id: client.id } })
     setRegistering(null)
   }
@@ -144,7 +162,7 @@ export function ContractPartiesSection({
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setAdding('cliente')}>
                 <Users className="h-4 w-4" />
-                Do cadastro de clientes
+                Do cadastro de pessoas
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setAdding('escritorio')}>
                 <Building2 className="h-4 w-4" />
@@ -214,11 +232,19 @@ export function ContractPartiesSection({
                       {party.client_id && (
                         <>
                           {' · '}
+                          {/* Sem o embed (RLS), cai na ficha de cliente, que
+                              redireciona se o cadastro for de pessoa. */}
                           <Link
-                            href={`/clientes/${party.client_id}`}
+                            href={
+                              party.client?.is_client === false
+                                ? `/pessoas/${party.client_id}`
+                                : `/clientes/${party.client_id}`
+                            }
                             className="hover:text-foreground hover:underline"
                           >
-                            cliente cadastrado
+                            {party.client?.is_client === false
+                              ? 'pessoa cadastrada'
+                              : 'cliente cadastrado'}
                           </Link>
                         </>
                       )}
@@ -240,8 +266,8 @@ export function ContractPartiesSection({
                         <Can resource="clientes" action="create">
                           <button
                             type="button"
-                            title="Cadastrar como cliente"
-                            onClick={() => setRegistering(party)}
+                            title="Cadastrar"
+                            onClick={() => startRegistering(party)}
                             className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                           >
                             <UserPlus className="h-3.5 w-3.5" />
@@ -329,8 +355,10 @@ export function ContractPartiesSection({
       <ClienteForm
         open={registering !== null}
         onClose={() => setRegistering(null)}
-        isLoading={createClient.isPending || updateParty.isPending}
+        isLoading={createClient.isPending || createPerson.isPending || updateParty.isPending}
         defaultValues={registering ? clientDefaultsFromParty(registering) : undefined}
+        kind={registeringKind}
+        onKindChange={setRegisteringKind}
         onSubmit={(input) => {
           if (!registering) return
           registerAsClient(registering, input).catch(() => {

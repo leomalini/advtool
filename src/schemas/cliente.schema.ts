@@ -141,6 +141,29 @@ export const createCompanyClientSchema = z
     contacts: z.array(contactSchema).optional(),
   })
 
+/** Pessoa que não é cliente (migration 78): mesmos campos, mas o documento é
+ * opcional. Testemunha e parte contrária chegam muitas vezes sem CPF, e o
+ * trabalho não depende dele como depende para o cliente — quem vira cliente
+ * sem documento ganha a pendência "CPF"/"CNPJ" na hora.
+ *
+ * `refine`, e não `.or(z.literal(''))`: a união trocaria a mensagem do formato
+ * por um "Invalid input" genérico. O tipo continua `string`, o mesmo do
+ * cliente — o formulário e o serviço não distinguem os dois. */
+export const createIndividualPersonSchema = createIndividualClientSchema.extend({
+  cpf: z
+    .string()
+    .refine((value) => value === '' || CPF_REGEX.test(value), 'CPF inválido (formato: 000.000.000-00)'),
+})
+
+export const createCompanyPersonSchema = createCompanyClientSchema.extend({
+  cnpj: z
+    .string()
+    .refine(
+      (value) => value === '' || CNPJ_REGEX.test(value),
+      'CNPJ inválido (formato: 00.000.000/0001-00)',
+    ),
+})
+
 export type ContactInput = z.infer<typeof contactSchema>
 export type AddressInput = z.infer<typeof addressSchema>
 export type CreateIndividualClientInput = z.infer<typeof createIndividualClientSchema>

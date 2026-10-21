@@ -253,6 +253,10 @@ async function fetchOffice(
  * vínculo que a tela do cliente usa; sem dono, a única parte vinculada a um
  * cliente. Com mais de uma, não dá para adivinhar — volta null e quem gera
  * escolhe.
+ *
+ * Só conta parte ligada a CLIENTE (migration 78): a parte contrária
+ * cadastrada como pessoa também tem `client_id`, e sem o filtro a petição
+ * sairia com a qualificação dela nos campos `{cliente_*}`.
  */
 export async function getProcessClientId(
   supabase: SupabaseClient,
@@ -271,9 +275,9 @@ export async function getProcessClientId(
 
   const { data: parties, error: partiesError } = await supabase
     .from('legal_process_parties')
-    .select('client_id')
+    .select('client_id, client:clients!inner(is_client)')
     .eq('legal_process_id', processId)
-    .not('client_id', 'is', null)
+    .eq('client.is_client', true)
   if (partiesError) throw partiesError
   const clientIds = [...new Set((parties ?? []).map((party) => party.client_id as string))]
   return clientIds.length === 1 ? clientIds[0] : null

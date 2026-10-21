@@ -209,6 +209,9 @@ export interface ContractParty extends PartyPersonData {
   role_label: string
   source: ContractPartySource
   client_id: string | null
+  /** O cadastro ligado, quando há — cliente ou só pessoa (migration 78). Só
+   * chega em `getContractParties`, que embute. */
+  client?: { is_client: boolean } | null
   field_sources: PartyFieldSources
   created_at: string
   updated_at: string
