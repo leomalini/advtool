@@ -29,7 +29,7 @@ import {
 } from '../hooks/useHearings'
 import { dayHeading, windowEnd } from '../utils/display'
 import { HearingRow } from './HearingRow'
-import { HearingSheet } from './HearingSheet'
+import { HearingDetailModal } from './HearingDetailModal'
 import { HearingsBoard } from './HearingsBoard'
 import { HearingsWithoutDate } from './HearingsWithoutDate'
 
@@ -332,7 +332,7 @@ export function AudienciasContent() {
         </div>
       )}
 
-      <HearingSheet hearingId={openId} onClose={closeHearing} />
+      <HearingDetailModal hearingId={openId} onClose={closeHearing} />
     </div>
   )
 }

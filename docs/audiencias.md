@@ -198,7 +198,8 @@ período) e a lista "Sem data" sempre visível no topo enquanto houver itens.
 
 ### Ficha da audiência
 
-Drawer aberto da Pauta, do Quadro, da aba do processo e do card do dashboard.
+Modal (era drawer na fase 1; virou modal a pedido do usuário em 2026-10-20)
+aberto da Pauta, do Quadro, da aba do processo e do card do dashboard.
 Ações: conferir data, informar data (sem data), editar modalidade/link,
 checklist, confirmar cliente, mensagem para WhatsApp, registrar resultado.
 
@@ -308,7 +309,7 @@ ganham a duração do tipo.
 ### Telas
 
 - `/audiencias` com a **Pauta** (7/30/90 dias, responsável, tipo, mostrar
-  canceladas), a lista **Sem data** no topo e a **ficha** em drawer,
+  canceladas), a lista **Sem data** no topo e a **ficha** (em drawer na fase 1; hoje modal),
   endereçável por `?ficha=<id>`.
 - Ficha: conferir data, informar/alterar data, tipo, modalidade, link da sala
   (só `http(s)`, validado no zod e no CHECK), processo, responsáveis,
@@ -460,6 +461,16 @@ Checklist-padrão aprovado pelo usuário em 2026-10-20, sem alterações.
 - **Ainda não verificado contra a base**: a migration 77 e as consultas novas
   (o checklist entra no select de toda ficha — a tela de Audiências depende
   da 77 aplicada).
+
+## Ficha em modal (2026-10-20)
+
+Pedido do usuário depois da fase 3: a ficha deixa de ser drawer e vira modal
+(`HearingDetailModal`, renomeado de `HearingSheet` com `git mv`). Mais
+largo que o drawer, usa duas colunas no desktop — à esquerda o que se faz
+(origem da data, data, checklist), à direita o que se consulta (tipo,
+modalidade e sala, processo, responsáveis, histórico) — e uma coluna no
+celular. Cabeçalho e rodapé fixos, corpo rolando. Abre pelos mesmos lugares e
+pela mesma URL (`?ficha=`).
 
 ## Em aberto (decidir na fase)
 

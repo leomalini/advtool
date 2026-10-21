@@ -27,7 +27,7 @@ import {
   hearingTimeRange,
 } from '../utils/display'
 import { ChecklistProgressPill } from './ChecklistProgressPill'
-import { HearingSheet } from './HearingSheet'
+import { HearingDetailModal } from './HearingDetailModal'
 import { NewHearingDialog } from './NewHearingDialog'
 
 /**
@@ -133,7 +133,7 @@ export function ProcessHearingsTab({ legalProcessId }: ProcessHearingsTabProps) 
         </ul>
       )}
 
-      <HearingSheet hearingId={openId} onClose={() => setOpenId(null)} showProcessLink={false} />
+      <HearingDetailModal hearingId={openId} onClose={() => setOpenId(null)} showProcessLink={false} />
       <NewHearingDialog open={creating} onOpenChange={setCreating} legalProcessId={legalProcessId} />
     </div>
   )
