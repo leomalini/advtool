@@ -4,8 +4,8 @@ import { useMemo, useState } from 'react'
 import { Check, ChevronsUpDown, Plus, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
-import { useClientes } from '../hooks/useClientes'
-import { useCreateCliente } from '../hooks/useClienteMutations'
+import { useCadastroList, type CadastroListScope } from '../hooks/useClientes'
+import { useCreateCliente, useCreatePessoa } from '../hooks/useClienteMutations'
 import { getClientDisplayName } from '@/types/cliente.types'
 import { ClienteForm } from './ClienteForm'
 
@@ -17,12 +17,27 @@ interface ClienteComboboxProps {
   /** Locks the field — used when the client is determined by another
    * selection (e.g. the processo linked to an event). */
   disabled?: boolean
+  /** `people` lista toda pessoa, cliente ou não (migration 78) — para quem
+   * liga a QUALQUER cadastro, como a parte de um contrato. O padrão, só
+   * clientes, é o dos seletores de dono. */
+  scope?: CadastroListScope
 }
 
 /** Typeable, debounced client search — replaces a plain closed Select for picking a client. */
-export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente...', className, disabled }: ClienteComboboxProps) {
-  const { data: clients = [] } = useClientes()
-  const createCliente = useCreateCliente()
+export function ClienteCombobox({
+  value,
+  onChange,
+  placeholder,
+  className,
+  disabled,
+  scope = 'clients',
+}: ClienteComboboxProps) {
+  const isPeople = scope === 'people'
+  const { data: clients = [] } = useCadastroList(scope)
+  const createClientMutation = useCreateCliente()
+  const createPersonMutation = useCreatePessoa()
+  const createCliente = isPeople ? createPersonMutation : createClientMutation
+  const searchPlaceholder = placeholder ?? (isPeople ? 'Buscar pessoa...' : 'Buscar cliente...')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -59,7 +74,7 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
-              placeholder={placeholder}
+              placeholder={searchPlaceholder}
               className={cn(
                 'w-full pl-8 pr-3 py-2 rounded-lg border border-ring bg-card text-sm',
                 'focus:outline-none focus:ring-2 focus:ring-ring/20',
@@ -91,12 +106,16 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
               >
                 <Check className={cn('h-3.5 w-3.5 shrink-0', value === c.id ? 'opacity-100' : 'opacity-0')} />
                 <span className="truncate">{getClientDisplayName(c)}</span>
+                {isPeople && c.is_client && (
+                  <span className="ml-auto shrink-0 text-[11px] text-info">Cliente</span>
+                )}
               </button>
             ))}
             {filtered.length === 0 && (
               <div className="px-1 py-1">
                 <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Nenhum cliente encontrado{query.trim() ? ` para "${query.trim()}"` : ''}.
+                  {isPeople ? 'Nenhuma pessoa encontrada' : 'Nenhum cliente encontrado'}
+                  {query.trim() ? ` para "${query.trim()}"` : ''}.
                 </p>
                 <button
                   type="button"
@@ -104,7 +123,7 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
                   className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left text-primary hover:bg-accent"
                 >
                   <Plus className="h-3.5 w-3.5 shrink-0" />
-                  Cadastrar novo cliente
+                  {isPeople ? 'Cadastrar nova pessoa' : 'Cadastrar novo cliente'}
                 </button>
               </div>
             )}
@@ -124,7 +143,7 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
           )}
         >
           <span className={cn('truncate', !selected && 'text-muted-foreground')}>
-            {selected ? getClientDisplayName(selected) : placeholder}
+            {selected ? getClientDisplayName(selected) : searchPlaceholder}
           </span>
           {!disabled && <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         </button>
@@ -136,6 +155,7 @@ export function ClienteCombobox({ value, onChange, placeholder = 'Buscar cliente
         onSubmit={handleCreateSubmit}
         isLoading={createCliente.isPending}
         defaultValues={query.trim() ? { name: query.trim() } : undefined}
+        kind={isPeople ? 'person' : 'client'}
       />
     </>
   )

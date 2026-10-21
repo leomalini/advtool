@@ -5,6 +5,7 @@ import {
   getLegalProcesses,
   getLegalProcessById,
   getLegalProcessesByClient,
+  getProcessesByPartyPerson,
   getRecentMovements,
   getLegalProcessDeletionImpact,
   getLegalProcessesPendencies,
@@ -15,6 +16,8 @@ export const legalProcessKeys = {
   list: () => ['legal_processes', 'list'] as const,
   detail: (id: string) => ['legal_processes', id] as const,
   byClient: (clientId: string) => ['legal_processes', 'client', clientId] as const,
+  /** Processos em que o cadastro aparece como parte (migration 78). */
+  byParty: (personId: string) => ['legal_processes', 'party', personId] as const,
   recentMovements: (limit: number) => ['legal_processes', 'recent-movements', limit] as const,
   pendencies: ['legal_processes', 'pendencies'] as const,
 }
@@ -51,6 +54,15 @@ export function useLegalProcessesByClient(clientId: string) {
     queryKey: legalProcessKeys.byClient(clientId),
     queryFn: () => getLegalProcessesByClient(clientId),
     enabled: !!clientId,
+  })
+}
+
+/** Processos em que o cadastro é parte — aba Processos da ficha de pessoa. */
+export function useProcessesByPartyPerson(personId: string) {
+  return useQuery({
+    queryKey: legalProcessKeys.byParty(personId),
+    queryFn: () => getProcessesByPartyPerson(personId),
+    enabled: !!personId,
   })
 }
 

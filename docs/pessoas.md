@@ -5,7 +5,8 @@
 > em b14291f (PR #46) — migration 78 **ainda não aplicada**. Pelo último
 > registro, a 77 (audiências) também não foi aplicada no remoto: o `db push`
 > leva as duas juntas. **Fase 2** na branch `feat/pessoas-modulo`, empilhada
-> na 1, sem migration. Ver "Como ficou" de cada fase.
+> na 1, e **fase 3** na `feat/pessoas-partes`, empilhada na 2 — as duas sem
+> migration. Ver "Como ficou" de cada fase.
 
 Pedido: um módulo **Pessoas**, com os mesmos campos de Clientes e **sem
 pendências**. Todo cliente é uma pessoa; nem toda pessoa é cliente. Uma pessoa
@@ -307,8 +308,8 @@ Branch `feat/pessoas-modulo`, empilhada na `feat/pessoas-base`. Sem migration.
   migration 78 não está aplicada.
 - **Observado:** o formulário exige CPF (ou CNPJ), herdado do cadastro de
   cliente. Para testemunha e parte contrária, que muitas vezes chegam sem
-  documento, isso pode atrapalhar — decidir na fase 3, junto do cadastro pela
-  parte do processo.
+  documento, isso pode atrapalhar — resolvido na fase 3 (documento opcional
+  para pessoa).
 
 **Fase 3 — Partes** (`feat/pessoas-partes`).
 
@@ -316,6 +317,66 @@ Branch `feat/pessoas-modulo`, empilhada na `feat/pessoas-base`. Sem migration.
 - Contrato: combobox de pessoas, `matchClients`, aba Contratos.
 - Pronto quando: ligar a parte contrária cria pessoa e o processo não ganha
   dono; o mesmo CPF num processo importado depois chega já ligado.
+
+### Como ficou — fase 3
+
+Branch `feat/pessoas-partes`, empilhada na `feat/pessoas-modulo`. Sem migration.
+
+- **Documento opcional para pessoa** (decidido aqui, como a fase 2 deixou
+  anotado): `createIndividualPersonSchema`/`createCompanyPersonSchema` aceitam
+  CPF/CNPJ vazio — testemunha e parte contrária chegam muitas vezes sem
+  documento, e o cadastro pela parte travaria nelas. Para cliente continua
+  obrigatório. O formulário troca o schema pelo `kind` (o RHF relê as opções a
+  cada render) e tira o asterisco do campo. Pessoa sem documento que vira
+  cliente ganha a pendência "CPF"/"CNPJ" na hora.
+- **"Cadastrar como"** no `ClienteForm` (`onKindChange`): "Cliente do
+  escritório / Só pessoa", só nos cadastros feitos a partir de uma parte.
+- **Partes do processo:**
+  - "Vincular ou cadastrar" abre o formulário já escolhido — processo **sem**
+    cliente: cliente (o caso que o `adoptClientOnProcess` atende); **com**
+    cliente: pessoa.
+  - `adoptClientOnProcess` devolve `adopted | kept_owner | not_client`, e o
+    `PartyLinkResult` ganhou `linkedToPerson`: ligar pessoa a processo sem
+    cliente avisa "Parte vinculada a uma pessoa cadastrada. O processo continua
+    sem cliente." (antes diria "o cliente continua o mesmo", que era falso).
+  - O cartão da parte diz "Cliente", "Pessoa cadastrada" ou "Cadastro" (sem
+    vínculo) e leva à ficha certa. O embed das partes traz `is_client`.
+  - A importação não mudou: `resolvePartyClients` já procurava em toda a
+    tabela, e a parte contrária cadastrada uma vez chega ligada.
+- **Aba Processos da ficha de pessoa** (`PartyProcessesTab`,
+  `getProcessesByPartyPerson`): uma linha por participação — CNJ, papel,
+  tribunal, cliente do processo e polo. Chave sob `legalProcessKeys`, então o
+  vínculo de parte já a invalida.
+- **Partes do contrato:**
+  - "Adicionar parte → Do cadastro de pessoas": `ClienteCombobox` ganhou
+    `scope="people"` (lista todos, marca quem é cliente, "Cadastrar nova
+    pessoa"). O valor `'cliente'` de `contract_parties.source` ficou — o rótulo
+    já era "Cadastro".
+  - "Cadastrar" na parte sem cadastro (antes "Cadastrar como cliente") nasce
+    **pessoa**, com a escolha no formulário — fiador, locador e testemunha não
+    são clientes.
+  - O link da parte diz "cliente cadastrado" ou "pessoa cadastrada";
+    `getContractParties` embute `client:clients(is_client)`.
+  - A tela de leitura de documentos **não cadastra ninguém** — só usa o
+    cadastro que acha (fase 1 já diz "Já é cliente"/"Já cadastrado"). Quem
+    cadastra a partir da leitura é o Assistente (`cadastrar_cliente`), que fica
+    para a etapa do Assistente.
+- **Aba Contratos da ficha de pessoa:** a mesma `EntityContractsTab` — ela já
+  incluía os contratos em que o cadastro é parte —, com `allowCreate={false}`:
+  um contrato novo nasceria com a pessoa como cliente.
+- **Achado ao implementar:** `getProcessClientId` (geração de documento a
+  partir do processo), sem dono no processo, usava a única parte vinculada
+  como `{cliente_*}`. Com pessoas, seria a parte contrária. Agora só conta
+  parte ligada a cliente (`clients!inner(is_client)`).
+- **Conferido** na página temporária sob `/acompanhar` (banco simulado em
+  memória, apagada antes do commit): cartões das três partes; cadastro pela
+  parte num processo com cliente (abre como pessoa, grava `client_since:
+  null`, liga a parte, não mexe no card) e sem cliente (abre como cliente;
+  como pessoa aceita CPF vazio e avisa que o processo segue sem cliente; como
+  cliente exige CPF e adota o processo); abas Processos e Contratos da ficha
+  de pessoa; partes do contrato (rótulos, "Cadastrar" do fiador como pessoa
+  sem CPF, "Do cadastro de pessoas" listando todos). **Não conferido contra o
+  banco real** — a migration 78 não está aplicada.
 
 Verificação como nos módulos anteriores: sem testes automatizados; `tsc`,
 lint, build e conferência no navegador.
