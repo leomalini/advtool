@@ -12,6 +12,7 @@ import { useNow } from '@/hooks/useNow'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useCurrentProfile } from '@/hooks/useProfiles'
 import type { CalendarEvent } from '@/types/event.types'
+import type { Task } from '@/types/task.types'
 import { useEvents } from '@/features/agenda/hooks/useEvents'
 import { useEventTypeMap } from '@/features/agenda/hooks/useEventTypes'
 import { EventDetailModal } from '@/features/agenda/components/EventDetailModal'
@@ -44,6 +45,7 @@ import { CardLink } from './CardLink'
 import { TONE_CHIP_CLASSES } from './DashboardCard'
 import { TodayDayList } from './TodayDayList'
 import { TodayRuler } from './TodayRuler'
+import { TodayWeekNav } from './TodayWeekNav'
 import { TodayWeekStrip, isOpenItem } from './TodayWeekStrip'
 
 const DAYS = 7
@@ -88,9 +90,11 @@ interface TodayPanelProps {
 }
 
 /**
- * The top of the dashboard: the greeting, what today holds, and the next
- * seven days — a strip to pick a day, a ruler with the shape of that day and
- * the list of it. Replaces the "Agenda da semana" card and the header line.
+ * The top of the dashboard: the greeting, what today holds, and seven days —
+ * a strip to pick a day, a ruler with the shape of that day and the list of
+ * it. The strip starts today and moves by the arrows, by dragging it or to a
+ * date picked in the calendar. Replaces the "Agenda da semana" card and the
+ * header line.
  *
  * Rendered only after mount: the greeting, the "now" line and the countdowns
  * are the browser's local time, and the server's clock would hydrate a
@@ -118,8 +122,16 @@ function TodayPanelBody({ className }: TodayPanelProps) {
   const today = startOfDay(now)
   const todayKey = format(today, 'yyyy-MM-dd')
   const lastDay = addDays(today, DAYS - 1)
-  const days = eachDayOfInterval({ start: today, end: lastDay })
 
+  // The strip's first day; null follows today, so the default view turns with it.
+  const [windowStartKey, setWindowStartKey] = useState<string | null>(null)
+  const firstDay = windowStartKey ? parseISO(windowStartKey) : today
+  const windowLastDay = addDays(firstDay, DAYS - 1)
+  const days = eachDayOfInterval({ start: firstDay, end: windowLastDay })
+  const startsToday = windowStartKey === null
+
+  // The chips speak of today and the week ahead whatever the strip shows;
+  // while the strip starts today both pairs share the same cached queries.
   const events = useEvents(today.toISOString(), endOfDay(lastDay).toISOString(), {
     refetchInterval: REFRESH_MS,
   })
@@ -127,6 +139,15 @@ function TodayPanelBody({ className }: TodayPanelProps) {
     enabled: canViewTasks,
     refetchInterval: REFRESH_MS,
   })
+  const windowEvents = useEvents(firstDay.toISOString(), endOfDay(windowLastDay).toISOString(), {
+    refetchInterval: REFRESH_MS,
+    keepPrevious: true,
+  })
+  const windowTasks = useTasksInRange(
+    format(firstDay, 'yyyy-MM-dd'),
+    format(windowLastDay, 'yyyy-MM-dd'),
+    { enabled: canViewTasks, refetchInterval: REFRESH_MS, keepPrevious: true }
+  )
   const eventTypes = useEventTypeMap()
   const completeTask = useCompleteTask()
   const toggleTaskDone = useToggleTaskDone()
@@ -136,20 +157,57 @@ function TodayPanelBody({ className }: TodayPanelProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [creating, setCreating] = useState<{ at: Date; kind: CreateKind } | null>(null)
 
-  const items: AgendaItem[] = [
-    ...(events.data ?? []).map(eventToAgendaItem),
-    ...(canViewTasks ? (tasks.data ?? []) : [])
+  const toItems = (
+    eventRows: CalendarEvent[] | undefined,
+    taskRows: Task[] | undefined
+  ): AgendaItem[] => [
+    ...(eventRows ?? []).map(eventToAgendaItem),
+    ...(canViewTasks ? (taskRows ?? []) : [])
       .map(taskToAgendaItem)
       .filter((item): item is TaskAgendaItem => item !== null),
   ]
+  const items = toItems(events.data, tasks.data)
   const byDay = indexEventsByDay(items, today, lastDay)
   const segmentsOf = (key: string) => [...(byDay.get(key) ?? [])].sort(compareDaySegments)
 
-  // A pick from yesterday's strip falls back to today once the day turns.
-  const selectedDay = days.find((day) => format(day, 'yyyy-MM-dd') === pickedKey) ?? today
+  const windowByDay = indexEventsByDay(
+    toItems(windowEvents.data, windowTasks.data),
+    firstDay,
+    windowLastDay
+  )
+
+  // A pick that left the strip (it moved, or the day turned) falls back to
+  // today when it is on the strip, else to the strip's first day.
+  const selectedDay =
+    days.find((day) => format(day, 'yyyy-MM-dd') === pickedKey) ??
+    days.find((day) => isSameDay(day, today)) ??
+    firstDay
   const selectedKey = format(selectedDay, 'yyyy-MM-dd')
   const selectedIsToday = isSameDay(selectedDay, today)
-  const daySegments = segmentsOf(selectedKey)
+  const daySegments = [...(windowByDay.get(selectedKey) ?? [])].sort(compareDaySegments)
+
+  /** Back on today the start goes back to null, so it follows the day again. */
+  function startWindowAt(day: Date): string | null {
+    const key = format(day, 'yyyy-MM-dd')
+    return key === todayKey ? null : key
+  }
+
+  // Functional update: one drag can shift several times before a render.
+  function shiftWindow(by: number) {
+    setWindowStartKey((current) =>
+      startWindowAt(addDays(current ? parseISO(current) : today, by))
+    )
+  }
+
+  function pickWindowStart(day: Date) {
+    setWindowStartKey(startWindowAt(day))
+    setPickedKey(format(day, 'yyyy-MM-dd'))
+  }
+
+  function resetWindow() {
+    setWindowStartKey(null)
+    setPickedKey(null)
+  }
 
   const todayOpen = segmentsOf(todayKey).map((s) => s.item).filter(isOpenItem)
   const todayEvents = todayOpen.filter((item) => item.kind === 'event').length
@@ -158,15 +216,17 @@ function TodayPanelBody({ className }: TodayPanelProps) {
     (item) => item.kind === 'event' && item.event.fatal_deadline === todayKey
   )
   const next = nextUpcoming(items, now)
-  const restOfWeek = days
-    .slice(1)
+  const restOfWeek = eachDayOfInterval({ start: addDays(today, 1), end: lastDay })
     .reduce((sum, day) => sum + segmentsOf(format(day, 'yyyy-MM-dd')).filter((s) => isOpenItem(s.item)).length, 0)
 
   const isLoading = permissionsLoading || events.isLoading || (canViewTasks && tasks.isLoading)
-  const isError = events.isError || tasks.isError
+  const windowLoading =
+    permissionsLoading || windowEvents.isLoading || (canViewTasks && windowTasks.isLoading)
+  const windowStale = windowEvents.isPlaceholderData || windowTasks.isPlaceholderData
+  const isError = events.isError || tasks.isError || windowEvents.isError || windowTasks.isError
   const canCreate = canCreateEvent || canCreateTask
   const selectedTask = selectedTaskId
-    ? ((tasks.data ?? []).find((task) => task.id === selectedTaskId) ?? null)
+    ? ((windowTasks.data ?? []).find((task) => task.id === selectedTaskId) ?? null)
     : null
 
   function openItem(item: AgendaItem) {
@@ -298,21 +358,33 @@ function TodayPanelBody({ className }: TodayPanelProps) {
                 )}
               </div>
             )}
-            <TodayWeekStrip
-              days={days}
-              today={today}
-              selectedKey={selectedKey}
-              onSelect={setPickedKey}
-              segmentsByDay={byDay}
-              eventTypes={eventTypes}
-            />
+            <div className="flex flex-col gap-1.5">
+              <TodayWeekNav
+                firstDay={firstDay}
+                lastDay={windowLastDay}
+                startsToday={startsToday}
+                onShift={shiftWindow}
+                onPick={pickWindowStart}
+                onReset={resetWindow}
+              />
+              <TodayWeekStrip
+                days={days}
+                today={today}
+                selectedKey={selectedKey}
+                onSelect={setPickedKey}
+                onShift={shiftWindow}
+                segmentsByDay={windowByDay}
+                eventTypes={eventTypes}
+                isStale={windowStale}
+              />
+            </div>
           </div>
         )}
       </div>
 
       {showAgenda && (
         <div className="relative">
-          {isLoading && (
+          {windowLoading && (
             <div className="space-y-2 px-5 pb-5 @3xl:px-6">
               <Skeleton className="h-9 w-full rounded-lg" />
               <Skeleton className="h-12 w-full rounded-lg" />
@@ -326,7 +398,7 @@ function TodayPanelBody({ className }: TodayPanelProps) {
             </p>
           )}
 
-          {!isLoading && !isError && daySegments.length === 0 && (
+          {!windowLoading && !isError && daySegments.length === 0 && (
             <div className="mx-5 mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-muted/70 px-3.5 py-3 @3xl:mx-6">
               <span
                 className={cn(
@@ -367,7 +439,7 @@ function TodayPanelBody({ className }: TodayPanelProps) {
             </div>
           )}
 
-          {!isLoading && !isError && daySegments.length > 0 && (
+          {!windowLoading && !isError && daySegments.length > 0 && (
             <>
               <TodayRuler
                 segments={daySegments}

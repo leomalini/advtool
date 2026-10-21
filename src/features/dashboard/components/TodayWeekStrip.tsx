@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef, useState } from 'react'
 import { format, isSameDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Landmark } from 'lucide-react'
@@ -8,7 +9,7 @@ import { resolveEventType, type EventTypeRecord } from '@/types/event.types'
 import type { AgendaItem } from '@/features/agenda/utils/agendaItem'
 import type { DaySegment } from '@/features/agenda/utils/daySpan'
 import { pluralize } from '../utils/format'
-import { hearingOf, weekdayShort } from '../utils/today'
+import { hearingOf, rangeLabel, weekdayShort } from '../utils/today'
 
 const MAX_DOTS = 3
 
@@ -53,25 +54,99 @@ interface TodayWeekStripProps {
   today: Date
   selectedKey: string
   onSelect: (dayKey: string) => void
+  /** Dragging the strip sideways moves it by whole days. */
+  onShift: (days: number) => void
   segmentsByDay: Map<string, DaySegment[]>
   eventTypes: Map<string, EventTypeRecord>
+  /** The days are still the previous window's, while the new one loads. */
+  isStale?: boolean
 }
 
-/** The next seven days, each with up to three dots of what it holds. Picking a
- * day shows it in the ruler and the list below. */
+interface StripDrag {
+  pointerId: number
+  startX: number
+  /** Days already shifted by this drag. */
+  shifted: number
+  moved: boolean
+}
+
+/** Movement below this is a click on a day, not a drag. */
+const DRAG_THRESHOLD_PX = 6
+
+/** Seven days, each with up to three dots of what it holds. Picking a day shows
+ * it in the ruler and the list below; dragging the strip moves the days. */
 export function TodayWeekStrip({
   days,
   today,
   selectedKey,
   onSelect,
+  onShift,
   segmentsByDay,
   eventTypes,
+  isStale = false,
 }: TodayWeekStripProps) {
+  const dragRef = useRef<StripDrag | null>(null)
+  // The click that ends a drag must not pick the day under the pointer.
+  const swallowClickRef = useRef(false)
+  const [dragging, setDragging] = useState(false)
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    swallowClickRef.current = false
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, shifted: 0, moved: false }
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const dx = event.clientX - drag.startX
+    if (!drag.moved) {
+      if (Math.abs(dx) < DRAG_THRESHOLD_PX) return
+      drag.moved = true
+      setDragging(true)
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+    // The days slide with the pointer: dragging left brings later days in.
+    const cellWidth = event.currentTarget.offsetWidth / days.length
+    const steps = Math.round(-dx / cellWidth)
+    if (steps !== drag.shifted) {
+      onShift(steps - drag.shifted)
+      drag.shifted = steps
+    }
+  }
+
+  function handlePointerEnd(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    swallowClickRef.current = drag.moved
+    dragRef.current = null
+    setDragging(false)
+  }
+
+  function handleClickCapture(event: React.MouseEvent<HTMLDivElement>) {
+    if (!swallowClickRef.current) return
+    swallowClickRef.current = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const first = days[0]
+  const last = days[days.length - 1]
+
   return (
     <div
       role="group"
-      aria-label="Próximos 7 dias"
-      className="grid grid-cols-7 gap-1 @3xl:grid-cols-[repeat(7,3.5rem)]"
+      aria-label={`Dias de ${rangeLabel(first, last)}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+      onClickCapture={handleClickCapture}
+      className={cn(
+        'grid touch-pan-y grid-cols-7 gap-1 select-none transition-opacity @3xl:grid-cols-[repeat(7,3.5rem)]',
+        dragging && 'cursor-grabbing *:cursor-grabbing',
+        isStale && 'opacity-60'
+      )}
     >
       {days.map((day) => {
         const key = format(day, 'yyyy-MM-dd')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   getTasks,
   getTaskComments,
@@ -34,17 +34,19 @@ export function useTasks(options: { refetchInterval?: number; enabled?: boolean 
   })
 }
 
-/** Tarefas com data entre `fromDay` e `toDay` (yyyy-MM-dd), para a Agenda. */
+/** Tarefas com data entre `fromDay` e `toDay` (yyyy-MM-dd), para a Agenda.
+ * `keepPrevious`: quando o período anda, o anterior fica na tela até o novo chegar. */
 export function useTasksInRange(
   fromDay: string,
   toDay: string,
-  options: { enabled?: boolean; refetchInterval?: number } = {}
+  options: { enabled?: boolean; refetchInterval?: number; keepPrevious?: boolean } = {}
 ) {
   return useQuery({
     queryKey: taskKeys.range(fromDay, toDay),
     queryFn: () => getTasksInRange(fromDay, toDay),
     enabled: options.enabled ?? true,
     refetchInterval: options.refetchInterval,
+    placeholderData: options.keepPrevious ? keepPreviousData : undefined,
   })
 }
 
