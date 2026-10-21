@@ -122,6 +122,13 @@ interface ClientBase extends BaseEntity {
   /** Órgão emissor com UF, ex. "SSP/ES". */
   rg_issuer: string | null
   tags: string[]
+
+  // ── Pessoa ou cliente (migration 78) ───────────────────────────────────────
+  // A tabela guarda toda pessoa; cliente é quem tem `client_since`.
+  /** Quando virou cliente. `null` = pessoa que não é cliente. */
+  client_since: string | null
+  /** Gerada de `client_since` — é o que listas, seletores e pendências filtram. */
+  is_client: boolean
 }
 
 export interface IndividualClient extends ClientBase {

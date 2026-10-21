@@ -151,7 +151,13 @@ function describeReadPerson(
     papel_sugerido: person.suggestedRoleKey,
     lido_de: [...new Set(person.documentIds.map(sourceName))],
     cliente_cadastrado: person.clientMatch
-      ? { id: person.clientMatch.id, nome: person.clientMatch.name }
+      ? {
+          id: person.clientMatch.id,
+          nome: person.clientMatch.name,
+          // Cadastrada sem ser cliente (parte contrária, fiador…): não é a
+          // cliente do contrato.
+          e_cliente: person.clientMatch.isClient,
+        }
       : null,
     dados: data,
     conflitos: conflicts.map((field) => ({

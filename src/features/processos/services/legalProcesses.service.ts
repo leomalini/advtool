@@ -214,6 +214,10 @@ export async function linkPartyToClient(
  *
  * Devolve `false` — sem escrever — quando já existe um cliente vinculado,
  * inclusive se for outro. Ver a nota em `linkPartyToClient`.
+ *
+ * Também quando o cadastro ligado à parte não é cliente (migration 78): a
+ * parte contrária cadastrada como pessoa é ligada à parte, mas não vira dona
+ * do processo.
  */
 async function adoptClientOnProcess(
   legalProcessId: string,
@@ -233,6 +237,17 @@ async function adoptClientOnProcess(
 
   if (error) throw error
   if (!item || item.client_id) return false
+
+  // Depois do item, e não antes: no caso comum o processo já tem dono e esta
+  // consulta nem acontece.
+  const { data: owner, error: ownerError } = await supabase
+    .from('clients')
+    .select('is_client')
+    .eq('id', clientId)
+    .maybeSingle()
+
+  if (ownerError) throw ownerError
+  if (!owner?.is_client) return false
 
   await updateCrmItemRecord(item.id, { client_id: clientId })
   return true
