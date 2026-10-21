@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { addMinutes, format, parseISO } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toInstant } from '@/features/agenda/utils/datetime'
 import { hearingScheduleSchema } from '@/schemas/hearing.schema'
+import { suggestedEndTime } from '../utils/display'
 
 interface HearingScheduleFormProps {
   /** O horário atual, quando a audiência já tem um. */
@@ -17,15 +18,6 @@ interface HearingScheduleFormProps {
   isPending: boolean
   onSubmit: (range: { startAt: string; endAt: string }) => void
   onCancel?: () => void
-}
-
-/** Término sugerido: início + duração do tipo, sem passar da meia-noite — o
- * formulário tem um campo de data só. */
-function suggestedEnd(startTime: string, minutes: number): string {
-  const [hours, mins] = startTime.split(':').map(Number)
-  const start = new Date(2000, 0, 1, hours || 0, mins || 0)
-  const end = addMinutes(start, minutes)
-  return end.getDate() === start.getDate() ? format(end, 'HH:mm') : '23:59'
 }
 
 /**
@@ -51,7 +43,7 @@ export function HearingScheduleForm({
     const end = format(parseISO(current.end_at), 'HH:mm')
     const start = format(parseISO(current.start_at), 'HH:mm')
     // Compromisso antigo sem duração: sugere a do tipo em vez de repetir o início.
-    return end === start ? suggestedEnd(start, defaultDurationMinutes) : end
+    return end === start ? suggestedEndTime(start, defaultDurationMinutes) : end
   })
   const [error, setError] = useState<string | null>(null)
 
@@ -59,7 +51,7 @@ export function HearingScheduleForm({
     setStartTime(value)
     // Enquanto o término não foi mexido à mão, acompanha o início.
     if (value && (!endTime || endTime <= value)) {
-      setEndTime(suggestedEnd(value, defaultDurationMinutes))
+      setEndTime(suggestedEndTime(value, defaultDurationMinutes))
     }
   }
 

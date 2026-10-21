@@ -3,7 +3,8 @@
 > **Status:** plano e propostas aprovados em 2026-10-20. **Fase 1** na branch
 > `feat/audiencias-base` (criada da `main` em a516395, PR #45, que trouxe as
 > migrations 74 e 75, aplicadas no remoto). Migration 76 **aplicada no remoto
-> em 2026-10-20**. Ver "Como ficou a fase 1".
+> em 2026-10-20**. **Fase 2** na branch `feat/audiencias-processo-dashboard`,
+> empilhada na 1, sem migration. Ver "Como ficou" de cada fase.
 
 Pedido: um módulo **Audiências** separado, com visualizações e funcionalidades
 próprias. As audiências **continuam na Agenda**. Entram também uma **aba
@@ -346,6 +347,56 @@ ganham a duração do tipo.
   à anônima.
 - A conciliação de 06/10 já aconteceu (o andamento "realizada: 13" de 06/10
   existe) e segue `designada`: é o caso "aguardando resultado" da fase 4.
+
+## Como ficou a fase 2
+
+Sem migration: tudo lê a ficha da 76.
+
+### Aba Audiências no processo
+
+- Depois de "Agenda", só para quem tem `agenda:view` (a RLS da ficha). Ponto
+  âmbar na aba quando há audiência sem data ou futura a confirmar — num
+  componente próprio, para o relógio não re-renderizar a página inteira.
+- Ordem: sem data, depois as próximas (da mais perto), depois o que passou ou
+  foi encerrado (da mais recente). Cada linha mostra status, "a confirmar",
+  modalidade, quantas vezes foi remarcada e a data anterior, e "Entrar na
+  sala" até a audiência acabar.
+- A ficha abre ali mesmo, sem o botão "Abrir processo".
+- **Nova audiência**: tipo, modalidade e data (ou "Ainda sem data"). Cria a
+  ficha e passa pelo mesmo `schedule_hearing` da ficha, que monta o
+  compromisso com card, cliente e responsável do processo — um caminho só.
+  São duas escritas: se a segunda falha, a audiência fica na lista "Sem data"
+  e o aviso diz isso, em vez de só "erro".
+
+### Dashboard
+
+- Card **Próximas audiências** na coluna lateral (`agenda:view`), logo depois
+  de Prazos — também no celular (mesmo `order-1`; o empate segue o DOM).
+  Próximos 14 dias, até 5 linhas, pílulas "sem data" e "a confirmar" no topo,
+  cada linha abre a ficha. Relê a cada 5 minutos.
+- **Bloco Hoje**: na régua, o bloco da audiência leva o ícone; na faixa da
+  semana, a audiência é desenhada como ícone no lugar do ponto e vem primeiro
+  (o limite de três marcas nunca a esconde); na lista do dia, "data a
+  confirmar" e **Entrar na sala** enquanto a audiência não acabou.
+- Para isso o `EVENT_SELECT` da Agenda passou a trazer também `kind_id`,
+  `modality` e `meeting_url` da ficha. `hearingJoinUrl` decide se há sala:
+  presencial não tem, mesmo com link antigo salvo.
+
+### Ajustes
+
+- A contagem regressiva das Audiências arredonda para cima, como a do bloco
+  Hoje: os dois diziam 52 e 53 min para a mesma audiência.
+- A linha da pauta usa o `getInitials` do projeto.
+
+### Verificação
+
+- `tsc`, `eslint` e `build` sem erro.
+- Telas pela página temporária: aba do processo (cinco estados, ficha sem o
+  link do processo, diálogo com validação, término sugerido e "Ainda sem
+  data"), card do dashboard e bloco Hoje.
+- As consultas novas rodaram contra a base real com as strings do próprio
+  service (leitura): pauta, sem data, por processo com histórico, badge
+  (1 + 1) e o `EVENT_SELECT` com a ficha como objeto.
 
 ## Em aberto (decidir na fase)
 

@@ -1,7 +1,10 @@
 'use client'
 
 import { format, parseISO } from 'date-fns'
+import { Landmark } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isHearingDateUnconfirmed } from '@/types/hearing.types'
+import { hearingOf } from '../utils/today'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { resolveEventType, type EventTypeRecord } from '@/types/event.types'
 import type { AgendaItem } from '@/features/agenda/utils/agendaItem'
@@ -20,7 +23,8 @@ function timeOf(minutes: number): string {
 
 function itemSummary(item: AgendaItem, eventTypes: Map<string, EventTypeRecord>): string {
   if (item.kind === 'task') return 'Tarefa'
-  return resolveEventType(eventTypes, item.event.type).label
+  const label = resolveEventType(eventTypes, item.event.type).label
+  return isHearingDateUnconfirmed(hearingOf(item)) ? `${label} · data a confirmar` : label
 }
 
 interface TodayRulerProps {
@@ -104,6 +108,10 @@ export function TodayRuler({ segments, isToday, now, eventTypes, onOpen }: Today
           const { item } = block
           if (item.kind !== 'event') return null
           const color = resolveEventType(eventTypes, item.event.type).color
+          // Audiência ganha o ícone dentro do bloco: no dia cheio é o
+          // compromisso que não se pode perder, e a cor do tipo sozinha não
+          // diz isso (o escritório escolhe as cores).
+          const isHearing = hearingOf(item) !== null
           return (
             <Tooltip key={`${item.id}-${block.segment.dayKey}`}>
               <TooltipTrigger asChild>
@@ -111,7 +119,7 @@ export function TodayRuler({ segments, isToday, now, eventTypes, onOpen }: Today
                   type="button"
                   tabIndex={-1}
                   onClick={() => onOpen(item)}
-                  className="absolute rounded-[5px] transition-[filter] hover:brightness-110"
+                  className="absolute flex items-center overflow-hidden rounded-[5px] pl-1 transition-[filter] hover:brightness-110"
                   style={{
                     left: `${block.topPct}%`,
                     width: `${block.heightPct}%`,
@@ -119,7 +127,9 @@ export function TodayRuler({ segments, isToday, now, eventTypes, onOpen }: Today
                     height: `calc(${block.widthPct}% - 8px)`,
                     backgroundColor: color,
                   }}
-                />
+                >
+                  {isHearing && <Landmark className="size-3 shrink-0 text-white/90" />}
+                </button>
               </TooltipTrigger>
               <TooltipContent>
                 <p className="font-semibold">

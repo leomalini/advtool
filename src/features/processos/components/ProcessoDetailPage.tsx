@@ -90,6 +90,8 @@ import { EntityEventsTab } from '@/features/agenda/components/EntityEventsTab'
 import { EntityTasksTab } from '@/features/tarefas/components/EntityTasksTab'
 import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { EntityContractsTab } from '@/features/contratos/components/EntityContractsTab'
+import { ProcessHearingsTab } from '@/features/audiencias/components/ProcessHearingsTab'
+import { HearingsAttentionDot } from '@/features/audiencias/components/HearingsAttentionDot'
 import { MovementCategoryChip } from '@/features/movimentacoes/components/MovementCategoryChip'
 import { movementText, suggestedTaskTitle } from '@/features/movimentacoes/utils/display'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -117,6 +119,7 @@ const PAGE_SIZE = 20
 type TimelineFilter = 'tudo' | 'publicacoes' | 'movimentacoes'
 type EntityTab =
   | 'agenda'
+  | 'audiencias'
   | 'tarefas'
   | 'documentos'
   | 'contratos'
@@ -142,6 +145,9 @@ function isTimelineTab(tab: Tab): tab is TimelineFilter {
 
 const ENTITY_TABS: { id: EntityTab; label: string }[] = [
   { id: 'agenda', label: 'Agenda' },
+  // A Agenda continua mostrando a audiência como compromisso; esta aba é a
+  // ficha: status, conferência da data e remarcações (docs/audiencias.md).
+  { id: 'audiencias', label: 'Audiências' },
   { id: 'tarefas', label: 'Tarefas' },
   // Uma aba só para arquivo, com as duas origens separadas lá dentro: quem
   // procura um documento não sabe de antemão se ele veio do tribunal ou foi
@@ -1021,18 +1027,24 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                     vinculada — mesma barra, leituras diferentes. */}
                 <span className="mx-2 my-2 w-px shrink-0 bg-border" aria-hidden />
 
-                {ENTITY_TABS.filter((t) => t.id !== 'contratos' || can('contratos', 'view')).map((t) => (
+                {ENTITY_TABS.filter(
+                  (t) =>
+                    (t.id !== 'contratos' || can('contratos', 'view')) &&
+                    // A RLS de `hearings` é a de `agenda` (migration 76).
+                    (t.id !== 'audiencias' || can('agenda', 'view'))
+                ).map((t) => (
                   <button
                     key={t.id}
                     onClick={() => setTab(t.id)}
                     className={cn(
-                      'shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-all',
+                      'flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-all',
                       tab === t.id
                         ? 'border-foreground text-foreground'
                         : 'border-transparent text-muted-foreground hover:text-foreground/80'
                     )}
                   >
                     {t.label}
+                    {t.id === 'audiencias' && <HearingsAttentionDot legalProcessId={processo.id} />}
                   </button>
                 ))}
               </div>
@@ -1341,6 +1353,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   itemLabel="processo"
                 />
               )}
+              {tab === 'audiencias' && <ProcessHearingsTab legalProcessId={processo.id} />}
               {tab === 'tarefas' && (
                 <EntityTasksTab
                   legalProcessId={processo.id}

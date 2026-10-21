@@ -301,14 +301,14 @@ export function eventToFormValues(event: CalendarEvent): Partial<EventFormInput>
 // migration 23. Os arquivos de um evento saem de
 // getDocumentsForEntity({ eventId }), que é o que a aba Documentos usa.
 //
-// `hearing`: a ficha da audiência (migration 76) — só o que a Agenda mostra,
-// o selo "a confirmar" e o link para a ficha.
+// `hearing`: a ficha da audiência (migration 76) — só o que a Agenda e o
+// dashboard mostram: o selo "a confirmar", o link para a ficha e a sala.
 const EVENT_SELECT = `
   *,
   assignee:profiles!events_assigned_to_fkey(id, full_name, avatar_url, role, created_at),
   assignees:event_assignees(profile:profiles(id, full_name, avatar_url, role, created_at)),
   client:clients(id, type, name, company_name, trade_name),
-  hearing:hearings!hearings_event_id_fkey(id, status, date_confirmed_at)
+  hearing:hearings!hearings_event_id_fkey(id, status, date_confirmed_at, kind_id, modality, meeting_url)
 `
 
 /** O que `syncNextDeadline` precisa ler de volta depois de gravar. */

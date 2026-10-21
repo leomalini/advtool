@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, differenceInMinutes, format, parseISO } from 'date-fns'
+import { addDays, addMinutes, differenceInCalendarDays, format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { EventClient } from '@/types/event.types'
 import type { HearingProcessCrmItem, HearingWithContext } from '@/types/hearing.types'
@@ -76,7 +76,9 @@ export function hearingCountdown(startAt: string, endAt: string, now: Date): str
 
   if (now >= start && now <= end) return 'Agora'
 
-  const minutes = differenceInMinutes(start, now)
+  // Arredonda para cima, como o bloco Hoje do dashboard (`minutesUntil`): às
+  // 13:25:30, 14:00 é "em 35 min" nos dois lugares, nunca 34 num e 35 no outro.
+  const minutes = Math.ceil((start.getTime() - now.getTime()) / 60_000)
   if (minutes > 0 && minutes < 60) return `Em ${minutes} min`
 
   const days = differenceInCalendarDays(start, now)
@@ -118,4 +120,21 @@ export function windowEnd(today: Date, days: number): Date {
   const last = addDays(today, days - 1)
   last.setHours(23, 59, 59, 999)
   return last
+}
+
+/** Término sugerido: início + duração do tipo, sem passar da meia-noite — os
+ * formulários de data têm um campo de data só. */
+export function suggestedEndTime(startTime: string, minutes: number): string {
+  const [hours, mins] = startTime.split(':').map(Number)
+  const start = new Date(2000, 0, 1, hours || 0, mins || 0)
+  const end = addMinutes(start, minutes)
+  return end.getDate() === start.getDate() ? format(end, 'HH:mm') : '23:59'
+}
+
+/** Pede atenção: sem data, ou futura com a data ainda não conferida. É a
+ * mesma regra do badge do menu (`countHearingsNeedingAttention`). */
+export function hearingNeedsAttention(hearing: HearingWithContext, now: Date): boolean {
+  if (hearing.status === 'a_designar') return true
+  if (hearing.status !== 'designada' || hearing.date_confirmed_at || !hearing.event) return false
+  return parseISO(hearing.event.start_at) >= now
 }

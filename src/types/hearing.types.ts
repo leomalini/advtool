@@ -78,8 +78,21 @@ export interface Hearing {
   updated_at: string
 }
 
-/** O que o evento da Agenda carrega da ficha (embed em `EVENT_SELECT`). */
-export type EventHearingSummary = Pick<Hearing, 'id' | 'status' | 'date_confirmed_at'>
+/** O que o evento da Agenda carrega da ficha (embed em `EVENT_SELECT`): o
+ * selo "a confirmar", o link para a ficha e o "Entrar na sala" do dashboard. */
+export type EventHearingSummary = Pick<
+  Hearing,
+  'id' | 'status' | 'date_confirmed_at' | 'kind_id' | 'modality' | 'meeting_url'
+>
+
+/** O link da sala, quando há sala para entrar: presencial não tem, mesmo com
+ * um link antigo salvo (a troca de modalidade não o apaga). */
+export function hearingJoinUrl(
+  hearing: Pick<Hearing, 'status' | 'modality' | 'meeting_url'> | null | undefined,
+): string | null {
+  if (!hearing?.meeting_url || hearing.modality === 'presencial') return null
+  return isOpenHearing(hearing.status) ? hearing.meeting_url : null
+}
 
 /** A ficha está esperando alguém conferir a data nos autos. */
 export function isHearingDateUnconfirmed(

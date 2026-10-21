@@ -59,6 +59,8 @@ import { HearingScheduleForm } from './HearingScheduleForm'
 interface HearingSheetProps {
   hearingId: string | null
   onClose: () => void
+  /** Falso quando a ficha abre de dentro do próprio processo. */
+  showProcessLink?: boolean
 }
 
 function Section({
@@ -92,7 +94,7 @@ function changeAuthor(change: HearingDateChange): string {
  * (`/audiencias?ficha=<id>`). Busca pelo id, e não recebe a linha da lista:
  * o link da Agenda chega sem lista nenhuma.
  */
-export function HearingSheet({ hearingId, onClose }: HearingSheetProps) {
+export function HearingSheet({ hearingId, onClose, showProcessLink = true }: HearingSheetProps) {
   const { data: hearing, isLoading, isError } = useHearing(hearingId)
 
   return (
@@ -130,13 +132,23 @@ export function HearingSheet({ hearingId, onClose }: HearingSheetProps) {
           </SheetHeader>
         )}
 
-        {hearing && <HearingSheetBody hearing={hearing} onClose={onClose} />}
+        {hearing && (
+          <HearingSheetBody hearing={hearing} onClose={onClose} showProcessLink={showProcessLink} />
+        )}
       </SheetContent>
     </Sheet>
   )
 }
 
-function HearingSheetBody({ hearing, onClose }: { hearing: HearingDetail; onClose: () => void }) {
+function HearingSheetBody({
+  hearing,
+  onClose,
+  showProcessLink,
+}: {
+  hearing: HearingDetail
+  onClose: () => void
+  showProcessLink: boolean
+}) {
   const { can } = usePermissions()
   const { data: kinds = [] } = useHearingKinds()
   const confirmDate = useConfirmHearingDate()
@@ -319,7 +331,7 @@ function HearingSheetBody({ hearing, onClose }: { hearing: HearingDetail; onClos
               <p className="text-xs text-muted-foreground">Local: {event.location}</p>
             )}
           </div>
-          {hearing.legal_process_id && (
+          {hearing.legal_process_id && showProcessLink && (
             <Button asChild size="sm" variant="outline" className="h-7 text-xs">
               <Link href={`/processos/${hearing.legal_process_id}`}>
                 <ArrowUpRight className="mr-1 h-3 w-3" />

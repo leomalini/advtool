@@ -9,6 +9,7 @@ export const hearingKeys = {
     ['hearings', 'agenda', from, to, includeCancelled] as const,
   withoutDate: () => ['hearings', 'without-date'] as const,
   detail: (id: string) => ['hearings', 'detail', id] as const,
+  forProcess: (legalProcessId: string) => ['hearings', 'process', legalProcessId] as const,
   attention: () => ['hearings', 'attention'] as const,
 }
 

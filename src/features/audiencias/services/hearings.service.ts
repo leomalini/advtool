@@ -3,6 +3,7 @@ import type { Profile } from '@/types/common.types'
 import type {
   HearingDetail,
   HearingKind,
+  HearingModality,
   HearingStatus,
   HearingWithContext,
 } from '@/types/hearing.types'
@@ -125,6 +126,80 @@ export async function getHearing(id: string): Promise<HearingDetail | null> {
       a.changed_at.localeCompare(b.changed_at),
     ),
   }
+}
+
+/**
+ * Todas as audiências de um processo, em qualquer status, com o histórico de
+ * datas — a aba Audiências do processo. Ordena no cliente pela mesma razão da
+ * pauta; um processo tem poucas.
+ */
+export async function getHearingsForProcess(legalProcessId: string): Promise<HearingDetail[]> {
+  const { data, error } = await supabase
+    .from('hearings')
+    .select(`${hearingSelect('left')}, ${DETAIL_EXTRA}`)
+    .eq('legal_process_id', legalProcessId)
+  if (error) throw error
+
+  return (data ?? []).map((row) => {
+    const detail = normalizeHearingRow<HearingDetail>(row)
+    return {
+      ...detail,
+      date_changes: [...(detail.date_changes ?? [])].sort((a, b) =>
+        a.changed_at.localeCompare(b.changed_at),
+      ),
+    }
+  })
+}
+
+/** Ficha criada sem data saiu, mas a data não entrou: a tela avisa que a
+ * audiência ficou na lista "Sem data" em vez de dizer só "erro". */
+export class HearingCreatedWithoutDateError extends Error {
+  constructor(cause: unknown) {
+    super('A audiência foi criada, mas a data não foi salva.', { cause })
+    this.name = 'HearingCreatedWithoutDateError'
+  }
+}
+
+/**
+ * Nova audiência a partir do processo: a ficha nasce sem data e, com data
+ * informada, passa pelo mesmo `schedule_hearing` da ficha — que cria o
+ * compromisso na Agenda com card, cliente e responsável do processo. Um
+ * caminho só para o compromisso, em vez de um segundo jeito de montá-lo.
+ *
+ * São duas escritas. Se a segunda falha, a audiência existe sem data — um
+ * estado legítimo, visível na lista "Sem data" e na pendência —, e o erro
+ * próprio deixa a tela dizer isso.
+ */
+export async function createHearing(params: {
+  legalProcessId: string
+  kindId: string
+  modality: HearingModality | null
+  userId: string
+  schedule: { startAt: string; endAt: string } | null
+}): Promise<string> {
+  const { data, error } = await supabase
+    .from('hearings')
+    .insert({
+      legal_process_id: params.legalProcessId,
+      kind_id: params.kindId,
+      modality: params.modality,
+      status: 'a_designar',
+      source: 'manual',
+      created_by: params.userId,
+    })
+    .select('id')
+    .single()
+  if (error) throw error
+
+  const id = data.id as string
+  if (params.schedule) {
+    try {
+      await scheduleHearing({ id, ...params.schedule })
+    } catch (scheduleError) {
+      throw new HearingCreatedWithoutDateError(scheduleError)
+    }
+  }
+  return id
 }
 
 /**

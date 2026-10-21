@@ -3,8 +3,10 @@
 import { Ban, MapPin, ScanText, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getInitials } from '@/utils/profile'
 import {
   HEARING_MODALITY_LABELS,
+  hearingJoinUrl,
   isHearingDateUnconfirmed,
   type HearingWithContext,
 } from '@/types/hearing.types'
@@ -26,15 +28,6 @@ interface HearingRowProps {
   onOpen: (hearing: HearingWithContext) => void
 }
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join('')
-}
-
 /**
  * Uma audiência da pauta. A linha inteira abre a ficha; o "Entrar na sala"
  * fica de fora do botão principal porque é um link para outro lugar, e botão
@@ -50,8 +43,7 @@ export function HearingRow({ hearing, now, onOpen }: HearingRowProps) {
   const client = hearingClientName(hearing)
   const place = hearingPlace(hearing)
   const ended = new Date(event.end_at) < now
-  const canJoin =
-    !cancelled && !ended && !!hearing.meeting_url && hearing.modality !== 'presencial'
+  const joinUrl = ended ? null : hearingJoinUrl(hearing)
 
   return (
     <li className={cn('flex items-stretch bg-card', cancelled && 'opacity-60')}>
@@ -128,17 +120,17 @@ export function HearingRow({ hearing, now, onOpen }: HearingRowProps) {
                 title={profile.full_name}
                 className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-muted text-[9px] font-semibold text-muted-foreground"
               >
-                {initials(profile.full_name)}
+                {getInitials(profile.full_name)}
               </span>
             ))}
           </span>
         )}
       </button>
 
-      {canJoin && (
+      {joinUrl && (
         <div className="flex shrink-0 items-center pr-4">
           <Button asChild size="xs" variant="outline">
-            <a href={hearing.meeting_url!} target="_blank" rel="noopener noreferrer">
+            <a href={joinUrl} target="_blank" rel="noopener noreferrer">
               <Video aria-hidden />
               Entrar na sala
             </a>
