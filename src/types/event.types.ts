@@ -1,5 +1,6 @@
 import type { RecurrenceType } from '@/lib/recurrence'
 import type { BaseEntity, Profile } from './common.types'
+import type { EventHearingSummary } from './hearing.types'
 
 /**
  * Slug do tipo, referenciando `event_types.id`.
@@ -71,12 +72,11 @@ export interface CalendarEvent extends BaseEntity {
    * (migration 71). Nulo em todo evento criado na Agenda. */
   contract_id?: string | null
   /** Movimentação que criou ou moveu este compromisso, mantida pelo banco
-   * (migration 74). Preenchida = a data saiu de LEITURA DO TEXTO do andamento,
-   * não de cadastro conferido — é por isso que a tela mostra "a confirmar".
-   * Nula em todo evento criado na Agenda. */
+   * (migration 74). Desde a 76 o "a confirmar" mora na ficha
+   * (`hearing.date_confirmed_at`), não aqui. */
   movement_id?: string | null
-  /** Qual audiência do processo o compromisso representa (migration 74). */
-  hearing_slot?: string | null
+  /** A ficha da audiência, quando o evento é uma (migration 76). */
+  hearing?: EventHearingSummary | null
   is_retroactive: boolean
   retroactive_completed_at: string | null
   // Joins

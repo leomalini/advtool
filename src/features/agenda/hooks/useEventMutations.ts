@@ -13,6 +13,7 @@ import { eventKeys } from './useEvents'
 import { documentKeys } from '@/features/documentos/hooks/useDocuments'
 import { AttachedDocumentsError } from '@/features/documentos/services/documents.service'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
+import { hearingKeys } from '@/features/audiencias/hooks/hearingKeys'
 import { useAuth } from '@/hooks/useAuth'
 import type { EventFormInput, UpdateEventInput } from '@/schemas/event.schema'
 
@@ -31,6 +32,9 @@ export function useInvalidateEventSurfaces() {
     queryClient.invalidateQueries({ queryKey: legalProcessKeys.pendencies })
     // Anexos entram, saem ou mudam de ocorrência junto com o evento.
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
+    // A data da audiência mora no evento, e evento do tipo Audiência ganha
+    // ficha no banco (migration 76): arrastar ou criar aqui muda a pauta.
+    queryClient.invalidateQueries({ queryKey: hearingKeys.all })
   }
 }
 

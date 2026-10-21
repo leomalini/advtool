@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Activity,
   Gavel,
+  Landmark,
   Newspaper,
   Sparkles,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { useClientesPendencies } from "@/features/clientes/hooks/useClientes";
 import { useLegalProcessesPendencies } from "@/features/processos/hooks/useLegalProcesses";
 import { useUnreadPublicationCount } from "@/features/publicacoes/hooks/usePublications";
 import { useActionRequiredMovementCount } from "@/features/movimentacoes/hooks/useMovements";
+import { useHearingAttentionCount } from "@/features/audiencias/hooks/useHearings";
 
 interface NavItem {
   href: string;
@@ -61,6 +63,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/movimentacoes", label: "Movimentações", icon: Activity, resource: "processos" },
       { href: "/publicacoes", label: "Publicações", icon: Newspaper, resource: "publicacoes" },
       { href: "/agenda", label: "Agenda", icon: Calendar, resource: "agenda" },
+      // A ficha responde à RLS de `agenda` (migration 76): mesmo recurso.
+      { href: "/audiencias", label: "Audiências", icon: Landmark, resource: "agenda" },
       { href: "/ia", label: "Assistente", icon: Sparkles, resource: "ia" },
     ],
   },
@@ -100,6 +104,12 @@ export function Sidebar() {
     enabled: can("processos", "view"),
   });
 
+  // Audiência sem data, ou com a data lida do andamento e ainda não
+  // conferida: as duas acabam descobertas no dia, se ninguém olhar antes.
+  const { data: hearingsNeedingAttention = 0 } = useHearingAttentionCount({
+    enabled: can("agenda", "view"),
+  });
+
   const pendencyCount = clientPendencies.length + processoPendencies.length;
 
   /** Os únicos itens com contador. Função em vez de ternário encadeado no
@@ -107,6 +117,7 @@ export function Sidebar() {
   function badgeFor(href: string): number | undefined {
     if (href === "/publicacoes") return unreadPublications;
     if (href === "/movimentacoes") return actionRequiredMovements;
+    if (href === "/audiencias") return hearingsNeedingAttention;
     return undefined;
   }
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? "AD";
