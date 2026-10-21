@@ -43,12 +43,19 @@ export interface ClientDocumentMatch {
   name: string | null
   company_name: string | null
   trade_name: string | null
+  /** O cadastro achado pode ser só pessoa (migration 78): a tela oferece
+   * "abrir" para cliente e "tornar cliente" para pessoa. */
+  is_client: boolean
 }
 
-const DOCUMENT_MATCH_SELECT = 'id, type, name, company_name, trade_name'
+const DOCUMENT_MATCH_SELECT = 'id, type, name, company_name, trade_name, is_client'
 
 /**
- * O cliente que já usa este CPF/CNPJ, se houver.
+ * O cadastro que já usa este CPF/CNPJ, se houver — cliente ou não.
+ *
+ * Procura em toda pessoa, e não só nos clientes: a unicidade do documento vale
+ * para a tabela inteira, então uma pessoa com este CPF impede o cadastro de
+ * um cliente com o mesmo CPF.
  *
  * Consulta as colunas normalizadas (`cpf_digits`/`cnpj_digits`, migration 59),
  * e não `cpf`/`cnpj`: o documento é gravado ora mascarado (formulário), ora em
@@ -126,7 +133,23 @@ export async function findClientsByDocuments(
   return found
 }
 
+/** Só clientes. Alimenta a lista de Clientes e todos os seletores de dono
+ * (processo, caso, contrato, lançamento): parte contrária cadastrada como
+ * pessoa não pode ser oferecida ali (migration 78). */
 export async function getClients(): Promise<ClientWithRelations[]> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select(CLIENT_SELECT)
+    .eq('is_client', true)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data as ClientWithRelations[]).map(sortAddresses)
+}
+
+/** Toda pessoa, cliente ou não — a lista de Pessoas (migration 78). Todo
+ * cliente é uma pessoa, então os clientes vêm junto; a tela os marca. */
+export async function getPeople(): Promise<ClientWithRelations[]> {
   const { data, error } = await supabase
     .from('clients')
     .select(CLIENT_SELECT)
@@ -221,31 +244,51 @@ function translateDocumentConflict(error: { code?: string; message?: string }): 
     return new Error(error.message ?? 'Não foi possível salvar o cliente.')
   }
 
+  // "Cadastro", e não "cliente": o documento pode ser de uma pessoa que não é
+  // cliente (migration 78), e a unicidade vale para as duas.
   const isCnpj = error.message?.includes('cnpj_digits')
   return new Error(
-    `Já existe um cliente cadastrado com este ${isCnpj ? 'CNPJ' : 'CPF'}. ` +
+    `Já existe um cadastro com este ${isCnpj ? 'CNPJ' : 'CPF'}. ` +
       'Abra o cadastro existente em vez de criar outro.'
   )
 }
 
-export async function createClientRecord(
+/** Grava o registro e as filhas.
+ *
+ * `asPerson` manda `client_since: null` — pessoa que não é cliente. Sem ele a
+ * coluna fica de fora e o default do banco (`now()`, migration 78) cria
+ * cliente, que é o que todo caminho anterior a Pessoas espera. */
+async function insertRecord(
   input: CreateClientInput,
-  userId: string
+  userId: string,
+  asPerson: boolean
 ): Promise<ClientWithRelations> {
   const { contacts, addresses, ...clientData } = input as CreateClientInput & {
     contacts?: ContactInput[]
     addresses?: AddressInput[]
   }
 
+  const row: Record<string, unknown> = { ...nullifyEmpty(clientData), created_by: userId }
+  if (asPerson) row.client_since = null
+
   const { data, error } = await supabase
     .from('clients')
-    .insert({ ...nullifyEmpty(clientData), created_by: userId })
+    .insert(row)
     .select(CLIENT_SELECT)
     .single()
 
   if (error) throw translateDocumentConflict(error)
 
   await insertChildren(data.id, contacts, addresses)
+
+  return data as ClientWithRelations
+}
+
+export async function createClientRecord(
+  input: CreateClientInput,
+  userId: string
+): Promise<ClientWithRelations> {
+  const data = await insertRecord(input, userId, false)
 
   await recordActivity({
     type: 'client_created',
@@ -255,7 +298,111 @@ export async function createClientRecord(
     actor_id: userId,
   })
 
-  return data as ClientWithRelations
+  return data
+}
+
+/** Pessoa que não é cliente: parte contrária, testemunha, fiador. Mesmos
+ * campos e filhas do cliente — só fica fora de Clientes, dos seletores de
+ * dono e das pendências. */
+export async function createPersonRecord(
+  input: CreateClientInput,
+  userId: string
+): Promise<ClientWithRelations> {
+  const data = await insertRecord(input, userId, true)
+
+  await recordActivity({
+    type: 'person_created',
+    entity_type: 'client',
+    entity_id: data.id,
+    entity_title: data.name ?? data.company_name ?? 'Pessoa',
+    actor_id: userId,
+  })
+
+  return data
+}
+
+/**
+ * Pessoa → cliente (migration 78). Nada é copiado: o registro é o mesmo, e
+ * todo vínculo que já apontava para ele continua apontando.
+ *
+ * `.is('client_since', null)` para não reescrever a data de quem já é
+ * cliente: converter duas vezes (duas abas abertas) não pode dar uma data
+ * nova. Quem não tem `clientes:create` é recusado pelo trigger
+ * `guard_client_since`, com uma mensagem que já serve à tela — por isso o
+ * erro sobe como `Error` com a mensagem do banco.
+ */
+export async function convertToClient(id: string, userId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ client_since: new Date().toISOString() })
+    .eq('id', id)
+    .is('client_since', null)
+    .select('name, company_name')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+
+  if (!data) {
+    // Nenhuma linha mudou: ou já era cliente — que é o estado pedido —, ou o
+    // registro não existe para quem pede.
+    const { data: current, error: readError } = await supabase
+      .from('clients')
+      .select('is_client')
+      .eq('id', id)
+      .maybeSingle()
+    if (readError) throw readError
+    if (current?.is_client) return
+    throw new Error('Pessoa não encontrada.')
+  }
+
+  await recordActivity({
+    type: 'person_converted',
+    entity_type: 'client',
+    entity_id: id,
+    entity_title: data.name ?? data.company_name ?? 'Cliente',
+    actor_id: userId,
+  })
+}
+
+/**
+ * Cliente → pessoa ("Mover para Pessoas", migration 78). Existe para a limpeza
+ * das partes contrárias que o "Vincular ou cadastrar" cadastrou como cliente.
+ *
+ * Quem decide se pode é o trigger `guard_client_since`: só quem não é dono de
+ * processo, caso, contrato, lançamento ou link de acompanhamento ativo. A
+ * recusa vem com a lista do que impede, e sobe como `Error` para a tela
+ * mostrar. A regra não é repetida aqui — seriam duas versões dela.
+ */
+export async function convertToPerson(id: string, userId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ client_since: null })
+    .eq('id', id)
+    .not('client_since', 'is', null)
+    .select('name, company_name')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+
+  if (!data) {
+    // Mesmo raciocínio de `convertToClient`: já ser pessoa é o estado pedido.
+    const { data: current, error: readError } = await supabase
+      .from('clients')
+      .select('is_client')
+      .eq('id', id)
+      .maybeSingle()
+    if (readError) throw readError
+    if (current && !current.is_client) return
+    throw new Error('Cliente não encontrado.')
+  }
+
+  await recordActivity({
+    type: 'client_moved_to_person',
+    entity_type: 'client',
+    entity_id: id,
+    entity_title: data.name ?? data.company_name ?? 'Pessoa',
+    actor_id: userId,
+  })
 }
 
 export async function updateClientRecord(
@@ -324,11 +471,16 @@ interface PendencyRow {
  *
  * Nascimento, estado civil e RG só valem para pessoa física — não existem no
  * cadastro de empresa, e cobrá-los deixaria toda PJ permanentemente pendente.
+ *
+ * Só clientes: pessoa que não é cliente não tem pendência (migration 78) — o
+ * cadastro da parte contrária não precisa de RG para o trabalho andar. Ao
+ * virar cliente, as pendências dela aparecem na hora.
  */
 export async function getClientsPendencies(): Promise<ClientPendency[]> {
   const { data, error } = await supabase
     .from('clients')
     .select(PENDENCY_SELECT)
+    .eq('is_client', true)
     .order('created_at', { ascending: false })
 
   if (error) throw error

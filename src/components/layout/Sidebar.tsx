@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Briefcase,
   Users,
+  Contact,
   Calendar,
   CheckSquare,
   Scale,
@@ -72,6 +73,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Gestão",
     items: [
       { href: "/clientes", label: "Clientes", icon: Users, resource: "clientes" },
+      // Mesma tabela de Clientes (migration 78) e, por isso, o mesmo recurso.
+      { href: "/pessoas", label: "Pessoas", icon: Contact, resource: "clientes" },
       { href: "/tarefas", label: "Tarefas", icon: CheckSquare, resource: "tarefas" },
       { href: "/documentos", label: "Documentos", icon: FolderOpen, resource: "documentos" },
       { href: "/contratos", label: "Contratos", icon: FileSignature, resource: "contratos" },

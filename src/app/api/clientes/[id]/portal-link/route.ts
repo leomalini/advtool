@@ -100,7 +100,7 @@ export async function POST(
 
   const { data: client, error: clientError } = await admin
     .from('clients')
-    .select('id, type, cpf, cnpj')
+    .select('id, type, cpf, cnpj, is_client')
     .eq('id', id)
     .maybeSingle()
 
@@ -110,6 +110,16 @@ export async function POST(
   }
   if (!client) {
     return NextResponse.json({ error: 'Cliente não encontrado.' }, { status: 404 })
+  }
+
+  // Acompanhamento é de cliente (migration 78). A pessoa que não é cliente —
+  // a parte contrária, por exemplo — não tem processo dela para ver, e o
+  // trigger `guard_client_since` conta o link ativo como vínculo de dono.
+  if (!client.is_client) {
+    return NextResponse.json(
+      { error: 'Só clientes têm link de acompanhamento. Torne esta pessoa cliente antes.' },
+      { status: 409 }
+    )
   }
 
   // Sem documento cadastrado não há segundo fator, e o link viraria acesso

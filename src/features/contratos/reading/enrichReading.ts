@@ -11,8 +11,10 @@ import { RECEITA_SOURCE, type ReadPerson } from './readerTypes'
 /** Consultas de CNPJ por leitura — cada uma é uma ida à BrasilAPI. */
 const MAX_CNPJ_LOOKUPS = 3
 
-/** O cliente que já usa o CPF/CNPJ de cada pessoa — completar em vez de
- * duplicar. Uma consulta para todas, com o client de quem pede (RLS). */
+/** O cadastro que já usa o CPF/CNPJ de cada pessoa — completar em vez de
+ * duplicar. Procura em toda pessoa, cliente ou não: a unicidade do documento
+ * vale para a tabela inteira (migration 59). Uma consulta para todas, com o
+ * client de quem pede (RLS). */
 export async function matchClients(supabase: SupabaseClient, persons: ReadPerson[]): Promise<void> {
   const documents = [
     ...new Set(persons.map((person) => person.fields.document?.[0]?.value).filter(Boolean)),
@@ -22,7 +24,7 @@ export async function matchClients(supabase: SupabaseClient, persons: ReadPerson
   const list = documents.join(',')
   const { data, error } = await supabase
     .from('clients')
-    .select('id, type, name, company_name, trade_name, cpf_digits, cnpj_digits')
+    .select('id, type, name, company_name, trade_name, cpf_digits, cnpj_digits, is_client')
     .or(`cpf_digits.in.(${list}),cnpj_digits.in.(${list})`)
   if (error) {
     // Sem a conferência a leitura ainda serve; só não aponta o cadastro.
@@ -38,6 +40,7 @@ export async function matchClients(supabase: SupabaseClient, persons: ReadPerson
       person.clientMatch = {
         id: row.id as string,
         name: ((row.type === 'company' ? row.company_name : row.name) as string | null) ?? '',
+        isClient: row.is_client === true,
       }
     }
   }

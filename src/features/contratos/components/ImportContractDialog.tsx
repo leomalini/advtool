@@ -218,7 +218,10 @@ function ImportBody({ onClose }: { onClose: () => void }) {
         documentIds: all.map((document) => document.id),
         mode: 'importar',
       })
-      const firstClient = reading.persons.find((person) => person.clientMatch)?.clientMatch ?? null
+      // Só cliente vira o cliente do contrato: o fiador já cadastrado como
+      // pessoa empresta os dados à parte, não a titularidade.
+      const firstClient =
+        reading.persons.find((person) => person.clientMatch?.isClient)?.clientMatch ?? null
       setResult(reading)
       setReview(initialReviewState(reading, roles, [], []))
       setDraft({

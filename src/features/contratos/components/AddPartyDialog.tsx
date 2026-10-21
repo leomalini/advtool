@@ -27,20 +27,23 @@ import { PartyRolePicker } from './PartyRolePicker'
 /** De onde a parte nova vem — os botões do "Adicionar parte". */
 export type AddPartyMode = 'cliente' | 'escritorio' | 'manual'
 
+// O modo continua `cliente` (é o valor de `contract_parties.source`), mas desde
+// a migration 78 ele busca em toda pessoa: fiador, locador e testemunha também
+// moram no cadastro, sem ser clientes.
 const TITLES: Record<AddPartyMode, string> = {
-  cliente: 'Parte do cadastro de clientes',
+  cliente: 'Parte do cadastro de pessoas',
   escritorio: 'O escritório como parte',
   manual: 'Digitar uma parte',
 }
 
 const DESCRIPTIONS: Record<AddPartyMode, string> = {
   cliente:
-    'Os dados do cliente são copiados para o contrato. Se o cadastro mudar depois, use ' +
+    'Os dados do cadastro são copiados para o contrato. Se o cadastro mudar depois, use ' +
     '"Atualizar do cadastro" na parte.',
   escritorio:
     'Nome, CNPJ e endereço vêm de Configurações → Geral. Quem assina pelo escritório você ' +
     'completa depois, em Editar.',
-  manual: 'Para quem não é cliente e não tem documento à mão.',
+  manual: 'Para quem não está no cadastro e não tem documento à mão.',
 }
 
 interface AddPartyDialogProps {
@@ -150,7 +153,7 @@ function AddPartyBody({
         { onSuccess: onDone },
       )
     } catch {
-      toast.error('Não foi possível ler o cadastro do cliente.')
+      toast.error('Não foi possível ler o cadastro.')
     } finally {
       setLoadingClient(false)
     }
@@ -189,8 +192,8 @@ function AddPartyBody({
 
       {mode === 'cliente' ? (
         <div className="space-y-1.5">
-          <Label>Cliente</Label>
-          <ClienteCombobox value={clientId} onChange={setClientId} />
+          <Label>Pessoa</Label>
+          <ClienteCombobox value={clientId} onChange={setClientId} scope="people" />
         </div>
       ) : officeLoading ? (
         <p className="text-sm text-muted-foreground">Lendo os dados do escritório…</p>

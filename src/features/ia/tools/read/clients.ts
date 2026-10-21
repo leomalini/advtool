@@ -8,7 +8,7 @@ const LIST_SELECT =
 
 const DETAIL_SELECT =
   LIST_SELECT +
-  ', notes, tags, birth_date, profession, marital_status, nationality, created_at, ' +
+  ', notes, tags, birth_date, profession, marital_status, nationality, created_at, is_client, ' +
   'contacts:client_contacts(*), addresses:client_addresses(*)'
 
 type ListRow = {
@@ -50,9 +50,12 @@ export function createClientTools(supabase: ToolClient) {
         limite: limitSchema,
       }),
       execute: async ({ termo, limite }) => {
+        // Só clientes (migration 78): sem o filtro, a parte contrária
+        // cadastrada como pessoa seria apresentada como cliente do escritório.
         let query = supabase
           .from('clients')
           .select(LIST_SELECT)
+          .eq('is_client', true)
           .order('created_at', { ascending: false })
           .limit(limite ?? 10)
 
@@ -99,11 +102,15 @@ export function createClientTools(supabase: ToolClient) {
           marital_status: string | null
           nationality: string | null
           created_at: string
+          is_client: boolean
           contacts: Array<{ name?: string; phone?: string | null; email?: string | null; role?: string | null }>
           addresses: Array<Record<string, unknown>>
         }
         return {
           ...summarize(row),
+          // O id pode ter vindo de uma parte do processo ou do contrato, que
+          // liga a qualquer pessoa — não só a clientes.
+          situacao: row.is_client ? 'Cliente' : 'Pessoa cadastrada (não é cliente)',
           observacoes: row.notes,
           tags: row.tags ?? [],
           nascimento: row.birth_date,

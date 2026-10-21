@@ -34,8 +34,10 @@ export interface ReadPerson {
   /** Chave do papel que a IA sugeriu, se for um dos papéis oferecidos. */
   suggestedRoleKey: string | null
   documentIds: string[]
-  /** Cliente que já usa este CPF/CNPJ. */
-  clientMatch: { id: string; name: string } | null
+  /** Cadastro que já usa este CPF/CNPJ — cliente ou não (migration 78).
+   * `isClient` separa quem pode ser o cliente do contrato de quem só tem os
+   * dados aproveitados. */
+  clientMatch: { id: string; name: string; isClient: boolean } | null
 }
 
 export interface ReadDocumentSummary {

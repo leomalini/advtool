@@ -103,8 +103,11 @@ import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
 import { TaskForm } from '@/features/tarefas/components/TaskForm'
 import { useCrmItemComments, useAddCrmItemComment } from '@/features/crm/hooks/useCrmItemComments'
 import { ClienteForm } from '@/features/clientes/components/ClienteForm'
-import { useCreateCliente } from '@/features/clientes/hooks/useClienteMutations'
-import type { ClientWithRelations } from '@/types/cliente.types'
+import {
+  useCreateCliente,
+  useCreatePessoa,
+} from '@/features/clientes/hooks/useClienteMutations'
+import type { ClientWithRelations, RecordKind } from '@/types/cliente.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useOpenDocument } from '@/features/documentos/hooks/useDocumentMutations'
@@ -223,7 +226,9 @@ function partyAsClientDefaults(party: DisplayParty): Partial<ClientWithRelations
 /** Cartão que aparece ao passar o mouse sobre uma parte.
  *
  * O ponto dele é a distinção que o nome sozinho não conta: a parte veio do
- * tribunal como texto e pode não corresponder a nenhum cliente cadastrado. */
+ * tribunal como texto e pode não corresponder a nenhum cadastro. Desde a
+ * migration 78 o cadastro pode ser de cliente ou só de pessoa (a parte
+ * contrária), e o cartão diz qual. */
 function PartyCard({
   party,
   onLink,
@@ -236,7 +241,7 @@ function PartyCard({
   return (
     <div className="w-[280px] space-y-2">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Cliente / Contato
+        {party.client ? (party.client.is_client ? 'Cliente' : 'Pessoa cadastrada') : 'Cadastro'}
       </p>
 
       {party.document && (
@@ -248,7 +253,11 @@ function PartyCard({
         <>
           <p className="text-sm text-foreground">{partyClientName(party.client)}</p>
           <Link
-            href={`/clientes/${party.client.id}`}
+            href={
+              party.client.is_client
+                ? `/clientes/${party.client.id}`
+                : `/pessoas/${party.client.id}`
+            }
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
           >
             Ver cadastro
@@ -258,7 +267,7 @@ function PartyCard({
       ) : (
         <>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Esta parte ainda não está vinculada a um cliente ou contato cadastrado.
+            Esta parte ainda não está vinculada a um cadastro.
           </p>
           {party.id ? (
             <Button size="sm" className="w-full" onClick={onLink}>
@@ -323,7 +332,7 @@ function PoloBlock({
                   {!party.client && (
                     <span
                       className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
-                      title="Parte sem cliente vinculado"
+                      title="Parte sem cadastro vinculado"
                     />
                   )}
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -461,6 +470,8 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const [noteDraft, setNoteDraft] = useState('')
   /** Parte cujo vínculo com cliente está sendo editado. */
   const [linkingParty, setLinkingParty] = useState<DisplayParty | null>(null)
+  /** Cliente ou só pessoa, para o cadastro feito a partir da parte. */
+  const [linkingKind, setLinkingKind] = useState<RecordKind>('client')
   const [taskOpen, setTaskOpen] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
   /** Publicação que originou a tarefa, quando houver — ela é dada por tratada
@@ -485,6 +496,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const openDocument = useOpenDocument()
   const linkParty = useLinkPartyToClient()
   const createCliente = useCreateCliente()
+  const createPessoa = useCreatePessoa()
   // `item` pode ser null num processo órfão; o botão de nota fica desabilitado
   // nesse caso, então a mutação nunca dispara com id vazio.
   const addComment = useAddCrmItemComment(item?.id ?? '', clientName)
@@ -679,14 +691,16 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
    */
   async function handleLinkParty(party: DisplayParty) {
     if (!party.id || !party.document) {
-      setLinkingParty(party)
+      openPartyForm(party)
       return
     }
 
     try {
+      // Procura em toda pessoa, cliente ou não (migration 78): a parte
+      // contrária cadastrada noutro processo é ligada aqui sem perguntar.
       const existing = await findClientByDocument(party.document)
       if (!existing) {
-        setLinkingParty(party)
+        openPartyForm(party)
         return
       }
 
@@ -696,14 +710,29 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
       // documento duplicado dentro do próprio formulário continua valendo como
       // segunda chance de perceber a duplicata.
       console.error('[processos] busca de cliente por documento falhou:', error)
-      setLinkingParty(party)
+      openPartyForm(party)
     }
+  }
+
+  /**
+   * Abre o cadastro pela parte já escolhendo entre cliente e pessoa
+   * (migration 78). Processo sem cliente: a parte a cadastrar quase sempre é
+   * ele — é o caso que o `adoptClientOnProcess` atende. Processo com cliente:
+   * quase sempre é a outra parte, que nasce pessoa e fica fora de Clientes e
+   * das Pendências. O formulário mostra a escolha; quem cadastra decide.
+   */
+  function openPartyForm(party: DisplayParty) {
+    setLinkingKind(item?.client_id ? 'person' : 'client')
+    setLinkingParty(party)
   }
 
   async function handleCreateClientForParty(data: CreateClientInput) {
     if (!linkingParty?.id) return
-    const created = await createCliente.mutateAsync(data)
-    // O vínculo é o motivo do cadastro; se falhar aqui, o cliente existe mas a
+    const created =
+      linkingKind === 'person'
+        ? await createPessoa.mutateAsync(data)
+        : await createCliente.mutateAsync(data)
+    // O vínculo é o motivo do cadastro; se falhar aqui, o cadastro existe mas a
     // parte segue solta — o popover continuará oferecendo o botão.
     await linkParty.mutateAsync({ partyId: linkingParty.id, clientId: created.id })
     setLinkingParty(null)
@@ -1523,8 +1552,10 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
           open
           onClose={() => setLinkingParty(null)}
           onSubmit={handleCreateClientForParty}
-          isLoading={createCliente.isPending || linkParty.isPending}
+          isLoading={createCliente.isPending || createPessoa.isPending || linkParty.isPending}
           defaultValues={partyAsClientDefaults(linkingParty)}
+          kind={linkingKind}
+          onKindChange={setLinkingKind}
         />
       )}
 

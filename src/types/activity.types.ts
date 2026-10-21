@@ -11,6 +11,11 @@ export type ActivityType =
   | 'client_created'
   | 'client_updated'
   | 'client_comment'
+  // Pessoa que não é cliente (migration 78). Mesmo entity_type 'client': é a
+  // mesma tabela.
+  | 'person_created'
+  | 'person_converted'
+  | 'client_moved_to_person'
   | 'task_created'
   | 'task_done'
   | 'task_comment'

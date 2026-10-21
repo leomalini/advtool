@@ -306,7 +306,8 @@ function PersonReviewCard({
         <div className="space-y-1 rounded-md bg-info/8 px-3 py-2 text-sm">
           <p className="flex items-center gap-1.5 font-medium">
             <UserCheck className="h-4 w-4 text-info" />
-            Já é cliente: {person.clientMatch.name}
+            {person.clientMatch.isClient ? 'Já é cliente' : 'Já cadastrado'}:{' '}
+            {person.clientMatch.name}
           </p>
           <label className="flex items-center gap-2 text-xs">
             <input

@@ -83,7 +83,9 @@ export function useSetMovementClientVisibility() {
   })
 }
 
-/** Vincula uma parte a um cliente cadastrado — ou desfaz o vínculo com `null`. */
+/** Vincula uma parte a um cadastro (cliente ou pessoa) — ou desfaz o vínculo
+ * com `null`. A aba Processos da ficha de pessoa mora sob `legalProcessKeys`,
+ * então o `invalidate` já a alcança. */
 export function useLinkPartyToClient() {
   const invalidate = useInvalidateLegalProcesses()
 
@@ -100,11 +102,14 @@ export function useLinkPartyToClient() {
 
       // A distinção importa: o processo que já tinha outro cliente NÃO troca de
       // dono aqui, e dizer só "parte vinculada" deixaria o usuário achando que
-      // trocou. Ver a nota em `linkPartyToClient`.
+      // trocou. Ver a nota em `linkPartyToClient`. Pessoa que não é cliente
+      // (migration 78) também não vira dona — e o processo segue sem cliente.
       toast.success(
         result.adoptedByProcess
           ? 'Parte vinculada — o processo agora é deste cliente.'
-          : 'Parte vinculada. O cliente do processo continua o mesmo.'
+          : result.linkedToPerson
+            ? 'Parte vinculada a uma pessoa cadastrada. O processo continua sem cliente.'
+            : 'Parte vinculada. O cliente do processo continua o mesmo.'
       )
     },
     onError: () => toast.error('Não foi possível vincular a parte.'),

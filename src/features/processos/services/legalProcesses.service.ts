@@ -9,6 +9,8 @@ import type {
   ProcessoPendency,
   ProcessoIssue,
   LegalProcessPartyInput,
+  PartyClient,
+  PartyPolo,
 } from '@/types/legalProcess.types'
 import { STALE_MOVEMENT_DAYS, DEADLINE_WARNING_DAYS } from '@/types/legalProcess.types'
 import type { CrmItemWithRelations } from '@/types/crmItem.types'
@@ -30,7 +32,7 @@ const LEGAL_PROCESS_SELECT = `
   *,
   crm_items:crm_items!crm_items_legal_process_id_fkey(${CRM_ITEM_FIELDS}),
   movements:legal_process_movements(*),
-  parties:legal_process_parties(*, client:clients(id, type, name, company_name, trade_name)),
+  parties:legal_process_parties(*, client:clients(id, type, name, company_name, trade_name, is_client)),
   public_documents:legal_process_public_documents(*),
   publications:publications(*)
 `
@@ -167,6 +169,9 @@ export async function replaceLegalProcessParties(
 export interface PartyLinkResult {
   /** O processo estava sem cliente e passou a ser deste. */
   adoptedByProcess: boolean
+  /** O processo estava sem cliente, mas o cadastro ligado é só pessoa
+   * (migration 78) — continua sem cliente, e a tela precisa dizer por quê. */
+  linkedToPerson: boolean
 }
 
 /**
@@ -204,21 +209,29 @@ export async function linkPartyToClient(
   // Desvincular a parte não desfaz o dono do processo: são fatos distintos, e
   // um processo sem cliente por causa de um desvínculo de parte seria perda
   // silenciosa de cadastro.
-  if (!clientId) return { adoptedByProcess: false }
+  if (!clientId) return { adoptedByProcess: false, linkedToPerson: false }
 
-  return { adoptedByProcess: await adoptClientOnProcess(party.legal_process_id, clientId) }
+  const outcome = await adoptClientOnProcess(party.legal_process_id, clientId)
+  return { adoptedByProcess: outcome === 'adopted', linkedToPerson: outcome === 'not_client' }
 }
+
+/** O que aconteceu com o dono do processo ao ligar uma parte. */
+type AdoptOutcome = 'adopted' | 'kept_owner' | 'not_client'
 
 /**
  * Dá dono ao processo quando ele ainda não tem.
  *
- * Devolve `false` — sem escrever — quando já existe um cliente vinculado,
+ * Não escreve — `kept_owner` — quando já existe um cliente vinculado,
  * inclusive se for outro. Ver a nota em `linkPartyToClient`.
+ *
+ * Nem — `not_client` — quando o cadastro ligado à parte não é cliente
+ * (migration 78): a parte contrária cadastrada como pessoa é ligada à parte,
+ * mas não vira dona do processo.
  */
 async function adoptClientOnProcess(
   legalProcessId: string,
   clientId: string
-): Promise<boolean> {
+): Promise<AdoptOutcome> {
   // O item mestre é o de `wf-processos`; um processo pode ter itens em outros
   // workflows, e o dono do processo mora no mestre. `limit(1)` com ordenação
   // porque embed e heap order não garantem qual viria primeiro.
@@ -232,10 +245,21 @@ async function adoptClientOnProcess(
     .maybeSingle()
 
   if (error) throw error
-  if (!item || item.client_id) return false
+  if (!item || item.client_id) return 'kept_owner'
+
+  // Depois do item, e não antes: no caso comum o processo já tem dono e esta
+  // consulta nem acontece.
+  const { data: owner, error: ownerError } = await supabase
+    .from('clients')
+    .select('is_client')
+    .eq('id', clientId)
+    .maybeSingle()
+
+  if (ownerError) throw ownerError
+  if (!owner?.is_client) return 'not_client'
 
   await updateCrmItemRecord(item.id, { client_id: clientId })
-  return true
+  return 'adopted'
 }
 
 /** Marca uma publicação como lida e/ou tratada.
@@ -313,6 +337,53 @@ export async function getLegalProcessesByClient(clientId: string): Promise<Legal
   return (data as unknown[]).map((row) =>
     toLegalProcessWithRelations(row as Parameters<typeof toLegalProcessWithRelations>[0])
   )
+}
+
+/** Uma parte de processo vista pelo cadastro ligado a ela. */
+export interface PartyProcessRow {
+  id: string
+  polo: PartyPolo
+  party_type: string | null
+  legal_process: {
+    id: string
+    cnj_number: string | null
+    court: string | null
+    crm_items: {
+      id: string
+      workflow_id: string
+      title: string | null
+      client: Pick<PartyClient, 'type' | 'name' | 'company_name' | 'trade_name'> | null
+    }[]
+  } | null
+}
+
+/**
+ * Processos em que o cadastro aparece como parte — a aba Processos da ficha
+ * de pessoa (migration 78). É a outra pergunta do índice da migration 29: não
+ * "de quem é o processo" (`crm_items.client_id`), mas "em quais processos esta
+ * pessoa está".
+ *
+ * Uma linha por parte, e não por processo: a mesma pessoa pode estar nos dois
+ * polos do mesmo processo (litisconsórcio, terceiro interessado), e a tela
+ * mostra o papel de cada um.
+ */
+export async function getProcessesByPartyPerson(personId: string): Promise<PartyProcessRow[]> {
+  const { data, error } = await supabase
+    .from('legal_process_parties')
+    .select(`
+      id, polo, party_type,
+      legal_process:legal_processes(
+        id, cnj_number, court,
+        crm_items:crm_items!crm_items_legal_process_id_fkey(
+          id, workflow_id, title, client:clients(type, name, company_name, trade_name)
+        )
+      )
+    `)
+    .eq('client_id', personId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as unknown as PartyProcessRow[]
 }
 
 export async function getLegalProcessById(id: string): Promise<LegalProcessWithRelations> {
