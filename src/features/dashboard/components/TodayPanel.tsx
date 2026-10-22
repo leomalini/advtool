@@ -46,7 +46,7 @@ import { TONE_CHIP_CLASSES } from './DashboardCard'
 import { TodayDayList } from './TodayDayList'
 import { TodayRuler } from './TodayRuler'
 import { TodayWeekNav } from './TodayWeekNav'
-import { TodayWeekStrip, isOpenItem } from './TodayWeekStrip'
+import { STRIP_BUFFER_DAYS, TodayWeekStrip, isOpenItem } from './TodayWeekStrip'
 
 const DAYS = 7
 /** The dashboard stays open all day; the Agenda page refreshes by mutation. */
@@ -130,8 +130,13 @@ function TodayPanelBody({ className }: TodayPanelProps) {
   const days = eachDayOfInterval({ start: firstDay, end: windowLastDay })
   const startsToday = windowStartKey === null
 
-  // The chips speak of today and the week ahead whatever the strip shows;
-  // while the strip starts today both pairs share the same cached queries.
+  // The days the strip draws: its seven and a week each side, which slide in
+  // while it is dragged. Kept on screen while the next range loads, it still
+  // covers the new strip after a shift of up to a week.
+  const fetchFirstDay = addDays(firstDay, -STRIP_BUFFER_DAYS)
+  const fetchLastDay = addDays(windowLastDay, STRIP_BUFFER_DAYS)
+
+  // The chips speak of today and the week ahead whatever the strip shows.
   const events = useEvents(today.toISOString(), endOfDay(lastDay).toISOString(), {
     refetchInterval: REFRESH_MS,
   })
@@ -139,13 +144,13 @@ function TodayPanelBody({ className }: TodayPanelProps) {
     enabled: canViewTasks,
     refetchInterval: REFRESH_MS,
   })
-  const windowEvents = useEvents(firstDay.toISOString(), endOfDay(windowLastDay).toISOString(), {
+  const windowEvents = useEvents(fetchFirstDay.toISOString(), endOfDay(fetchLastDay).toISOString(), {
     refetchInterval: REFRESH_MS,
     keepPrevious: true,
   })
   const windowTasks = useTasksInRange(
-    format(firstDay, 'yyyy-MM-dd'),
-    format(windowLastDay, 'yyyy-MM-dd'),
+    format(fetchFirstDay, 'yyyy-MM-dd'),
+    format(fetchLastDay, 'yyyy-MM-dd'),
     { enabled: canViewTasks, refetchInterval: REFRESH_MS, keepPrevious: true }
   )
   const eventTypes = useEventTypeMap()
@@ -172,8 +177,8 @@ function TodayPanelBody({ className }: TodayPanelProps) {
 
   const windowByDay = indexEventsByDay(
     toItems(windowEvents.data, windowTasks.data),
-    firstDay,
-    windowLastDay
+    fetchFirstDay,
+    fetchLastDay
   )
 
   // A pick that left the strip (it moved, or the day turned) falls back to
@@ -222,7 +227,6 @@ function TodayPanelBody({ className }: TodayPanelProps) {
   const isLoading = permissionsLoading || events.isLoading || (canViewTasks && tasks.isLoading)
   const windowLoading =
     permissionsLoading || windowEvents.isLoading || (canViewTasks && windowTasks.isLoading)
-  const windowStale = windowEvents.isPlaceholderData || windowTasks.isPlaceholderData
   const isError = events.isError || tasks.isError || windowEvents.isError || windowTasks.isError
   const canCreate = canCreateEvent || canCreateTask
   const selectedTask = selectedTaskId
@@ -374,9 +378,7 @@ function TodayPanelBody({ className }: TodayPanelProps) {
                 onSelect={setPickedKey}
                 onShift={shiftWindow}
                 segmentsByDay={windowByDay}
-                eventTypes={eventTypes}
-                isStale={windowStale}
-              />
+                eventTypes={eventTypes}              />
             </div>
           </div>
         )}
