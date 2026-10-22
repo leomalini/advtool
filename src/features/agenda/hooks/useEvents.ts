@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { getEvents, getEventsForEntity } from '../services/events.service'
 
 /** Every key sits under the ['events'] prefix so a single
@@ -16,12 +16,18 @@ export const eventKeys = {
 }
 
 /** `refetchInterval`: o dashboard fica aberto o dia todo e repergunta a cada
- * minuto; a Agenda atualiza pelas mutações. */
-export function useEvents(from?: string, to?: string, options: { refetchInterval?: number } = {}) {
+ * minuto; a Agenda atualiza pelas mutações. `keepPrevious`: quando o período
+ * anda, o anterior fica na tela até o novo chegar. */
+export function useEvents(
+  from?: string,
+  to?: string,
+  options: { refetchInterval?: number; keepPrevious?: boolean } = {}
+) {
   return useQuery({
     queryKey: from && to ? eventKeys.range(from, to) : eventKeys.all,
     queryFn: () => getEvents(from, to),
     refetchInterval: options.refetchInterval,
+    placeholderData: options.keepPrevious ? keepPreviousData : undefined,
   })
 }
 

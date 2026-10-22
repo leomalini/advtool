@@ -1,4 +1,10 @@
-import { differenceInCalendarDays, format, parseISO } from 'date-fns'
+import {
+  differenceInCalendarDays,
+  format,
+  isSameMonth,
+  isSameYear,
+  parseISO,
+} from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendaItem } from '@/features/agenda/utils/agendaItem'
 import { belongsToAllDayStrip } from '@/features/agenda/utils/daySpan'
@@ -30,6 +36,19 @@ export function relativeDayLabel(day: Date, today: Date): string {
   if (offset === 0) return 'Hoje'
   if (offset === 1) return 'Amanhã'
   return `${weekdayShort(day)}, ${format(day, 'dd/MM')}`
+}
+
+/** "21 – 27 de out", "28 de out – 3 de nov", "29 de dez de 2026 – 4 de jan de 2027".
+ * The year only shows when the range crosses one. */
+export function rangeLabel(first: Date, last: Date): string {
+  const day = (date: Date, pattern: string) => format(date, pattern, { locale: ptBR })
+  if (!isSameYear(first, last)) {
+    return `${day(first, "d 'de' MMM 'de' yyyy")} – ${day(last, "d 'de' MMM 'de' yyyy")}`
+  }
+  if (!isSameMonth(first, last)) {
+    return `${day(first, "d 'de' MMM")} – ${day(last, "d 'de' MMM")}`
+  }
+  return `${day(first, 'd')} – ${day(last, "d 'de' MMM")}`
 }
 
 export function weekdayShort(day: Date): string {
