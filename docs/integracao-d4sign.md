@@ -140,14 +140,19 @@ aplicado.
 ### Webhook
 
 - Disparos: `type_post` `1` finalizado · `2` e-mail não entregue ·
-  `3` cancelado · `4` um signatário assinou. Em **form-data**.
+  `3` cancelado · `4` um signatário assinou. Chegam em
+  `application/x-www-form-urlencoded; charset=utf-8` (visto no spike).
 - Versão 2.0 acrescenta `event_datetime` e, conforme o evento: `signers[]`
   (`uuid`, `email`, `name`, `signed_at`, `identification_number`), `signer`,
-  `error_details`, `cancellation_message`.
+  `error_details`, `cancellation_message`. No aviso real, `event_datetime` veio
+  **sem fuso, em horário de Brasília** (`2026-10-22T22:19:52`), e não com o `Z`
+  da documentação.
 - Retentativas: na hora, depois de 1 h, 1 h, 1 h, 6 h, 6 h e 12 h — até ~27 h.
-- **Segurança:** cabeçalho `Content-Hmac: sha256=<hex>`, HMAC-SHA256 **só do
-  UUID do documento** com a "Secret Key MAC" (gerada em Dev API). O corpo não é
-  assinado. A central de ajuda cita o IP de origem `54.94.40.55`.
+- **Segurança:** a documentação fala em `Content-Hmac: sha256=<hex>`, mas o
+  aviso real trouxe **`x-signature: <hex>`**, sem prefixo. É o HMAC-SHA256 **só
+  do UUID do documento** com a "Secret Key MAC" (gerada em Dev API) **lida como
+  texto**. O corpo não é assinado. Origem vista: `18.229.93.53`, com
+  `User-Agent: Webhook-Worker/1.0` (a central de ajuda cita `54.94.40.55`).
 
 ### Embed
 
@@ -162,20 +167,21 @@ suporte.
 
 - Resposta de `createlist` e de `GET /documents/{uuid}/list`: onde vem o
   `key_signer`.
-- O webhook v2 por cofre manda o formato 2.0? Em form-data ou JSON? O que
-  responder, e em quanto tempo?
+- ~~O webhook v2 manda o formato 2.0? Em form-data ou JSON?~~ Urlencoded, no
+  formato 2.0 (spike). Ainda em aberto: em quanto tempo responder.
 - Quanto tempo vale a URL do download, e o que vem no PDF (folha de
   assinaturas, carimbo).
 - O limite é por método ou total? Que status HTTP volta ao estourar?
 - A conversão de DOCX respeita o papel timbrado?
 - O Embed tem host próprio no sandbox? Exige domínio cadastrado? Convive com
   `skip_email = 0`?
-- Upload sem envio, ou documento cancelado, conta na cota mensal?
+- ~~Upload sem envio, ou documento cancelado, conta na cota mensal?~~ Não
+  (spike: `sent` 4 → 4 → 4).
 - O signatário recebe a via final por e-mail sozinho?
 - Nome de pasta repetido no mesmo cofre: aceito ou recusado? (`d4sign_folders`
   liga pelo `client_id`, então homônimos geram duas pastas de mesmo nome.)
-- A "Secret Key MAC" entra no HMAC como texto ou como bytes? O webhook aceita
-  as duas leituras até o spike dizer qual.
+- ~~A "Secret Key MAC" entra no HMAC como texto ou como bytes?~~ Como texto
+  (spike) — a leitura em bytes saiu do código.
 
 ## O que o spike mostrou (2026-10-22 — produção, só leitura)
 
@@ -195,11 +201,39 @@ sessão.
 | `GET /webhooks/v2/?type=cofre&uuid=…` | `{"type":"cofre","uuid":…,"webhook_url":"Sem Cadastro!!!","history":[]}` — sem webhook, a URL vem como o texto `"Sem Cadastro!!!"`. O `history` deve listar as entregas: serve de diagnóstico do lado da D4Sign |
 | Latência | ~10 s por chamada, mas **da rede desta máquina** — o Google levou 8,8 s para conectar no mesmo minuto. Duas chamadas caíram no tempo de conexão do `fetch` (10 s) e foram repetidas. O cliente passou a esperar 30 s, e as rotas, `maxDuration = 60` |
 
-Ainda sem resposta — tudo o que cria ou envia: `createlist` e `key_signer`, o
-webhook de verdade e o HMAC, download e validade da URL, conversão do DOCX,
-cancelamento, nome de pasta repetido, se upload ou cancelamento gastam a cota
-e se o limite é por método. Fica para o sandbox (ou para a produção com teto,
-se o usuário decidir).
+### Parte 2 — um documento fictício, sem envio (2026-10-22)
+
+Com ok do usuário: um DOCX fictício ("TESTE advtool - documento ficticio -
+cancelar.docx", com cabeçalho, rodapé, tabela e acentos) no cofre "Outros
+documentos", **sem signatário e sem envio**, cancelado no fim. Os avisos foram
+recebidos por um túnel temporário da Cloudflare (`cloudflared`, assinatura
+digital da Cloudflare conferida; a rede daqui bloqueia QUIC, então foi por
+HTTP/2) até um receptor local que só gravava em arquivo.
+
+| Pergunta | Resposta |
+|---|---|
+| `POST /documents/{cofre}/upload` | `200 {"message":"success","uuid":"…"}`. O nome perde o ponto da extensão: "… cancelar.docx" vira "… cancelar docx" |
+| Depois do upload | Fase 2, "Aguardando Signatários". O upload não gera aviso |
+| `GET /documents/{uuid}` | **Lista** com um objeto: `uuidDoc`, `nameDoc`, `type`, `size`, `pages`, `uuidSafe`, `safeName`, `statusId`, `statusName`, `statusComment`, `whoCanceled`. `statusId` vem em **texto** (`"2"`, `"6"`) |
+| `POST /webhooks/v2/` com `type: documento` | Aceito pela lib da fase 1 |
+| `GET /webhooks/v2/?type=documento&uuid=…` | O endereço registrado e o `history`. Depois do aviso: `[{"event":"event.cancelled","status":"success","attempts":"1","payload":"<o JSON enviado>"}]` — dá para diagnosticar a entrega do lado da D4Sign |
+| `POST /documents/{uuid}/generate-document-view` | `{"doc_principal": "<página HTML>"}` — um iframe que transmite o PDF a partir de um link do S3 válido por 300 s, **com a chave de criptografia do arquivo no próprio link**: tratar como segredo, só abrir numa aba e nunca gravar. Com o documento cancelado: **200 com `{"message":"Document unavailable."}`** — erro com cara de sucesso |
+| `POST /documents/{uuid}/cancel` (`comment`) | 200 com o documento: `statusId: 6` (aqui em **número**), `statusName: "Cancelado"`, `statusComment` = o comentário. Lido depois, `whoCanceled` traz o e-mail da conta |
+| Cota | `sent` 4 → 4 → 4: **upload e cancelamento não gastam envio** |
+| O aviso de cancelamento | Chegou um, segundos depois: `POST` urlencoded (`charset=utf-8`), `User-Agent: Webhook-Worker/1.0`, de `18.229.93.53`. Corpo no formato 2.0: `uuid`, `type_post=3`, `message=Cancelled document`, `event_datetime=2026-10-22T22:19:52` (sem fuso, horário de Brasília), `document_name` e `cancellation_message` |
+| A assinatura do aviso | **`x-signature: <hex>`**, e não `Content-Hmac: sha256=…` como diz a documentação. É o HMAC-SHA256 do UUID com a Secret Key MAC **lida como texto** (as outras leituras testadas — corpo, chave em bytes — não batem) |
+
+**O que mudou no código por causa disso:** a rota da fase 1 lia só
+`Content-Hmac` e teria recusado (401) todo aviso real. Agora lê `x-signature`,
+com `Content-Hmac` de reserva, e a chave só como texto. O aviso real foi
+repassado pela rota corrigida, com o banco simulado: assinatura verdadeira
+aceita, adulterada e ausente recusadas.
+
+Ainda sem resposta: a conversão do DOCX (a prévia do documento cancelado não
+abre mais; ver de novo pede outro documento fictício) e tudo o que depende de
+envio — `createlist` e `key_signer`, assinatura, finalização, download do
+assinado e se o limite é por método. Fica para o sandbox, ou para a produção
+com teto se o usuário decidir.
 
 ## Armazenamento: quem guarda o quê
 
@@ -296,7 +330,8 @@ novo — nada de repetição automática.
 4. Uma função no banco grava tudo numa transação: pedido `signed`,
    signatários, o vínculo com a cópia e — **se o contrato estava aguardando
    assinatura** — `vigente` com `signed_at` = data da última assinatura
-   (horário de Brasília; na falta dela, a data da confirmação). Em qualquer
+   (horário de Brasília — o `event_datetime` do aviso já vem nele, sem fuso;
+   na falta dela, a data da confirmação). Em qualquer
    outro status (um aditivo de contrato já vigente), só guarda o arquivo.
 5. O trigger `sync_contract_event` põe o fim do contrato na Agenda, como já
    faz com a assinatura manual.
@@ -369,7 +404,8 @@ e-mail", que troca na D4Sign e reenvia.
    gravado (`signature_requests.error`, `webhook_events`) passa por uma
    limpeza de `tokenAPI` e `cryptKey`.
 3. **Webhook** (`/api/webhooks/d4sign`):
-   - HMAC do UUID, comparado em tempo constante;
+   - HMAC do UUID, lido de `x-signature` (com `Content-Hmac` de reserva) e
+     comparado em tempo constante;
    - o UUID tem de ser de um pedido nosso (senão, `unmatched`);
    - o corpo é **pista**: finalizar e cancelar só depois do `GET` na API;
    - idempotente;
@@ -543,7 +579,7 @@ novo por até ~27 h).
 | `account.ts` | Cofres, saldo e o webhook 2.0 de um documento, que a fase 2 registra no envio |
 | `safeRoutes.ts` | O mapa tipo → cofre: a sugestão pelo nome (igual > começa com > contém, sem acento — "Procurações" ganha de "Outras procurações"), o cofre de um tipo com o padrão e o tipo de um contrato ou documento. Sem nada de servidor: serve à tela e ao envio |
 | `folders.ts` | A pasta de cada cliente (e "Escritório", "Sem cliente"), criada no primeiro envio; renomear é cosmético e nunca para o envio. Sem chamador até a fase 2 |
-| `webhook.ts` | O corpo em multipart, urlencoded ou JSON; o HMAC do UUID com a chave lida como texto e como hexa; os cabeçalhos de diagnóstico |
+| `webhook.ts` | O corpo em multipart, urlencoded ou JSON; a assinatura de `x-signature` (com `Content-Hmac` de reserva) conferida contra o HMAC do UUID, com a chave como texto — o formato do aviso real do spike; os cabeçalhos de diagnóstico |
 | `http.ts` | Erro da D4Sign → resposta da rota (chave recusada é 502, não 401) |
 
 Rotas:
@@ -578,18 +614,22 @@ Rotas:
   não tocou) e `pnpm build` sem erro. O bundle do navegador não tem `tokenAPI`
   nem `service_role`: o cliente da API ficou no servidor.
 - **No Node, com o código real** (loader no scratchpad, `fetch` falso no lugar
-  da D4Sign e Supabase em memória): 45 verificações — hosts aceitos e
+  da D4Sign e Supabase em memória): 46 verificações — hosts aceitos e
   recusados, endpoint com e sem `D4SIGN_WEBHOOK_URL`, chaves na query e fora
   de toda mensagem de erro, limite e cota reconhecidos até num 200, cofres e
   saldo nos formatos da documentação e no que a produção devolveu, o webhook
   do documento, a sugestão de cofres com os 15 nomes reais da conta, o corpo
-  do webhook em multipart, urlencoded e JSON, o HMAC (certo, errado,
-  maiúsculo, sem prefixo, chave em hexa lida das duas formas), pastas (criar,
-  reaproveitar, renomear, recusa ao renomear, corrida) e as três rotas com
-  seus códigos de resposta e o que gravam.
-- **Contra a D4Sign de verdade:** só leitura na produção — saldo e cofres pela
-  lib, que pegou a diferença `uuid_safe` × `uuid-safe` (ver "O que o spike
-  mostrou").
+  do webhook em multipart, urlencoded e JSON, a assinatura (certa, errada,
+  maiúscula, com e sem prefixo, em `x-signature` ou `Content-Hmac`, chave em
+  hexa lida como texto), pastas (criar, reaproveitar, renomear, recusa ao
+  renomear, corrida) e as três rotas com seus códigos de resposta e o que
+  gravam.
+- **Contra a D4Sign de verdade** (ver "O que o spike mostrou"): saldo e
+  cofres pela lib, que pegou `uuid_safe` × `uuid-safe`; um documento fictício
+  com upload, webhook, prévia e cancelamento, sem envio; e o **aviso real** de
+  cancelamento, que expôs `x-signature` × `Content-Hmac` e depois passou pela
+  rota corrigida (assinatura verdadeira aceita, adulterada e ausente
+  recusadas).
 - **Tela** numa página temporária sob `/acompanhar` (já apagada), com sessão
   falsa e cache pré-carregado: os estados das chaves e dos avisos, a linha sem
   as colunas da migration, os cofres por tipo (sugestão com os 15 nomes reais,
@@ -637,8 +677,8 @@ Rotas:
       cadastrado?
    3. O limite de 10 requisições por hora é por método ou total? Quanto custa
       a API Premium?
-   4. Documento cancelado, ou subido e não enviado, conta nos 20 envios do
-      mês? Quanto custa o envio além dos 20?
+   4. Quanto custa o envio além dos 20 do mês? (Upload e cancelamento não
+      gastam envio — o spike mediu.)
    5. Os 20 WhatsApp contam por signatário ou por documento?
    6. O webhook por cofre (v2) está disponível no Advanced?
 

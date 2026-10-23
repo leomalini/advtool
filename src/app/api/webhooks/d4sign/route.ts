@@ -3,6 +3,7 @@ import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { d4signWebhookSecret, getD4SignConfig } from '@/lib/d4sign/config'
 import {
   d4signDiagnosticHeaders,
+  d4signSignatureHeader,
   parseD4SignBody,
   toD4SignDelivery,
   verifyD4SignHmac,
@@ -20,8 +21,8 @@ import { WEBHOOK_PROVIDERS, type WebhookEventStatus } from '@/types/webhookEvent
  * assina só o UUID, não o corpo.
  *
  * Respostas:
- *   · 401 quando o HMAC não confere — a D4Sign vê a falha, e a entrega fica
- *     gravada com o `Content-Hmac` para ser conferida de novo depois;
+ *   · 401 quando a assinatura não confere — a D4Sign vê a falha, e a entrega
+ *     fica gravada com a assinatura recebida para ser conferida de novo depois;
  *   · 503 quando a entrega não pôde ser gravada ou o envio não pôde ser
  *     procurado — a D4Sign tenta de novo por até ~27 h;
  *   · 200 para o resto, inclusive documento sem envio aqui: reenviar não muda
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
   const secret = d4signWebhookSecret()
   const signatureValid =
     delivery && secret
-      ? await verifyD4SignHmac(delivery.uuid, request.headers.get('content-hmac'), secret)
+      ? await verifyD4SignHmac(delivery.uuid, d4signSignatureHeader(request.headers), secret)
       : null
 
   let status: WebhookEventStatus = 'received'
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
     reason = 'D4SIGN_WEBHOOK_SECRET não configurada: sem como conferir o HMAC.'
   } else if (!signatureValid) {
     status = 'invalid'
-    reason = 'Content-Hmac ausente ou diferente do HMAC deste documento.'
+    reason = 'Assinatura (x-signature) ausente ou diferente do HMAC deste documento.'
   } else {
     const { data: signatureRequest, error } = await supabase
       .from('signature_requests')

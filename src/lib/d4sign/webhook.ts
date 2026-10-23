@@ -84,29 +84,12 @@ export function toD4SignDelivery(fields: Record<string, unknown>): D4SignDeliver
   return { uuid, typePost, event: events[typePost] ?? null }
 }
 
-function hexToBytes(value: string): Uint8Array {
-  const bytes = new Uint8Array(value.length / 2)
-  for (let index = 0; index < bytes.length; index++) {
-    bytes[index] = parseInt(value.slice(index * 2, index * 2 + 2), 16)
-  }
-  return bytes
-}
-
-/**
- * A documentação não diz se a "Secret Key MAC" entra como texto ou como os
- * bytes que um hexa representa — a mesma dúvida que a BuscaProcessos deixou
- * (`lib/buscaprocessos/signature.ts`). As duas leituras valem até o spike.
- */
-function keyReadings(secret: string): Uint8Array[] {
-  const readings: Uint8Array[] = [new TextEncoder().encode(secret)]
-  if (/^(?:[0-9a-f]{2})+$/i.test(secret)) readings.push(hexToBytes(secret))
-  return readings
-}
-
-async function hmacHex(message: string, key: Uint8Array): Promise<string> {
+/** A "Secret Key MAC" entra como texto, mesmo sendo 64 caracteres de hexa —
+ * conferido com um aviso real no spike (2026-10-22). */
+async function hmacHex(message: string, secret: string): Promise<string> {
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
-    key as BufferSource,
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
@@ -126,8 +109,17 @@ function equals(a: string, b: string): boolean {
 }
 
 /**
- * Confere o `Content-Hmac: sha256=<hex>` — o HMAC-SHA256 do UUID do documento
- * com a Secret Key MAC da conta.
+ * O cabeçalho com a assinatura. A documentação diz `Content-Hmac:
+ * sha256=<hex>`; o aviso real do spike (2026-10-22) veio em `x-signature`, só o
+ * hexa. Lê os dois, nessa ordem.
+ */
+export function d4signSignatureHeader(headers: Headers): string | null {
+  return headers.get('x-signature') ?? headers.get('content-hmac')
+}
+
+/**
+ * Confere a assinatura — o HMAC-SHA256 do UUID do documento com a Secret Key
+ * MAC da conta, em hexa, com ou sem o prefixo `sha256=`.
  *
  * Só o UUID é assinado, não o corpo: a conferência prova que quem mandou
  * conhece a chave e falava deste documento, não que o evento é verdadeiro. Por
@@ -140,27 +132,24 @@ export async function verifyD4SignHmac(
 ): Promise<boolean> {
   const received = header?.trim().replace(/^sha256=/i, '').toLowerCase()
   if (!received || !/^[0-9a-f]{64}$/.test(received)) return false
-
-  for (const key of keyReadings(secret)) {
-    if (equals(await hmacHex(uuid, key), received)) return true
-  }
-  return false
+  return equals(await hmacHex(uuid, secret), received)
 }
 
 /**
  * O que ajuda a diagnosticar, e nada que sirva de credencial.
  *
- * O `Content-Hmac` não é segredo — é o UUID assinado — e guardá-lo permite
+ * A assinatura não é segredo — é o UUID assinado — e guardá-la permite
  * conferir de novo uma entrega recusada depois de corrigir a variável. O IP
- * fica registrado sem bloquear: a central de ajuda cita 54.94.40.55, mas a
- * D4Sign pode trocá-lo sem aviso.
+ * fica registrado sem bloquear: a central de ajuda cita 54.94.40.55, mas o
+ * aviso do spike veio de 18.229.93.53 (`Webhook-Worker/1.0`) — a D4Sign troca
+ * sem aviso.
  */
 export function d4signDiagnosticHeaders(headers: Headers): Record<string, string | null> {
   return {
     content_type: headers.get('content-type'),
     user_agent: headers.get('user-agent'),
     forwarded_for: headers.get('x-forwarded-for'),
-    content_hmac: headers.get('content-hmac'),
+    signature: d4signSignatureHeader(headers),
     header_names: [...headers.keys()].sort().join(', '),
   }
 }
