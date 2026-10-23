@@ -3,8 +3,9 @@
 > **Status:** plano e decisões técnicas aprovados em 2026-10-21. Em 2026-10-22
 > o plano da conta foi corrigido para o Advanced e o WhatsApp entrou na v1. A
 > Fase 1 (fundação) começou antes do spike, a pedido: a migration fica escrita
-> e só é aplicada depois dele. O spike no sandbox (Fase 0) depende da conta de
-> teste — ver "Antes do spike".
+> e só é aplicada depois dele. Sem acesso ao sandbox, o spike leu a produção
+> (só leitura) e mudou o desenho dos cofres — decisão 8. O que cria ou envia
+> segue dependendo da conta de teste — ver "Antes do spike".
 > **Referência:** https://docapi.d4sign.com.br (lida em 2026-10-21), a central
 > de ajuda (ajuda.d4sign.com.br) e a página de planos.
 
@@ -21,7 +22,8 @@ inclusive o armazenamento de arquivos, se possível.
 | 4 | Recursos da v1 | **Autenticação forte, certificado ICP-Brasil, assinatura no portal (Embed) e WhatsApp por signatário**. O WhatsApp entrou em 2026-10-22, quando o plano se revelou Advanced | Cada recurso liga em Configurações, conforme o plano permitir |
 | 5 | Ao finalizar | **O contrato vira vigente sozinho** | O servidor confere na API, salva o PDF assinado, grava a data real e avisa o responsável. Lançar parcelas continua manual |
 | 6 | Portal | **Só o que falta assinar** | Seção "Para assinar" com o Embed; depois de assinado, sai da lista. Reabre o "não é assinatura" de `portal-cliente.md` |
-| 7 | Spike | **No sandbox** | Conta de teste separada; nenhuma chamada na conta real antes do spike |
+| 7 | Spike | **No sandbox** | Conta de teste separada; nenhuma chamada na conta real antes do spike. Em 2026-10-22, sem acesso ao sandbox, o usuário liberou **só leitura** na produção |
+| 8 | Cofres | **Um por tipo, sugerido no envio** (2026-10-22, depois de ver os 15 cofres da conta) | Configurações liga cada tipo de envio a um cofre, com sugestão pelo nome; o envio sugere e deixa trocar; a pasta do cliente fica dentro do cofre; o webhook passa a ser registrado em cada documento |
 
 ## O plano Advanced × os recursos escolhidos
 
@@ -93,7 +95,7 @@ D4Sign também gasta dela.
 | Saldo | `GET /account/balance` | `credit`, `sent`, `used_balance` ("372/999") |
 | Pastas por cliente | `GET /folders/{cofre}/find`, `POST /folders/{cofre}/create` (`folder_name`, `uuid_folder` para subpasta), `POST /folders/{cofre}/rename` | |
 | Subir o documento | `POST /documents/{cofre}/upload` (form-data `file`, `uuid_folder`) ou `uploadbinary` (base64, `mime_type`, `name`) | PDF, DOC, DOCX, JPG, PNG, BMP. Acima de 20 MB (até 500 MB): `uploadbigfile`. Devolve `{uuid}` |
-| Webhook | `POST /webhooks/v2/` (`type`: `cofre` ou `documento`, `uuid`, `url`) | **Por cofre**: registrado uma vez, não gasta chamada por envio |
+| Webhook | `POST /webhooks/v2/` (`type`: `cofre` ou `documento`, `uuid`, `url`); o `GET` com `type` e `uuid` lê o registrado | **Por documento**, no envio (decisão 8): com 15 cofres, registrar um por cofre esbarraria no limite, e assim só chegam avisos do que o app mandou |
 | Signatários | `POST /documents/{uuid}/createlist` (`signers[]`) | Ver "Signatários" |
 | Enviar | `POST /documents/{uuid}/sendtosigner` | `skip_email` (0/1), `workflow` (1 = segue a ordem), `message`, `sign_limit_date` (DD-MM-AAAA; cancela sozinho às 23:59:59 do dia) |
 | Conferir | `GET /documents/{uuid}` | Fase atual — é a confirmação antes de mudar status |
@@ -175,6 +177,30 @@ suporte.
 - A "Secret Key MAC" entra no HMAC como texto ou como bytes? O webhook aceita
   as duas leituras até o spike dizer qual.
 
+## O que o spike mostrou (2026-10-22 — produção, só leitura)
+
+O sandbox ficou de fora: as chaves colocadas no `.env` eram da produção (o
+sandbox as recusou com 401) e o usuário não conseguiu entrar na conta de
+testes. Decisão do usuário: ler a produção, sem criar documento nem gastar
+envio. As respostas cruas, com as chaves mascaradas, ficaram no scratchpad da
+sessão.
+
+| Pergunta | Resposta |
+|---|---|
+| Formato das chaves | Token `live_` + 64 hexa; cryptKey `live_crypt_` + 32. As do sandbox, na produção ou vice-versa, voltam `401 {"mensagem_pt":"Chave de API inválida."}` |
+| `GET /account/balance` | `{"credit":"20","sent":4,"used_balance":"4/20","sms":{…},"whatsapp":{"credit_whatsapp":null,"sent_whatsapp":0,…}}` — `credit` em **texto** e `sent` em **número**. 20 é a cota mensal do plano. O WhatsApp não informa crédito (`null`) |
+| `GET /safes` | **`uuid_safe`**, com sublinhado (a documentação diz `uuid-safe`), e `name-safe`, com hífen. O schema da fase 1 recusou — corrigido para aceitar as duas grafias |
+| Cofres da conta | **15, um por tipo de documento**: Contratos de Honorários, Procurações, Outras procurações, Declarações de Hipossuficiência, Declaração, Aditivos, Acordo, Petições, Termo de Renúncia, Revogação de mandato, Contrato de Locação Anual, Contratos A. Temporada, Contratos de Parceria, Contratos diversos e Outros documentos |
+| `GET /folders/{cofre}/find` | `[]` nos três cofres lidos: o escritório não usa pastas hoje |
+| `GET /webhooks/v2/?type=cofre&uuid=…` | `{"type":"cofre","uuid":…,"webhook_url":"Sem Cadastro!!!","history":[]}` — sem webhook, a URL vem como o texto `"Sem Cadastro!!!"`. O `history` deve listar as entregas: serve de diagnóstico do lado da D4Sign |
+| Latência | ~10 s por chamada, mas **da rede desta máquina** — o Google levou 8,8 s para conectar no mesmo minuto. Duas chamadas caíram no tempo de conexão do `fetch` (10 s) e foram repetidas. O cliente passou a esperar 30 s, e as rotas, `maxDuration = 60` |
+
+Ainda sem resposta — tudo o que cria ou envia: `createlist` e `key_signer`, o
+webhook de verdade e o HMAC, download e validade da URL, conversão do DOCX,
+cancelamento, nome de pasta repetido, se upload ou cancelamento gastam a cota
+e se o limite é por método. Fica para o sandbox (ou para a produção com teto,
+se o usuário decidir).
+
 ## Armazenamento: quem guarda o quê
 
 | Onde | O quê | Por quê |
@@ -188,9 +214,10 @@ arquivo seria uma chamada (10 por hora); as URLs expiram; e o leitor de IA, a
 RLS e o portal deixariam de alcançar os arquivos. Espaço também não é motivo:
 o bucket tem hoje 10 arquivos e 18 MB.
 
-**Pastas:** `<cofre>/<nome do cliente>`, criadas no primeiro envio do cliente e
-guardadas em `d4sign_folders` (por `client_id`, então homônimos não se
-confundem). Contrato do escritório vai para "Escritório"; documento sem
+**Pastas:** `<cofre do tipo>/<nome do cliente>` — "Procurações/Maria Silva",
+"Contratos de Honorários/Maria Silva" —, criadas no primeiro envio do cliente
+para aquele cofre e guardadas em `d4sign_folders` (por `client_id`, então
+homônimos não se confundem). Contrato do escritório vai para "Escritório"; documento sem
 cliente, para "Sem cliente". Nome do cliente mudou: a pasta é renomeada no
 envio seguinte. Sem subpasta por processo na v1.
 
@@ -205,6 +232,8 @@ assinatura em papel. Sem D4Sign, o botão faz o que faz hoje.
 - **Arquivo:** a minuta mais recente, ou outro PDF/DOCX do contrato. DOCX vai
   como está e a D4Sign converte; se o spike mostrar que a conversão estraga o
   timbrado, o diálogo ganha a prévia (`generate-document-view`) antes do envio.
+- **Cofre:** o do tipo do contrato (Configurações → Assinatura), trocável no
+  envio — um aditivo vai para "Aditivos".
 - **Signatários**, pré-preenchidos das partes (`contract_parties`, com e-mail,
   celular e CPF):
 
@@ -232,11 +261,12 @@ de Contratos) conferido antes de qualquer chamada à D4Sign — o envio gasta
 cota.
 
 1. Grava `signature_requests` (`preparing`) e os signatários.
-2. Garante a pasta do cliente.
+2. Garante a pasta do cliente no cofre escolhido.
 3. Lê o arquivo do Storage e faz o upload → guarda o `external_id`.
-4. `createlist` → guarda o aplicado de cada signatário e o `key_signer`.
-5. `sendtosigner` → `sent`.
-6. O contrato vai para `aguardando_assinatura` **pelo client de sessão**, para
+4. Registra o webhook no documento (`POST /webhooks/v2/`, `type: documento`).
+5. `createlist` → guarda o aplicado de cada signatário e o `key_signer`.
+6. `sendtosigner` → `sent`.
+7. O contrato vai para `aguardando_assinatura` **pelo client de sessão**, para
    o histórico de status registrar quem enviou.
 
 Cada passo é gravado. Se um falha, o pedido fica `failed` com o passo e o
@@ -316,9 +346,9 @@ e-mail", que troca na D4Sign e reenvia.
 
 | Momento | Chamadas |
 |---|---|
-| Configurar (uma vez) | cofres, webhook do cofre, saldo |
-| Primeiro envio de um cliente | +1 ou 2 (achar ou criar a pasta) |
-| Enviar | 3: `upload`, `createlist`, `sendtosigner` |
+| Configurar (uma vez) | cofres e saldo |
+| Primeiro envio de um cliente para um cofre | +1 ou 2 (criar ou renomear a pasta) |
+| Enviar | 4: `upload`, webhook do documento, `createlist`, `sendtosigner` |
 | Finalizar | 2: `GET` do documento e `download` |
 | Cancelar, reenviar, corrigir e-mail | 1 cada (+1 de confirmação no cancelamento) |
 
@@ -355,21 +385,21 @@ e-mail", que troca na D4Sign e reenvia.
    o PDF assinado. O download nunca pede `document=true`, que devolve as fotos
    dos documentos dos signatários.
 7. **Armadilha dev → produção:** o `APP_PUBLIC_URL` do `.env` local é a
-   produção. Registrar o webhook do cofre do sandbox a partir do dev apontaria
-   a produção para eventos do sandbox. A tela mostra a URL antes de registrar e
-   aceita `D4SIGN_WEBHOOK_URL` para apontar outro endereço.
+   produção. Um envio de teste feito no dev registraria no documento o
+   endereço da produção. A tela mostra o endereço que vai ser usado, e
+   `D4SIGN_WEBHOOK_URL` aponta outro.
 
 ## Modelo de dados — migration `20260101000079_d4sign_signatures.sql`
 
 Número a reconferir ao criar: a 78 é a última hoje, e 77 e 78 ainda não foram
 aplicadas no remoto.
 
-**`office_settings`:** `d4sign_safe_uuid`, `d4sign_safe_name`,
-`d4sign_webhook_url`, `d4sign_webhook_registered_at`, `d4sign_features jsonb`
-(`whatsapp`, `pix`, `selfie`, `video_selfie`, `score`, `icp`, `embed`) e o
-último saldo lido (`d4sign_balance_credit`, `d4sign_balance_sent`,
-`d4sign_balance_checked_at`). Nada disso é segredo: o cofre não autentica nada
-sem as chaves.
+**`office_settings`:** `d4sign_safes jsonb` (o cofre de cada tipo de envio,
+com `padrao` para o resto — decisão 8), `d4sign_features jsonb` (`whatsapp`,
+`pix`, `selfie`, `video_selfie`, `score`, `icp`, `embed`) e o último saldo
+lido (`d4sign_balance_credit`, `d4sign_balance_sent`,
+`d4sign_balance_checked_at`). Nada disso é segredo: um cofre não autentica
+nada sem as chaves. Não há coluna de webhook: ele vai em cada documento.
 
 **`signature_requests`** — um envio.
 
@@ -382,7 +412,7 @@ sem as chaves.
 | `external_id` | UUID do documento na D4Sign, **unique** |
 | `safe_uuid`, `folder_uuid`, `title` | onde ficou e com que nome |
 | `status` | `preparing` · `sent` · `signed` · `canceled` · `failed` |
-| `failed_step` | `upload` · `signers` · `send` — de onde "Tentar de novo" continua |
+| `failed_step` | `folder` · `upload` · `webhook` · `signers` · `send` — de onde "Tentar de novo" continua |
 | `ordered`, `message`, `deadline` | o que foi pedido no envio |
 | `signed_document_id` | → `documents`, a cópia assinada (`set null`) |
 | `sent_at`, `finished_at`, `canceled_at`, `cancel_reason`, `error` | |
@@ -431,9 +461,10 @@ pelo provedor.
 ## Telas
 
 - **Configurações → Assinatura:** credenciais (presentes ou não), ambiente
-  (sandbox ou produção, pelo host), "Testar conexão" (mostra o saldo),
-  escolha do cofre, registro do webhook do cofre e as chaves dos recursos do
-  plano, com o aviso de que a API não informa o plano.
+  (sandbox ou produção, pelo host), se há endereço e segredo para os avisos,
+  o cofre de cada tipo de envio (sugerido pelo nome), "Testar conexão" com o
+  saldo e as chaves dos recursos do plano, com o aviso de que a API não
+  informa o plano.
 - **Contrato:** o diálogo de envio, a seção "Assinatura" e o selo na lista.
 - **Documentos:** "Enviar para assinatura" no menu, selo e cópia assinada.
 - **Portal:** "Para assinar".
@@ -508,8 +539,9 @@ novo por até ~27 h).
 | `config.ts` | Lê `D4SIGN_*`. Só aceita os dois hosts da D4Sign (as chaves vão na query); `d4signSetupStatus()` diz à tela o que falta, sem valores |
 | `urls.ts` | O endpoint do webhook: `D4SIGN_WEBHOOK_URL` vence `APP_PUBLIC_URL` (a armadilha dev → produção) |
 | `client.ts` | Uma chamada à API: chaves na query, corpo lido como texto, erros por tipo (`auth`, `rate_limit`, `quota`, `rejected`, `unavailable`, `invalid_response`, `not_configured`) e limpeza das chaves em toda mensagem. O limite e a cota são reconhecidos pela mensagem, até num 200 |
-| `schemas.ts` | Respostas de cofres, saldo e pasta, aceitando lista ou objeto e número ou texto até o spike dizer o formato |
-| `account.ts` | Cofres, saldo e o webhook 2.0 do cofre |
+| `schemas.ts` | Respostas de cofres, saldo e pasta, aceitando lista ou objeto e número ou texto. Cofre com `uuid_safe` (a produção) ou `uuid-safe` (a documentação) |
+| `account.ts` | Cofres, saldo e o webhook 2.0 de um documento, que a fase 2 registra no envio |
+| `safeRoutes.ts` | O mapa tipo → cofre: a sugestão pelo nome (igual > começa com > contém, sem acento — "Procurações" ganha de "Outras procurações"), o cofre de um tipo com o padrão e o tipo de um contrato ou documento. Sem nada de servidor: serve à tela e ao envio |
 | `folders.ts` | A pasta de cada cliente (e "Escritório", "Sem cliente"), criada no primeiro envio; renomear é cosmético e nunca para o envio. Sem chamador até a fase 2 |
 | `webhook.ts` | O corpo em multipart, urlencoded ou JSON; o HMAC do UUID com a chave lida como texto e como hexa; os cabeçalhos de diagnóstico |
 | `http.ts` | Erro da D4Sign → resposta da rota (chave recusada é 502, não 401) |
@@ -519,17 +551,20 @@ Rotas:
   `webhook_events` (`provider = 'd4sign'`). 401 com HMAC errado, 503 quando
   não grava ou não consegue procurar, 200 para o resto. Com o ambiente em
   sandbox, as entregas ficam `is_test`. Nenhum evento é processado ainda.
-- `GET /api/assinaturas/d4sign/cofres`, `PUT /api/assinaturas/d4sign/cofre` e
-  `POST /api/assinaturas/d4sign/saldo`, todas com `configuracoes:manage`.
-  Escolher o cofre registra o webhook; se o registro falhar por outro motivo
-  que não as chaves, o cofre é salvo e a resposta diz o que faltou, mantendo
-  o registro anterior quando o cofre é o mesmo.
+- `GET /api/assinaturas/d4sign/cofres` e `POST /api/assinaturas/d4sign/saldo`,
+  as duas com `configuracoes:manage` e `maxDuration = 60`. O mapa de cofres e
+  os recursos do plano a tela grava direto em `office_settings` (a RLS já
+  exige `configuracoes:manage`): um UUID errado só faria a D4Sign recusar o
+  envio.
 
 ### Tela — Configurações → Assinatura
 
 - Situação das chaves (sandbox ou produção, o que falta) e dos avisos (sem
-  segredo, sem endereço, não registrados, registrados para outro endereço).
-- Cofre: lista sob demanda (gasta chamada), escolha e troca com confirmação.
+  segredo, sem endereço ou prontos).
+- Cofres por tipo: o mapa salvo; "Carregar cofres" / "Editar cofres" lista os
+  cofres (1 chamada), sugere um por tipo pelo nome, marca o sugerido e só
+  grava ao salvar. Sem o padrão, não salva; cofre que sumiu da conta é trocado
+  por sugestão.
 - Envios do plano: "Testar conexão e ler o saldo" mostra quantos restam e
   quando foi lido.
 - Recursos do plano: as sete chaves (WhatsApp, Pix, documento + selfie,
@@ -543,23 +578,27 @@ Rotas:
   não tocou) e `pnpm build` sem erro. O bundle do navegador não tem `tokenAPI`
   nem `service_role`: o cliente da API ficou no servidor.
 - **No Node, com o código real** (loader no scratchpad, `fetch` falso no lugar
-  da D4Sign e Supabase em memória): 44 verificações — hosts aceitos e
+  da D4Sign e Supabase em memória): 45 verificações — hosts aceitos e
   recusados, endpoint com e sem `D4SIGN_WEBHOOK_URL`, chaves na query e fora
   de toda mensagem de erro, limite e cota reconhecidos até num 200, cofres e
-  saldo em formatos diferentes, o corpo do webhook em multipart, urlencoded e
-  JSON, o HMAC (certo, errado, maiúsculo, sem prefixo, chave em hexa lida das
-  duas formas), pastas (criar, reaproveitar, renomear, recusa ao renomear,
-  corrida) e as quatro rotas com seus códigos de resposta e o que gravam.
+  saldo nos formatos da documentação e no que a produção devolveu, o webhook
+  do documento, a sugestão de cofres com os 15 nomes reais da conta, o corpo
+  do webhook em multipart, urlencoded e JSON, o HMAC (certo, errado,
+  maiúsculo, sem prefixo, chave em hexa lida das duas formas), pastas (criar,
+  reaproveitar, renomear, recusa ao renomear, corrida) e as três rotas com
+  seus códigos de resposta e o que gravam.
+- **Contra a D4Sign de verdade:** só leitura na produção — saldo e cofres pela
+  lib, que pegou a diferença `uuid_safe` × `uuid-safe` (ver "O que o spike
+  mostrou").
 - **Tela** numa página temporária sob `/acompanhar` (já apagada), com sessão
-  falsa e cache pré-carregado: os seis estados das chaves e dos avisos, a
-  linha sem as colunas da migration, listar e escolher cofre (direto na
-  primeira vez, com confirmação na troca), saldo, recursos (o payload gravado
-  conferido), perfil só de leitura sem botões, as três falhas (limite, webhook
-  recusado, chave recusada), celular a 375 px sem rolagem lateral e os temas
-  claro e escuro. O cartão da InfinitePay segue igual com o `StatusRow`
-  compartilhado.
-- **Não verificado:** a migration não rodou em nenhum Postgres, e nada falou
-  com a D4Sign de verdade — isso é o spike.
+  falsa e cache pré-carregado: os estados das chaves e dos avisos, a linha sem
+  as colunas da migration, os cofres por tipo (sugestão com os 15 nomes reais,
+  "Usar o padrão", troca manual tirando a marca de sugerido, o payload gravado,
+  cofre que sumiu da conta, falha ao listar), saldo, recursos, perfil só de
+  leitura sem botões, celular a 375 px sem rolagem lateral e os temas claro e
+  escuro. O cartão da InfinitePay segue igual com o `StatusRow` compartilhado.
+- **Não verificado:** a migration não rodou em nenhum Postgres, e nada que
+  cria ou envia falou com a D4Sign — isso é o resto do spike.
 
 ## Riscos e pontos em aberto
 
@@ -583,7 +622,8 @@ Rotas:
 
 ## Antes do spike: o que fica com você
 
-1. Criar a conta de teste em https://sandbox.d4sign.com.br/criar.html.
+1. Criar a conta de teste em https://sandbox.d4sign.com.br/criar.html — é
+   uma conta à parte: o login e as chaves da produção não valem lá.
 2. Pedir a suporte@d4sign.com.br: API ativa no sandbox, envios de teste e o
    Embed no sandbox.
 3. No sandbox, criar o cofre "advtool-testes"; em Dev API, copiar o token e a

@@ -4,6 +4,9 @@ import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { getBalance } from '@/lib/d4sign/account'
 import { d4signErrorResponse } from '@/lib/d4sign/http'
 
+/** Chamada a serviço externo: o mesmo teto das outras rotas nessa situação. */
+export const maxDuration = 60
+
 /**
  * POST /api/assinaturas/d4sign/saldo — lê o saldo de envios e guarda o último
  * valor em `office_settings`. É também o "Testar conexão": chave errada volta

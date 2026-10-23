@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { AI_FILE_TYPES, aiFileTypeFromName, sanitizeFileName } from '@/features/ia/files/constants'
-import type { D4SignFeatures, D4SignSafe } from '@/types/d4sign.types'
+import type { D4SignFeatures, D4SignSafe, D4SignSafeMap } from '@/types/d4sign.types'
 import type { OfficeSettings, OfficeSettingsInput } from '@/types/officeSettings.types'
 
 const supabase = createClient()
@@ -92,23 +92,17 @@ export async function listD4SignSafes(): Promise<D4SignSafe[]> {
   return body.safes
 }
 
-export interface D4SignSafeChoice {
-  settings: OfficeSettings
-  /** O webhook do cofre: registrado, ou o motivo de não ter sido. */
-  webhook: { registered: boolean; error: string | null }
-}
-
-/** Escolhe o cofre e registra nele o webhook. O servidor grava a linha. */
-export async function chooseD4SignSafe(safe: D4SignSafe): Promise<D4SignSafeChoice> {
-  return d4signRoute<D4SignSafeChoice>(
-    '/api/assinaturas/d4sign/cofre',
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(safe),
-    },
-    'Não foi possível salvar o cofre agora.',
-  )
+/** O cofre de cada tipo de envio. Escolhido da lista que a D4Sign devolveu;
+ * nada a conferir no servidor — um UUID errado só faria a D4Sign recusar o
+ * envio. */
+export async function saveD4SignSafes(safes: D4SignSafeMap, userId: string): Promise<OfficeSettings> {
+  const { data, error } = await supabase
+    .from('office_settings')
+    .upsert({ id: ROW_ID, d4sign_safes: safes, updated_by: userId }, { onConflict: 'id' })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as OfficeSettings
 }
 
 /** Lê o saldo de envios na D4Sign e devolve a linha com ele guardado. */

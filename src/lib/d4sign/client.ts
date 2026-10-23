@@ -1,10 +1,9 @@
 // Server-side only — as chaves da D4Sign vão na query string de cada chamada.
 import { getD4SignConfig, type D4SignConfig } from './config'
 
-/** As consultas da fundação respondem rápido; 20 s cobre uma lentidão real sem
- * segurar a rota até o limite da função na Vercel. O upload (fase 2) terá o
- * seu. */
-const TIMEOUT_MS = 20_000
+/** A documentação não fala em tempo de resposta. 30 s cobre uma lentidão real
+ * e ainda cabe no `maxDuration = 60` das rotas. O upload (fase 2) terá o seu. */
+const TIMEOUT_MS = 30_000
 
 export type D4SignErrorKind =
   | 'not_configured'

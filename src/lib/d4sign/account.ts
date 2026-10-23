@@ -12,8 +12,7 @@ export async function listSafes(): Promise<D4SignSafe[]> {
   const body = await d4signRequest('/safes')
   const parsed = safeListSchema.safeParse(body)
   if (!parsed.success) throw unexpected('/safes', body)
-
-  return parsed.data.map((safe) => ({ uuid: safe['uuid-safe'], name: safe['name-safe'] }))
+  return parsed.data
 }
 
 export interface D4SignBalance {
@@ -32,13 +31,12 @@ export async function getBalance(): Promise<D4SignBalance> {
 }
 
 /**
- * Registra (ou troca) o endereço que recebe os avisos dos documentos do cofre
- * — webhook 2.0, um para o cofre inteiro, em vez de uma chamada a mais por
- * envio. A resposta não é documentada: o 200 basta.
- *
- * Por ser do cofre, avisa também os documentos enviados pelo painel da
- * D4Sign; esses chegam como entregas sem envio correspondente.
+ * Registra o endereço que recebe os avisos de UM documento — webhook 2.0, no
+ * envio (fase 2). Por documento, e não por cofre: o escritório tem 15 cofres
+ * (um por tipo), e registrar todos esbarraria no limite de chamadas por hora;
+ * assim também só chegam avisos do que o app mandou, nunca do painel. Custa
+ * uma chamada por envio. A resposta não é documentada: o 200 basta.
  */
-export async function registerSafeWebhook(safeUuid: string, url: string): Promise<void> {
-  await d4signRequest('/webhooks/v2/', { json: { type: 'cofre', uuid: safeUuid, url } })
+export async function registerDocumentWebhook(documentUuid: string, url: string): Promise<void> {
+  await d4signRequest('/webhooks/v2/', { json: { type: 'documento', uuid: documentUuid, url } })
 }

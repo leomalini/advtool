@@ -11,12 +11,13 @@ function isReachable(url: string): boolean {
 }
 
 /**
- * Onde a D4Sign entrega os avisos do cofre.
+ * Onde a D4Sign entrega os avisos — o endereço que cada envio registra no
+ * próprio documento.
  *
  * `D4SIGN_WEBHOOK_URL` vence `APP_PUBLIC_URL`. O `.env` local aponta
- * `APP_PUBLIC_URL` para a produção: registrar o cofre do sandbox a partir do
- * dev mandaria os avisos de teste para lá, e a variável própria permite
- * apontar para um túnel ou um preview.
+ * `APP_PUBLIC_URL` para a produção: um envio de teste feito no dev mandaria
+ * os avisos para lá, e a variável própria permite apontar para um túnel ou um
+ * preview.
  *
  * Null quando não há endereço que a D4Sign alcance — e aí nada é registrado.
  */

@@ -7,8 +7,8 @@
 -- assinatura na D4Sign. Quando todos assinam, o PDF assinado volta para o app.
 -- A D4Sign guarda a via legal; o Supabase continua dono dos arquivos.
 --
---   · `office_settings.d4sign_*`        — cofre, webhook, recursos do plano e
---                                         o último saldo lido;
+--   · `office_settings.d4sign_*`        — o cofre de cada tipo de envio, os
+--                                         recursos do plano e o último saldo;
 --   · `signature_requests`              — um envio;
 --   · `signature_signers`               — quem assina;
 --   · `d4sign_folders`                  — a pasta de cada cliente no cofre;
@@ -27,10 +27,18 @@
 -- 1. A conta
 --
 -- Nada aqui é segredo: o token e a cryptKey ficam nas variáveis de ambiente, e
--- sem eles o UUID do cofre não abre nada. Por isso mora na linha do escritório
--- e segue as policies dela: todos leem, `configuracoes:manage` grava. Cofre,
--- webhook e saldo são gravados pelo servidor (service_role), depois de
--- conferir a mesma permissão — são respostas da D4Sign, não digitação.
+-- sem eles o UUID de um cofre não abre nada. Por isso mora na linha do
+-- escritório e segue as policies dela: todos leem, `configuracoes:manage`
+-- grava. O saldo é gravado pelo servidor (service_role), depois de conferir a
+-- mesma permissão — é resposta da D4Sign, não digitação.
+--
+-- `d4sign_safes`: o escritório organiza a D4Sign com um cofre por tipo de
+-- documento (spike, 2026-10-22). O mapa diz para que cofre vai cada tipo de
+-- envio — `{"contrato_honorarios": {"uuid": …, "name": …}, …, "padrao": …}` —
+-- e quem envia pode trocar. Tipo ausente usa o `padrao`.
+--
+-- Não há coluna de webhook: ele é registrado em cada documento, no envio. Com
+-- 15 cofres, registrar um por cofre esbarraria no limite de chamadas.
 --
 -- `d4sign_features`: a API não informa o plano, então quem administra liga
 -- aqui o que a conta tem (`whatsapp`, `pix`, `selfie`, `video_selfie`,
@@ -41,18 +49,15 @@
 -- ────────────────────────────────────────────────────────────────────────────
 
 alter table public.office_settings
-  add column if not exists d4sign_safe_uuid text,
-  add column if not exists d4sign_safe_name text,
-  add column if not exists d4sign_webhook_url text,
-  add column if not exists d4sign_webhook_registered_at timestamptz,
+  add column if not exists d4sign_safes jsonb not null default '{}'::jsonb,
   add column if not exists d4sign_features jsonb not null default '{}'::jsonb,
   add column if not exists d4sign_balance_credit integer,
   add column if not exists d4sign_balance_sent integer,
   add column if not exists d4sign_balance_checked_at timestamptz;
 
-alter table public.office_settings drop constraint if exists office_settings_d4sign_safe_pair;
-alter table public.office_settings add constraint office_settings_d4sign_safe_pair check (
-  (d4sign_safe_uuid is null) = (d4sign_safe_name is null)
+alter table public.office_settings drop constraint if exists office_settings_d4sign_safes_object;
+alter table public.office_settings add constraint office_settings_d4sign_safes_object check (
+  jsonb_typeof(d4sign_safes) = 'object'
 );
 
 alter table public.office_settings drop constraint if exists office_settings_d4sign_features_object;
@@ -60,9 +65,10 @@ alter table public.office_settings add constraint office_settings_d4sign_feature
   jsonb_typeof(d4sign_features) = 'object'
 );
 
-comment on column public.office_settings.d4sign_safe_uuid is
-  'Cofre da D4Sign que recebe os envios. Cada envio guarda o cofre usado '
-  '(signature_requests.safe_uuid): trocar aqui vale só para os próximos.';
+comment on column public.office_settings.d4sign_safes is
+  'Cofre da D4Sign de cada tipo de envio ({"contrato_honorarios": {"uuid", "name"}, '
+  '…, "padrao"}). O envio sugere e deixa trocar; cada envio guarda o cofre usado '
+  '(signature_requests.safe_uuid).';
 comment on column public.office_settings.d4sign_features is
   'Recursos que o plano da D4Sign libera, ligados à mão: a API não informa o plano.';
 
@@ -109,7 +115,7 @@ create table if not exists public.signature_requests (
   status              text not null default 'preparing' check (status in (
     'preparing', 'sent', 'signed', 'canceled', 'failed'
   )),
-  failed_step         text check (failed_step in ('folder', 'upload', 'signers', 'send')),
+  failed_step         text check (failed_step in ('folder', 'upload', 'webhook', 'signers', 'send')),
 
   /** Assinam na ordem da lista (`workflow` da D4Sign). */
   ordered             boolean not null default false,
@@ -232,11 +238,13 @@ create trigger set_updated_at before update on public.signature_signers
 
 
 -- ────────────────────────────────────────────────────────────────────────────
--- 4. `d4sign_folders` — uma pasta por cliente no cofre
+-- 4. `d4sign_folders` — uma pasta por cliente em cada cofre
 --
--- Criada no primeiro envio do cliente. O vínculo é pelo `client_id`, não pelo
--- nome: dois clientes homônimos ganham duas pastas. O contrato do escritório
--- vai para "Escritório"; o documento sem cliente, para "Sem cliente".
+-- Criada no primeiro envio do cliente para aquele cofre (os cofres são por
+-- tipo: "Procurações/Maria Silva", "Contratos de Honorários/Maria Silva"). O
+-- vínculo é pelo `client_id`, não pelo nome: dois clientes homônimos ganham
+-- duas pastas. O contrato do escritório vai para "Escritório"; o documento sem
+-- cliente, para "Sem cliente".
 --
 -- Excluir o cliente apaga só o vínculo. A pasta e o que está nela continuam na
 -- D4Sign: lá fica a via legal, e o app nunca apaga nada no cofre.

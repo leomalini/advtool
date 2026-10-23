@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<WebhookEventStatus, string> = {
   processed: 'Processado',
   duplicate: 'Repetido',
   ignored: 'Ignorado',
-  unmatched: 'Fora do app',
+  unmatched: 'Sem envio',
   invalid: 'Recusado',
   error: 'Erro',
 }
@@ -49,8 +49,9 @@ function eventLabel(event: WebhookEvent): string | null {
 }
 
 /**
- * As últimas entregas do webhook do cofre da D4Sign: o que chegou, o que foi
- * recusado e por quê. Atualiza sozinha (Realtime).
+ * As últimas entregas do webhook da D4Sign — registrado em cada documento, no
+ * envio: o que chegou, o que foi recusado e por quê. Atualiza sozinha
+ * (Realtime).
  *
  * Nesta fase nada é processado: a lista mostra se os avisos chegam e se o HMAC
  * confere — o que o spike precisa ver.
@@ -70,8 +71,8 @@ export function D4SignDeliveries() {
           Avisos da D4Sign
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          As últimas entregas do webhook do cofre, cada uma com o HMAC conferido. Documento enviado
-          pelo painel da D4Sign aparece como “fora do app”.
+          As últimas entregas do webhook, cada uma com o HMAC conferido. Só chegam avisos dos
+          documentos que o app enviou.
         </p>
       </CardHeader>
       <CardContent>

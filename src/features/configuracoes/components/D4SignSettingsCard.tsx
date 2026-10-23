@@ -15,22 +15,26 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { usePermissions } from '@/hooks/usePermissions'
+import { suggestSafeMap, type SuggestedSafeMap } from '@/lib/d4sign/safeRoutes'
+import { cn } from '@/lib/utils'
 import {
   D4SIGN_FEATURES,
   D4SIGN_FEATURE_LABELS,
+  D4SIGN_SAFE_ROUTES,
+  D4SIGN_SAFE_ROUTE_LABELS,
   type D4SignFeatures,
-  type D4SignSafe,
+  type D4SignSafeMap,
+  type D4SignSafeRoute,
   type D4SignSetupStatus,
 } from '@/types/d4sign.types'
 import type { OfficeSettings } from '@/types/officeSettings.types'
 import {
-  useChooseD4SignSafe,
   useListD4SignSafes,
   useOfficeSettings,
   useRefreshD4SignBalance,
   useSaveD4SignFeatures,
+  useSaveD4SignSafes,
 } from '../hooks/useOfficeSettings'
 import { StatusRow } from './StatusRow'
 
@@ -38,6 +42,9 @@ interface D4SignSettingsCardProps {
   /** Montado no servidor: as variáveis da D4Sign não chegam ao navegador. */
   setup: D4SignSetupStatus
 }
+
+/** O Select do Radix não aceita item de valor vazio. */
+const USE_DEFAULT = '__padrao__'
 
 function formatDateTime(iso: string): string {
   return format(parseISO(iso), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
@@ -57,7 +64,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 /**
  * A conta D4Sign que recebe os envios para assinatura: as chaves do servidor,
- * o cofre, os avisos (webhook), o saldo de envios e os recursos do plano.
+ * os avisos (webhook), o cofre de cada tipo de envio, o saldo de envios e os
+ * recursos do plano.
  *
  * Só quem administra Configurações mexe. Listar cofres e ler o saldo gastam
  * chamadas das 10 por hora da API, por isso nada é consultado ao abrir a aba.
@@ -77,28 +85,25 @@ export function D4SignSettingsCard({ setup }: D4SignSettingsCardProps) {
         </CardTitle>
         <p className="text-xs text-muted-foreground">
           Assinatura eletrônica de contratos e documentos. O PDF assinado volta para o app; a via
-          com validade jurídica fica no cofre da D4Sign, numa pasta por cliente.
+          com validade jurídica fica no cofre da D4Sign do tipo do documento, numa pasta por
+          cliente.
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-3">
           <ConnectionStatus setup={setup} />
-          {configured && <WebhookStatus setup={setup} settings={settings} />}
+          {configured && <WebhookStatus setup={setup} />}
         </div>
 
         {configured &&
           (isLoading ? (
             <Skeleton className="h-24 w-full" />
           ) : (
+            // Montados só depois de carregar: os rascunhos nascem com o valor
+            // do banco, sem reset em efeito.
             <>
-              <SafeSection
-                settings={settings}
-                canEdit={canEdit}
-                webhookEndpoint={setup.webhookEndpoint}
-              />
+              <SafesSection current={settings?.d4sign_safes ?? {}} canEdit={canEdit} />
               <BalanceSection settings={settings} canEdit={canEdit} />
-              {/* Montado só depois de carregar: as caixas nascem com o valor do
-                  banco, sem reset em efeito. */}
               <FeaturesSection current={settings?.d4sign_features ?? {}} canEdit={canEdit} />
             </>
           ))}
@@ -141,16 +146,9 @@ function ConnectionStatus({ setup }: { setup: D4SignSetupStatus }) {
   )
 }
 
-function WebhookStatus({
-  setup,
-  settings,
-}: {
-  setup: D4SignSetupStatus
-  settings: OfficeSettings | null
-}) {
-  const registered = settings?.d4sign_webhook_url ?? null
-  const registeredAt = settings?.d4sign_webhook_registered_at ?? null
-
+/** O webhook é registrado em cada documento, no envio: aqui só se confere se
+ * há endereço e segredo para isso. */
+function WebhookStatus({ setup }: { setup: D4SignSetupStatus }) {
   if (!setup.hasWebhookSecret) {
     return (
       <StatusRow ok={false} title="Os avisos seriam recusados">
@@ -169,177 +167,140 @@ function WebhookStatus({
     )
   }
 
-  if (!registered) {
-    return (
-      <StatusRow ok={false} title="Avisos ainda não registrados">
-        Escolha o cofre abaixo: a D4Sign passa a avisar <Code>{setup.webhookEndpoint}</Code>.
-      </StatusRow>
-    )
-  }
-
-  if (registered !== setup.webhookEndpoint) {
-    return (
-      <StatusRow ok={false} title="Avisos registrados para outro endereço">
-        O cofre avisa <Code>{registered}</Code>, mas este servidor recebe em{' '}
-        <Code>{setup.webhookEndpoint}</Code>. Escolha o cofre de novo para trocar.
-      </StatusRow>
-    )
-  }
-
   return (
-    <StatusRow ok title="Avisos registrados">
-      A D4Sign avisa <Code>{registered}</Code>
-      {registeredAt && ` desde ${formatDateTime(registeredAt)}`}, e cada aviso tem o HMAC
-      conferido.
+    <StatusRow ok title="Avisos prontos">
+      Cada envio registra <Code>{setup.webhookEndpoint}</Code> no próprio documento, e cada aviso
+      tem o HMAC conferido.
     </StatusRow>
   )
 }
 
-function SafeSection({
-  settings,
-  canEdit,
-  webhookEndpoint,
-}: {
-  settings: OfficeSettings | null
-  canEdit: boolean
-  webhookEndpoint: string | null
-}) {
+function SafesSection({ current, canEdit }: { current: D4SignSafeMap; canEdit: boolean }) {
   const listSafes = useListD4SignSafes()
-  const choose = useChooseD4SignSafe()
-  const [selected, setSelected] = useState('')
-  const [pending, setPending] = useState<D4SignSafe | null>(null)
-
-  const currentUuid = settings?.d4sign_safe_uuid ?? null
-  const currentName = settings?.d4sign_safe_name ?? null
+  const save = useSaveD4SignSafes()
+  const [draft, setDraft] = useState<SuggestedSafeMap | null>(null)
   const safes = listSafes.data ?? null
+  const editing = draft !== null && safes !== null
+
+  function startEditing() {
+    listSafes.mutate(undefined, {
+      onSuccess: (loaded) => setDraft(suggestSafeMap(loaded, current)),
+    })
+  }
 
   function close() {
+    setDraft(null)
     listSafes.reset()
-    setSelected('')
   }
 
-  function save(safe: D4SignSafe) {
-    choose.mutate(safe, { onSuccess: close })
+  function choose(route: D4SignSafeRoute, uuid: string) {
+    if (!draft || !safes) return
+    const map = { ...draft.map }
+    const safe = safes.find((item) => item.uuid === uuid)
+    if (safe) map[route] = safe
+    else delete map[route]
+    setDraft({ map, suggested: draft.suggested.filter((item) => item !== route) })
   }
 
-  function handleUse() {
-    const safe = safes?.find((item) => item.uuid === selected)
-    if (!safe) return
-    // A primeira escolha vai direto. Trocar de cofre muda para onde vão os
-    // próximos envios: pede confirmação.
-    if (currentUuid && currentUuid !== safe.uuid) {
-      setPending(safe)
-      return
-    }
-    save(safe)
-  }
+  const missingDefault = editing ? !draft.map.padrao : !current.padrao
 
   return (
     <section className="space-y-2 border-t pt-4">
-      <SectionTitle>Cofre</SectionTitle>
-      <p className="text-sm">
-        {currentName ? (
-          <>
-            Os envios caem no cofre <strong>{currentName}</strong>, numa pasta por cliente.
-          </>
-        ) : (
-          'Nenhum cofre escolhido: sem ele, nada vai para assinatura.'
-        )}
+      <SectionTitle>Cofres por tipo</SectionTitle>
+      <p className="text-xs text-muted-foreground">
+        Cada envio vai para o cofre do seu tipo, numa pasta do cliente. Quem envia pode trocar — um
+        aditivo vai para “Aditivos”, por exemplo.
       </p>
 
-      {canEdit &&
-        (safes === null ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={listSafes.isPending}
-            onClick={() => listSafes.mutate()}
+      <ul className="divide-y rounded-lg border">
+        {D4SIGN_SAFE_ROUTES.map((route) => (
+          <li
+            key={route}
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
           >
-            {listSafes.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <FolderLock className="h-3.5 w-3.5" />
-            )}
-            {currentName ? 'Trocar cofre' : 'Carregar cofres'}
-          </Button>
-        ) : safes.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            A conta não tem cofre. Crie um no painel da D4Sign e carregue de novo.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={selected} onValueChange={setSelected} disabled={choose.isPending}>
-                <SelectTrigger size="sm" className="min-w-56">
+            <span className="text-sm">
+              {D4SIGN_SAFE_ROUTE_LABELS[route]}
+              {editing && draft.suggested.includes(route) && (
+                <span className="ml-2 rounded-full bg-info/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-info">
+                  Sugerido
+                </span>
+              )}
+            </span>
+            {editing ? (
+              <Select
+                value={draft.map[route]?.uuid ?? (route === 'padrao' ? '' : USE_DEFAULT)}
+                onValueChange={(value) => choose(route, value)}
+                disabled={save.isPending}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-64">
                   <SelectValue placeholder="Escolha o cofre" />
                 </SelectTrigger>
                 <SelectContent>
+                  {route !== 'padrao' && <SelectItem value={USE_DEFAULT}>Usar o padrão</SelectItem>}
                   {safes.map((safe) => (
                     <SelectItem key={safe.uuid} value={safe.uuid}>
                       {safe.name}
-                      {safe.uuid === currentUuid ? ' (atual)' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                type="button"
-                size="sm"
-                disabled={!selected || choose.isPending}
-                onClick={handleUse}
-              >
-                {choose.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Save className="h-3.5 w-3.5" />
-                )}
-                Usar este cofre
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={choose.isPending}
-                onClick={close}
-              >
-                Cancelar
-              </Button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {webhookEndpoint ? (
-                <>
-                  A D4Sign vai avisar <Code>{webhookEndpoint}</Code> sobre os documentos do cofre —
-                  inclusive os enviados pelo painel.
-                </>
-              ) : (
-                'Sem endereço público, nenhum aviso é registrado.'
-              )}
-            </p>
-          </div>
+            ) : (
+              <span className={cn('text-sm', current[route] ? 'font-medium' : 'text-muted-foreground')}>
+                {current[route]?.name ?? (route === 'padrao' ? 'Nenhum' : 'Usa o padrão')}
+              </span>
+            )}
+          </li>
         ))}
+      </ul>
 
-      {canEdit && safes === null && (
-        <p className="text-[11px] text-muted-foreground">
-          Listar os cofres gasta 1 das 10 consultas por hora da API.
+      {missingDefault && (
+        <p className="text-xs text-warning">
+          Sem o cofre padrão, um envio sem cofre próprio não tem para onde ir.
         </p>
       )}
 
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title="Trocar o cofre?"
-        description={
-          `Os próximos envios vão para o cofre ${pending?.name ?? ''}. ` +
-          `O que já foi enviado continua no cofre ${currentName ?? 'anterior'}, e os avisos ` +
-          'dele continuam chegando.'
-        }
-        confirmLabel="Trocar cofre"
-        onConfirm={() => {
-          if (pending) save(pending)
-          setPending(null)
-        }}
-      />
+      {canEdit &&
+        (editing ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={save.isPending || !draft.map.padrao}
+              onClick={() => save.mutate(draft.map, { onSuccess: close })}
+            >
+              {save.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Salvar cofres
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={save.isPending} onClick={close}>
+              Cancelar
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={listSafes.isPending}
+              onClick={startEditing}
+            >
+              {listSafes.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FolderLock className="h-3.5 w-3.5" />
+              )}
+              {Object.keys(current).length > 0 ? 'Editar cofres' : 'Carregar cofres'}
+            </Button>
+            <p className="text-[11px] text-muted-foreground">
+              Carrega os cofres da conta (1 das 10 consultas por hora) e sugere um para cada tipo,
+              pelo nome. Nada muda até salvar.
+            </p>
+          </div>
+        ))}
     </section>
   )
 }

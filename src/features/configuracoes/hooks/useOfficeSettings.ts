@@ -3,15 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
-import type { D4SignFeatures } from '@/types/d4sign.types'
+import type { D4SignFeatures, D4SignSafeMap } from '@/types/d4sign.types'
 import type { OfficeSettings, OfficeSettingsInput } from '@/types/officeSettings.types'
 import {
-  chooseD4SignSafe,
   getOfficeSettings,
   listD4SignSafes,
   refreshD4SignBalance,
   removeLetterhead,
   saveD4SignFeatures,
+  saveD4SignSafes,
   saveInfinitePayHandle,
   saveOfficeSettings,
   uploadLetterhead,
@@ -102,18 +102,11 @@ export function useListD4SignSafes() {
   })
 }
 
-export function useChooseD4SignSafe() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: chooseD4SignSafe,
-    onSuccess: ({ settings, webhook }) => {
-      queryClient.setQueryData(officeSettingsKeys.all, settings)
-      if (webhook.registered) toast.success('Cofre salvo, com os avisos registrados.')
-      else toast.warning(`Cofre salvo, mas sem os avisos. ${webhook.error ?? ''}`.trim())
-    },
-    onError: (error) => toast.error(errorMessage(error, 'Erro ao salvar o cofre.')),
-  })
+export function useSaveD4SignSafes() {
+  return useOfficeMutation(
+    (safes: D4SignSafeMap, userId) => saveD4SignSafes(safes, userId),
+    { success: 'Cofres salvos.', error: 'Erro ao salvar os cofres.' },
+  )
 }
 
 /** Testa a conexão e guarda o saldo de envios. */

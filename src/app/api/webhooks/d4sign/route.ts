@@ -10,8 +10,9 @@ import {
 import { WEBHOOK_PROVIDERS, type WebhookEventStatus } from '@/types/webhookEvent.types'
 
 /**
- * POST /api/webhooks/d4sign — os avisos do cofre: documento finalizado,
- * cancelado, assinado por alguém ou com e-mail não entregue.
+ * POST /api/webhooks/d4sign — os avisos dos documentos que o app enviou (o
+ * endereço é registrado em cada documento, no envio): finalizado, cancelado,
+ * assinado por alguém ou com e-mail não entregue.
  *
  * Nesta fase a rota só autentica, procura o envio e grava a entrega em
  * `webhook_events`; o que cada evento muda (o contrato vigente, a cópia
@@ -23,8 +24,8 @@ import { WEBHOOK_PROVIDERS, type WebhookEventStatus } from '@/types/webhookEvent
  *     gravada com o `Content-Hmac` para ser conferida de novo depois;
  *   · 503 quando a entrega não pôde ser gravada ou o envio não pôde ser
  *     procurado — a D4Sign tenta de novo por até ~27 h;
- *   · 200 para o resto, inclusive documento que não é nosso (enviado pelo
- *     painel, no mesmo cofre): reenviar não muda nada.
+ *   · 200 para o resto, inclusive documento sem envio aqui: reenviar não muda
+ *     nada.
  *
  * Entregas que chegam com o ambiente em sandbox ficam marcadas `is_test`.
  */
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
       lookupError = error.message
     } else if (!signatureRequest) {
       status = 'unmatched'
-      reason = 'Nenhum envio do app com este documento — enviado pelo painel da D4Sign?'
+      reason = 'Nenhum envio do app com este documento.'
     }
   }
 

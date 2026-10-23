@@ -30,6 +30,40 @@ export interface D4SignSafe {
 }
 
 /**
+ * Para que cofre vai cada envio. O escritório organiza a D4Sign com um cofre
+ * por tipo de documento (spike, 2026-10-22): o app sugere o cofre pelo tipo do
+ * envio, e quem envia pode trocar — um aditivo vai para "Aditivos", por
+ * exemplo. O que não tem cofre próprio vai para o `padrao`.
+ */
+export const D4SIGN_SAFE_ROUTES = [
+  'contrato_honorarios',
+  'contrato_cliente_terceiros',
+  'contrato_escritorio',
+  'documento_procuracao',
+  'documento_peticao',
+  'documento_contrato',
+  'documento_outros',
+  'padrao',
+] as const
+
+export type D4SignSafeRoute = (typeof D4SIGN_SAFE_ROUTES)[number]
+
+/** `office_settings.d4sign_safes`: o cofre de cada tipo. Tipo ausente usa o
+ * `padrao`. */
+export type D4SignSafeMap = Partial<Record<D4SignSafeRoute, D4SignSafe>>
+
+export const D4SIGN_SAFE_ROUTE_LABELS: Record<D4SignSafeRoute, string> = {
+  contrato_honorarios: 'Contrato de honorários',
+  contrato_cliente_terceiros: 'Contrato do cliente com terceiros',
+  contrato_escritorio: 'Contrato do escritório',
+  documento_procuracao: 'Procuração',
+  documento_peticao: 'Petição',
+  documento_contrato: 'Contrato avulso, fora de Contratos',
+  documento_outros: 'Outros documentos',
+  padrao: 'Padrão — o que não tiver cofre próprio',
+}
+
+/**
  * Recursos que dependem do plano. A API não informa o plano, então quem
  * administra liga à mão o que a conta tem (`office_settings.d4sign_features`).
  * Chave ausente é recurso desligado.

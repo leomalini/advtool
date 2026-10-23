@@ -1,4 +1,4 @@
-import type { D4SignFeatures } from './d4sign.types'
+import type { D4SignFeatures, D4SignSafeMap } from './d4sign.types'
 
 /** Espelha `public.office_settings` (migration 66) — uma linha só. */
 export interface OfficeSettings {
@@ -25,12 +25,8 @@ export interface OfficeSettings {
   // ── D4Sign (migration 79) ──
   // Opcionais: a linha só os traz depois da migration, e a tela não pode
   // quebrar antes dela.
-  /** Cofre que recebe os envios. Gravado pelo servidor, com o nome junto. */
-  d4sign_safe_uuid?: string | null
-  d4sign_safe_name?: string | null
-  /** O endereço registrado como webhook do cofre, e quando. */
-  d4sign_webhook_url?: string | null
-  d4sign_webhook_registered_at?: string | null
+  /** O cofre de cada tipo de envio; tipo ausente usa o `padrao`. */
+  d4sign_safes?: D4SignSafeMap
   /** Recursos do plano, ligados à mão: a API não informa o plano. */
   d4sign_features?: D4SignFeatures
   /** O último saldo lido (`GET /account/balance`) — cada leitura gasta uma
@@ -49,10 +45,7 @@ export type OfficeSettingsInput = Omit<
   | 'letterhead_path'
   | 'letterhead_file_name'
   | 'infinitepay_handle'
-  | 'd4sign_safe_uuid'
-  | 'd4sign_safe_name'
-  | 'd4sign_webhook_url'
-  | 'd4sign_webhook_registered_at'
+  | 'd4sign_safes'
   | 'd4sign_features'
   | 'd4sign_balance_credit'
   | 'd4sign_balance_sent'
