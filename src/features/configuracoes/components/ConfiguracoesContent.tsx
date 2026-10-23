@@ -21,6 +21,7 @@ import {
   Webhook,
   CreditCard,
   Landmark,
+  Signature,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -35,6 +36,9 @@ import { WebhooksManager } from './WebhooksManager'
 import { OfficeSettingsCard } from './OfficeSettingsCard'
 import { PaymentSettingsCard } from './PaymentSettingsCard'
 import { InfinitePayDeliveries } from './InfinitePayDeliveries'
+import { D4SignSettingsCard } from './D4SignSettingsCard'
+import { D4SignDeliveries } from './D4SignDeliveries'
+import type { D4SignSetupStatus } from '@/types/d4sign.types'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -221,6 +225,7 @@ type TabValue =
   | 'tipos-evento'
   | 'audiencias'
   | 'pagamentos'
+  | 'assinatura'
   | 'webhooks'
   | 'geral'
 
@@ -229,6 +234,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'usuarios', label: 'Usuários', icon: Users },
   { value: 'publicacoes', label: 'Publicações', icon: Newspaper },
   { value: 'pagamentos', label: 'Pagamentos', icon: CreditCard },
+  { value: 'assinatura', label: 'Assinatura', icon: Signature },
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
@@ -438,10 +444,13 @@ function TabGeral() {
 export function ConfiguracoesContent({
   initialTab,
   paymentsWebhookEndpoint,
+  signatureSetup,
 }: {
   initialTab?: string
   /** Lido do ambiente no servidor — `APP_PUBLIC_URL` não chega ao navegador. */
   paymentsWebhookEndpoint: string | null
+  /** Idem: as variáveis da D4Sign, só os nomes do que falta. */
+  signatureSetup: D4SignSetupStatus
 }) {
   const { can } = usePermissions()
 
@@ -493,6 +502,12 @@ export function ConfiguracoesContent({
             <div className="space-y-5">
               <PaymentSettingsCard webhookEndpoint={paymentsWebhookEndpoint} />
               <InfinitePayDeliveries />
+            </div>
+          </TabsContent>
+          <TabsContent value="assinatura">
+            <div className="space-y-5">
+              <D4SignSettingsCard setup={signatureSetup} />
+              <D4SignDeliveries />
             </div>
           </TabsContent>
           <TabsContent value="areas">
