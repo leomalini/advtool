@@ -235,6 +235,37 @@ envio — `createlist` e `key_signer`, assinatura, finalização, download do
 assinado e se o limite é por método. Fica para o sandbox, ou para a produção
 com teto se o usuário decidir.
 
+### Parte 3 — o primeiro envio de verdade (2026-10-26)
+
+Com as migrations 79 e 80 aplicadas, a pedido: o usuário entrou no dev local
+(branch `feat/d4sign-documentos`), ligou os cofres em Configurações →
+Assinatura e mandou um PDF avulso ("Diploma.pdf", do próprio cadastro) só
+para o próprio e-mail, com código por e-mail. Os avisos vieram por um túnel da
+Cloudflare até o dev (`D4SIGN_WEBHOOK_URL`) — o deploy da Vercel ainda é a
+`main`, sem a rota. Gastou 1 dos 20 envios do mês.
+
+| Pergunta | Resposta |
+|---|---|
+| O envio inteiro (pasta, upload de 0,9 MB, webhook, signatários, envio) | 54 s na rede desta máquina — cabe nos 120 s da rota, com pouca folga numa rede ruim |
+| Resposta do `createlist` | Um objeto por signatário com `key_signer`, `email`, `act`, `status: "created"`, `success: "1"` e o que foi aplicado (`auth_pix`, `doc_auth`, `docauthandselfie`, `whatsapp`, `certificadoicpbr`, `embed_methodauth: "email"`, `embed_smsnumber`…), uns em texto e outros em número. A chave vem aqui: reenviar e trocar e-mail não pedem a lista |
+| Da assinatura ao aviso | ~3 s. "Finalizado" (`type_post=1`) e "assinado" (`type_post=4`) chegaram no mesmo segundo, o finalizado 40 ms antes |
+| O aviso de "assinado" | `signer` = JSON em texto: `{"uuid": "sem_conta", "email": …, "identification_number": "<CPF formatado>"}` — o e-mail vem dentro dele, como `noticeEmail` já esperava |
+| O aviso de "finalizado" | `signers` = JSON em texto, uma lista com `name`, `uuid`, `email`, `signed_at` (sem fuso) e `identification_number` |
+| A assinatura dos avisos | `x-signature`, conferida (`signature_valid: true`), de 18.229.93.53 de novo |
+| Processar o "finalizado" | 28 s em `after()` (fase na API, link de download, PDF e Storage) — cabe nos 60 s da rota |
+| O PDF assinado | 1,3 MB, 3 páginas (o original tinha 1): a D4Sign acrescenta a folha de assinaturas e assina o PDF digitalmente (`/Sig`, `/ByteRange`). O link de download serviu na hora |
+| O resultado aqui | Envio `signed` com a hora do aviso, o signatário `signed` (pelo aviso de "assinado"), a cópia "Diploma (assinado).pdf" ao lado do original (mesmo cliente e categoria, `uploaded_by` = quem enviou), o aviso "Assinado por todos" no sino |
+
+**O que mudou no código por causa disso:** os avisos trazem o CPF de quem
+assina, e a rota gravava o corpo inteiro em `webhook_events`. Agora o CPF
+(`identification_number`, `cpf`, `cnpj`, solto ou dentro do JSON em texto) é
+mascarado antes de gravar (`***78`); nome e e-mail ficam, para conferir a
+entrega. As duas entregas deste teste foram gravadas antes da correção.
+
+Ainda não visto num envio real: contrato (vira vigente), cancelamento pela
+D4Sign, e-mail não entregue, reenviar, trocar e-mail, DOCX, mais de um
+signatário e as autenticações fortes.
+
 ## Armazenamento: quem guarda o quê
 
 | Onde | O quê | Por quê |
@@ -555,14 +586,15 @@ navegador. O fluxo completo, contra o sandbox.
 Branch `feat/d4sign-base`, a partir da `main` (`7af6643`), adiantada antes do
 spike a pedido (2026-10-22).
 
-### Banco — migration 79 (escrita, NÃO aplicada)
+### Banco — migration 79 (aplicada em 2026-10-26)
 
 `20260101000079_d4sign_signatures.sql`, como na seção "Modelo de dados":
 colunas `d4sign_*` em `office_settings`, `signature_requests`,
 `signature_signers`, `d4sign_folders`, `contract_status_changes.source` (com o
 trigger do histórico lendo `app.status_change_source`), as travas `PT409` de
-exclusão e a RLS só de leitura. Aplicar só depois do spike: a resposta real da
-API ainda pode mudar `signature_signers`.
+exclusão e a RLS só de leitura. Aplicada junto com a 80, a pedido, antes do
+primeiro envio de verdade: se a resposta real da API pedir outra coluna em
+`signature_signers`, ela vem numa migration nova.
 
 ⚠️ **Ordem do deploy:** a migration antes do código. Sem ela a aba abre, mas
 salvar o cofre e o saldo falham, e o webhook responde 503 (a D4Sign tenta de
@@ -647,7 +679,7 @@ adiantada antes do resto do spike a pedido (2026-10-26). O que o spike já
 confirmou (upload, cancelamento, o formato do aviso, `x-signature`) entrou
 como fato; o resto é lido com folga até o primeiro envio de verdade.
 
-### Banco — migration 80 (escrita, NÃO aplicada)
+### Banco — migration 80 (aplicada em 2026-10-26)
 
 `20260101000080_d4sign_send_flow.sql`, depende da 79:
 
@@ -738,8 +770,12 @@ envio que não terminou.
 - **Não verificado:** nada desta fase falou com a D4Sign — a resposta do
   `createlist` (se traz `key_signer`), o aviso de "assinado" e de "e-mail não
   entregue" (onde vem o e-mail), o link de download e a validade dele, a
-  conversão do DOCX e o limite por método. E as migrations 79 e 80 não rodaram
-  em nenhum Postgres. É o primeiro envio de verdade, com a sua autorização.
+  conversão do DOCX e o limite por método. É o primeiro envio de verdade, com
+  a sua autorização.
+- **No banco remoto** (2026-10-26, depois do `supabase db push`): as tabelas,
+  as colunas `d4sign_*` e `contract_status_changes.source` existem; as duas
+  funções respondem à service_role (`missing` para um UUID que não existe) e
+  recusam a chave anônima (42501); sem sessão, nada é lido nem gravado.
 
 ## Como ficou a fase 3
 
@@ -808,6 +844,31 @@ funções da 80 já serviam a documentos.
 - **Não verificado:** o mesmo da fase 2 — nada falou com a D4Sign de verdade
   — e a consulta dos clientes do processo (`legal_process_parties` com
   `clients.is_client`) só rodou contra o cache, não contra o banco.
+
+## Para ir para produção
+
+1. **Banco:** as migrations 79 e 80 já estão no remoto (2026-10-26).
+2. **Variáveis na Vercel** (Production), as mesmas do `.env` local:
+   - `D4SIGN_API_URL=https://secure.d4sign.com.br/api/v1`
+   - `D4SIGN_TOKEN_API`, `D4SIGN_CRYPT_KEY` e `D4SIGN_WEBHOOK_SECRET` (a
+     "Secret Key MAC" do painel Dev API — sem ela todo aviso é recusado);
+   - `APP_PUBLIC_URL=https://advtool-bice.vercel.app`, que já existe para a
+     BuscaProcessos e a InfinitePay;
+   - `D4SIGN_WEBHOOK_URL` **vazia ou ausente**: cada envio registra
+     `APP_PUBLIC_URL` + `/api/webhooks/d4sign`, ou seja,
+     `https://advtool-bice.vercel.app/api/webhooks/d4sign`. Não há endereço a
+     cadastrar no painel da D4Sign: o webhook vai em cada documento.
+3. **Código:** as três branches na `main`, na ordem (base → contratos →
+   documentos), ou um PR só do topo. Antes do deploy, a rota do aviso não
+   existe na Vercel: um envio feito até lá fica sem aviso, e o status vem pelo
+   "Atualizar status".
+4. **Depois do deploy:** Configurações → Assinatura deve mostrar os avisos
+   "prontos" com o endereço acima. O primeiro envio por lá confirma a entrega
+   na Vercel.
+
+No `.env` local, `D4SIGN_WEBHOOK_URL` fica vazia; só se preenche para testar
+os avisos no dev, com o endereço completo de um túnel
+(`https://<túnel>/api/webhooks/d4sign`), e se esvazia no fim.
 
 ## Riscos e pontos em aberto
 

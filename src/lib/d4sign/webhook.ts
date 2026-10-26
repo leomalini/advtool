@@ -153,3 +153,60 @@ export function d4signDiagnosticHeaders(headers: Headers): Record<string, string
     header_names: [...headers.keys()].sort().join(', '),
   }
 }
+
+// ── O que fica no log ───────────────────────────────────────────────────────
+
+/** Campo com o CPF ou CNPJ de quem assina: `identification_number` no aviso
+ * 2.0, solto ou como `signer[identification_number]`. */
+const DOCUMENT_KEY = /identification_number|cpf|cnpj/i
+const CPF_PATTERN = String.raw`\d{3}\.?\d{3}\.?\d{3}-?\d{2}`
+const CNPJ_PATTERN = String.raw`\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}`
+/** CPF ou CNPJ, com ou sem pontuação, solto num texto. */
+const DOCUMENT_IN_TEXT = new RegExp(String.raw`\b(?:${CPF_PATTERN}|${CNPJ_PATTERN})\b`, 'g')
+
+function maskDocument(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  return digits.length > 2 ? `***${digits.slice(-2)}` : '***'
+}
+
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValue)
+  if (typeof value === 'string') {
+    // `signer` e `signers` chegam como JSON em texto (aviso real, 2026-10-26).
+    const trimmed = value.trim()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return JSON.stringify(redactValue(JSON.parse(trimmed)))
+      } catch {
+        return value.replace(DOCUMENT_IN_TEXT, maskDocument)
+      }
+    }
+    return value
+  }
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        DOCUMENT_KEY.test(key) && (typeof item === 'string' || typeof item === 'number')
+          ? maskDocument(String(item))
+          : redactValue(item),
+      ]),
+    )
+  }
+  return value
+}
+
+/**
+ * O aviso como fica em `webhook_events`: sem o CPF de quem assina. Os avisos
+ * de "assinado" e "finalizado" trazem nome, e-mail e documento de cada um; o
+ * envio já guarda o que precisa em `signature_signers`, e o log não repete o
+ * documento. Nome e e-mail ficam — é por eles que se confere a entrega.
+ */
+export function redactD4SignPayload(fields: Record<string, unknown>): Record<string, unknown> {
+  return redactValue(fields) as Record<string, unknown>
+}
+
+/** O corpo que não deu para ler, com qualquer CPF ou CNPJ mascarado. */
+export function redactD4SignRawBody(raw: string): string {
+  return raw.replace(DOCUMENT_IN_TEXT, maskDocument)
+}

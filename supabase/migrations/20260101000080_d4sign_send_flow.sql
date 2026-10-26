@@ -14,8 +14,8 @@
 --   · `cancel_signature_request`  — cancelado: envio `canceled`, contrato de
 --                                    volta a `rascunho`.
 --
--- ⚠️ Escrita ANTES do resto do spike, como a 79: aplicar junto com ela, depois
--- do primeiro envio de verdade (sandbox ou produção com teto).
+-- ⚠️ Escrita antes do resto do spike, como a 79, e aplicada junto com ela em
+-- 2026-10-26, a pedido, antes do primeiro envio de verdade.
 -- ============================================================
 
 

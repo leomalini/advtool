@@ -15,8 +15,9 @@
 --   · `contract_status_changes.source`  — o histórico reconhece a mudança
 --                                         feita pela D4Sign.
 --
--- ⚠️ Escrita ANTES do spike no sandbox, a pedido. Só aplicar depois dele: a
--- resposta real da API ainda pode mudar colunas de `signature_signers`.
+-- ⚠️ Escrita antes do spike, a pedido, e aplicada em 2026-10-26 (também a
+-- pedido) antes do primeiro envio de verdade. Se a resposta real da API pedir
+-- outra coluna em `signature_signers`, ela vem numa migration nova.
 --
 -- Depende das migrations 66 (`office_settings`), 69 (`contracts`,
 -- `contract_status_changes`) e 70 (`contract_parties`).

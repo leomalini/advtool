@@ -6,6 +6,8 @@ import {
   d4signDiagnosticHeaders,
   d4signSignatureHeader,
   parseD4SignBody,
+  redactD4SignPayload,
+  redactD4SignRawBody,
   toD4SignDelivery,
   verifyD4SignHmac,
 } from '@/lib/d4sign/webhook'
@@ -96,7 +98,10 @@ export async function POST(request: NextRequest) {
     status,
     reason,
     error: lookupError,
-    payload: fields ?? { unparsed_body: rawBody.slice(0, 4000) },
+    // Sem o CPF de quem assina: o aviso o traz, o log não precisa dele.
+    payload: fields
+      ? redactD4SignPayload(fields)
+      : { unparsed_body: redactD4SignRawBody(rawBody.slice(0, 4000)) },
     headers: d4signDiagnosticHeaders(request.headers),
     duration_ms: Date.now() - startedAt,
   })
