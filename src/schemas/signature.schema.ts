@@ -3,8 +3,9 @@ import { SIGNATURE_ACTS, SIGNER_AUTH_METHODS } from '@/types/signature.types'
 
 /**
  * O pedido de envio para assinatura, como a tela manda e a rota confere.
- * A rota valida de novo o que depende do banco: o arquivo é do contrato, os
- * recursos do plano estão ligados, o advogado existe.
+ * A rota valida de novo o que depende do banco: o arquivo é do contrato (ou
+ * avulso, quando não há contrato), os recursos do plano estão ligados, o
+ * advogado existe.
  */
 
 const optionalText = (max: number) =>
@@ -56,7 +57,9 @@ export const signerInputSchema = z
 export type SignerInput = z.infer<typeof signerInputSchema>
 
 export const sendForSignatureSchema = z.object({
-  contractId: z.uuid(),
+  /** O contrato do arquivo; null para um documento avulso (procuração,
+   * declaração). A rota confere contra o próprio arquivo. */
+  contractId: z.uuid().nullable(),
   documentId: z.uuid(),
   safe: z.object({
     uuid: z.string().trim().min(1).max(100),

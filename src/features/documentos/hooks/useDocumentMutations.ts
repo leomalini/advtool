@@ -8,6 +8,7 @@ import { financialEntryKeys } from '@/features/financeiro/hooks/useFinancialEntr
 import { contractKeys } from '@/features/contratos/hooks/useContracts'
 import { useAuth } from '@/hooks/useAuth'
 import type { DocumentUploadInput } from '@/schemas/document.schema'
+import { signatureGuardMessage } from '@/types/signature.types'
 
 /** Toda superfície que mostra documento — mesma forma dos demais invalidadores. */
 export function useInvalidateDocumentSurfaces() {
@@ -51,7 +52,8 @@ export function useDeleteDocument() {
       invalidate()
       toast.success('Documento removido.')
     },
-    onError: () => toast.error('Erro ao remover documento.'),
+    // Em assinatura na D4Sign, o banco recusa (migration 79) e diz o que fazer.
+    onError: (error) => toast.error(signatureGuardMessage(error) ?? 'Erro ao remover documento.'),
   })
 }
 

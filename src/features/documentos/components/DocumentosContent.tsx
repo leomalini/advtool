@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Download, FileText, Search, Trash2, Upload, X } from 'lucide-react'
+import { Download, FileText, Search, Signature, Trash2, Upload, X } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,10 +31,16 @@ import {
 import { useDocuments } from '../hooks/useDocuments'
 import { useDeleteDocument, useOpenDocument } from '../hooks/useDocumentMutations'
 import { Can } from '@/components/shared/Can'
+import {
+  DocumentSignatureDialogs,
+  DocumentSignatureSealBadge,
+  canSendDocumentForSignature,
+  useDocumentSignatureSeals,
+} from '@/features/assinaturas/components/DocumentSignature'
 
 const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 const ALL = '__all__'
-const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_110px_100px_76px]'
+const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_110px_100px_104px]'
 
 /** Cliente e processo de um documento. O anexo de lançamento e o arquivo de
  * contrato não têm vínculo próprio (migrations 63 e 69): herdam os do dono,
@@ -58,6 +64,9 @@ export function DocumentosContent() {
   const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<DocumentCategory | null>(null)
+  const signature = useDocumentSignatureSeals()
+  const [sending, setSending] = useState<DocumentWithRelations | null>(null)
+  const [viewing, setViewing] = useState<DocumentWithRelations | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -224,6 +233,11 @@ export function DocumentosContent() {
 
                 {filtered.map((doc) => {
                   const { client, legalProcess } = documentOwners(doc)
+                  const seal = signature.seals.get(doc.id)
+                  const signedCopy =
+                    seal?.kind === 'signed'
+                      ? documents.find((item) => item.id === seal.signedDocumentId)
+                      : undefined
 
                   return (
                     <div
@@ -246,6 +260,19 @@ export function DocumentosContent() {
                               ` · Lançamento: ${doc.financial_entry.description}`}
                             {doc.contract && ` · Contrato: ${doc.contract.title}`}
                           </p>
+                          {seal && (
+                            <div className="mt-0.5">
+                              <DocumentSignatureSealBadge
+                                seal={seal}
+                                onOpen={() => setViewing(doc)}
+                                onOpenSignedCopy={
+                                  signedCopy
+                                    ? () => openDocument.mutate(signedCopy.file_path)
+                                    : undefined
+                                }
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -290,6 +317,18 @@ export function DocumentosContent() {
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
+                        {signature.ready && canSendDocumentForSignature(doc, seal) && (
+                          <Can resource="documentos" action="update">
+                            <button
+                              type="button"
+                              title="Enviar para assinatura"
+                              onClick={() => setSending(doc)}
+                              className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                            >
+                              <Signature className="w-3.5 h-3.5" />
+                            </button>
+                          </Can>
+                        )}
                         <Can {...documentPermission(doc, 'delete')}>
                           <button
                             type="button"
@@ -309,6 +348,13 @@ export function DocumentosContent() {
           )}
         </CardContent>
       </Card>
+
+      <DocumentSignatureDialogs
+        sending={sending}
+        onSendingChange={setSending}
+        viewing={viewing}
+        onViewingChange={setViewing}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}

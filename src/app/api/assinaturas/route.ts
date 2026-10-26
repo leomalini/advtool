@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { requireApiPermission } from '@/lib/auth/requireApiPermission'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -6,7 +7,11 @@ import { getD4SignConfig } from '@/lib/d4sign/config'
 import { loadRequest } from '@/lib/d4sign/requests'
 import { markContractAwaitingSignature } from '@/lib/d4sign/routeGuard'
 import { runSignatureRequest } from '@/lib/d4sign/send'
-import { sendForSignatureSchema, type SignerInput } from '@/schemas/signature.schema'
+import {
+  sendForSignatureSchema,
+  type SendForSignatureInput,
+  type SignerInput,
+} from '@/schemas/signature.schema'
 import type { D4SignFeatures } from '@/types/d4sign.types'
 import { AUTH_METHOD_FEATURE, SIGNABLE_FILE_TYPES } from '@/types/signature.types'
 
@@ -30,18 +35,98 @@ function featureProblem(signers: SignerInput[], features: D4SignFeatures): strin
   return null
 }
 
+/** O que o envio grava de onde o arquivo mora. */
+interface SendTarget {
+  document: { id: string; file_name: string; file_type: string }
+  /** Contrato que vai a "aguardando assinatura" quando o envio sai. */
+  contractId: string | null
+  /** Dono da pasta no cofre (e, na fase 4, de quem o portal mostra). */
+  clientId: string | null
+}
+
+type TargetResult = { ok: true; target: SendTarget } | { ok: false; response: NextResponse }
+
+function notFound(error: string): TargetResult {
+  return { ok: false, response: NextResponse.json({ error }, { status: 404 }) }
+}
+
 /**
- * POST /api/assinaturas — manda um arquivo do contrato para assinatura na
- * D4Sign.
+ * O arquivo e o regime dele. Arquivo de contrato só sai pelo contrato — é lá
+ * que o status muda e a cópia assinada entra; anexo de lançamento não sai.
+ * Documento avulso fica com o cliente do próprio arquivo, do caso ou, por
+ * último, do primeiro signatário que é cliente (o caso do processo).
+ */
+async function resolveTarget(
+  supabase: SupabaseClient,
+  input: SendForSignatureInput,
+): Promise<TargetResult> {
+  const { data: document, error: documentError } = await supabase
+    .from('documents')
+    .select('id, contract_id, financial_entry_id, client_id, crm_item_id, file_name, file_type')
+    .eq('id', input.documentId)
+    .maybeSingle()
+  if (documentError) throw documentError
+
+  if (input.contractId) {
+    const { data: contract, error: contractError } = await supabase
+      .from('contracts')
+      .select('id, client_id')
+      .eq('id', input.contractId)
+      .maybeSingle()
+    if (contractError) throw contractError
+    if (!contract) return notFound('Contrato não encontrado.')
+    if (!document || document.contract_id !== contract.id) {
+      return { ok: false, response: badRequest('O arquivo escolhido não é deste contrato.') }
+    }
+    return {
+      ok: true,
+      target: {
+        document,
+        contractId: contract.id as string,
+        clientId: (contract.client_id as string | null) ?? null,
+      },
+    }
+  }
+
+  if (!document) return notFound('Documento não encontrado.')
+  if (document.contract_id) {
+    return { ok: false, response: badRequest('Arquivo de contrato: envie pela página do contrato.') }
+  }
+  if (document.financial_entry_id) {
+    return { ok: false, response: badRequest('Anexo de lançamento não vai para assinatura.') }
+  }
+
+  let clientId = (document.client_id as string | null) ?? null
+  if (!clientId && document.crm_item_id) {
+    const { data: crmItem } = await supabase
+      .from('crm_items')
+      .select('client_id')
+      .eq('id', document.crm_item_id)
+      .maybeSingle()
+    clientId = (crmItem?.client_id as string | null) ?? null
+  }
+  clientId ??= input.signers.find((signer) => signer.clientId)?.clientId ?? null
+  return { ok: true, target: { document, contractId: null, clientId } }
+}
+
+/**
+ * POST /api/assinaturas — manda um arquivo para assinatura na D4Sign: um
+ * arquivo de contrato (`contractId`) ou um documento avulso — procuração,
+ * declaração — de cliente, caso, processo ou evento.
  *
- * Confere `contratos:update` antes de qualquer chamada (o envio gasta cota),
- * grava o envio e os signatários e roda os passos (`lib/d4sign/send.ts`). Se
- * um passo falha, o envio fica `failed` e a resposta é 502 com o motivo — a
- * tela mostra o envio com "Tentar de novo". Deu certo: o contrato vai para
+ * Confere a permissão do alvo antes de qualquer chamada (o envio gasta cota):
+ * `contratos:update` para contrato, `documentos:update` para o resto. Grava o
+ * envio e os signatários e roda os passos (`lib/d4sign/send.ts`). Se um passo
+ * falha, o envio fica `failed` e a resposta é 502 com o motivo — a tela mostra
+ * o envio com "Tentar de novo". Deu certo e é contrato: ele vai para
  * "aguardando assinatura" pelo client de sessão, com o autor no histórico.
  */
 export async function POST(request: Request) {
-  const guard = await requireApiPermission('contratos', 'update')
+  const body: unknown = await request.json().catch(() => null)
+  // O alvo do pedido decide quem pode; o arquivo confirma o alvo adiante.
+  const forContract =
+    typeof body === 'object' && body !== null && !!(body as { contractId?: unknown }).contractId
+  const guard = await requireApiPermission(forContract ? 'contratos' : 'documentos', 'update')
   if (!guard.ok) return guard.response
 
   if (!hasServiceRoleKey() || !getD4SignConfig()) {
@@ -51,30 +136,20 @@ export async function POST(request: Request) {
     )
   }
 
-  const parsed = sendForSignatureSchema.safeParse(await request.json().catch(() => null))
+  const parsed = sendForSignatureSchema.safeParse(body)
   if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Pedido inválido.')
   const input = parsed.data
   const supabase = createAdminClient()
 
-  const { data: contract, error: contractError } = await supabase
-    .from('contracts')
-    .select('id, client_id, status')
-    .eq('id', input.contractId)
-    .maybeSingle()
-  if (contractError) throw contractError
-  if (!contract) return NextResponse.json({ error: 'Contrato não encontrado.' }, { status: 404 })
-
-  const { data: document, error: documentError } = await supabase
-    .from('documents')
-    .select('id, contract_id, file_name, file_type')
-    .eq('id', input.documentId)
-    .maybeSingle()
-  if (documentError) throw documentError
-  if (!document || document.contract_id !== contract.id) {
-    return badRequest('O arquivo escolhido não é deste contrato.')
-  }
-  if (!SIGNABLE_FILE_TYPES.includes(document.file_type as string)) {
-    return badRequest('A D4Sign recebe PDF ou Word. Gere a minuta ou anexe o PDF antes.')
+  const resolved = await resolveTarget(supabase, input)
+  if (!resolved.ok) return resolved.response
+  const { document, contractId, clientId } = resolved.target
+  if (!SIGNABLE_FILE_TYPES.includes(document.file_type)) {
+    return badRequest(
+      contractId
+        ? 'A D4Sign recebe PDF ou Word. Gere a minuta ou anexe o PDF antes.'
+        : 'A D4Sign recebe PDF ou Word.',
+    )
   }
 
   // O índice único cobre o envio aberto; o que falhou num passo também segura
@@ -115,8 +190,8 @@ export async function POST(request: Request) {
   const { data: created, error: insertError } = await supabase
     .from('signature_requests')
     .insert({
-      contract_id: contract.id,
-      client_id: contract.client_id,
+      contract_id: contractId,
+      client_id: clientId,
       document_id: document.id,
       safe_uuid: input.safe.uuid,
       title: document.file_name,
@@ -156,9 +231,10 @@ export async function POST(request: Request) {
     throw signersError
   }
 
-  // O e-mail digitado no envio completa a parte que não tinha.
+  // O e-mail digitado no envio completa a parte do contrato que não tinha. O
+  // cadastro do cliente não muda por aqui: é outra permissão.
   for (const signer of signers) {
-    if (!signer.contractPartyId || signer.profileId) continue
+    if (!contractId || !signer.contractPartyId || signer.profileId) continue
     await supabase
       .from('contract_parties')
       .update({ email: signer.email })
@@ -167,7 +243,7 @@ export async function POST(request: Request) {
   }
 
   const run = await runSignatureRequest(supabase, requestId)
-  if (run.ok) await markContractAwaitingSignature(await createClient(), contract.id)
+  if (run.ok) await markContractAwaitingSignature(await createClient(), contractId)
 
   const saved = await loadRequest(supabase, requestId)
   return NextResponse.json(

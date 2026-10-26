@@ -68,8 +68,16 @@ export const SIGNATURE_ACT_LABELS: Record<SignatureAct, string> = {
   5: 'Testemunha',
   6: 'Interveniente / anuente',
   10: 'Fiador',
-  1: 'Assinar',
+  1: 'Signatário',
   7: 'Acusar recebimento',
+}
+
+/** Como o papel aparece na escolha: "Assina como parte"; acusar recebimento não
+ * é assinar. */
+export function signatureActOptionLabel(act: SignatureAct): string {
+  return act === 7
+    ? 'Só acusa recebimento'
+    : `Assina como ${SIGNATURE_ACT_LABELS[act].toLowerCase()}`
 }
 
 /** O papel da parte no contrato → o papel na D4Sign. */
@@ -177,4 +185,73 @@ export interface SignatureRequest {
 
 export interface SignatureRequestWithSigners extends SignatureRequest {
   signers: SignatureSigner[]
+}
+
+// ── Selos de Documentos ─────────────────────────────────────────────────────
+
+/** O que a lista de documentos lê de cada envio para o selo. */
+export type SignatureSealRow = Pick<
+  SignatureRequest,
+  'id' | 'document_id' | 'signed_document_id' | 'contract_id' | 'status'
+>
+
+/** O selo de um arquivo na lista. */
+export type DocumentSignatureSeal =
+  | {
+      kind: 'in_progress'
+      status: Extract<SignatureRequestStatus, 'preparing' | 'sent' | 'failed'>
+      contractId: string | null
+    }
+  | { kind: 'signed'; signedDocumentId: string | null; contractId: string | null }
+  | { kind: 'signed_copy'; contractId: string | null }
+
+/**
+ * Arquivo → selo. Vale o envio mais novo de cada arquivo que não foi
+ * cancelado (`rows` vem do mais novo ao mais antigo); a cópia assinada ganha o
+ * seu, a não ser que ela mesma tenha ido para assinatura depois.
+ */
+export function buildSignatureSeals(rows: SignatureSealRow[]): Map<string, DocumentSignatureSeal> {
+  const seals = new Map<string, DocumentSignatureSeal>()
+  for (const row of rows) {
+    if (row.status === 'signed' && row.signed_document_id) {
+      seals.set(row.signed_document_id, { kind: 'signed_copy', contractId: row.contract_id })
+    }
+  }
+
+  const decided = new Set<string>()
+  for (const row of rows) {
+    if (!row.document_id || row.status === 'canceled' || decided.has(row.document_id)) continue
+    decided.add(row.document_id)
+    seals.set(
+      row.document_id,
+      row.status === 'signed'
+        ? { kind: 'signed', signedDocumentId: row.signed_document_id, contractId: row.contract_id }
+        : { kind: 'in_progress', status: row.status, contractId: row.contract_id },
+    )
+  }
+  return seals
+}
+
+/** O cadastro de quem assina um documento avulso — a lista começa por ele. */
+export interface SignerClient {
+  id: string
+  type: 'individual' | 'company'
+  name: string | null
+  company_name: string | null
+  trade_name: string | null
+  cpf: string | null
+  cnpj: string | null
+  email: string | null
+  phone: string | null
+}
+
+/**
+ * A trava da migration 79 (SQLSTATE `PT409`): excluir arquivo ou contrato com
+ * envio aberto. A mensagem e o que fazer já saem do banco em português.
+ */
+export function signatureGuardMessage(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null
+  const { code, message, hint } = error as { code?: unknown; message?: unknown; hint?: unknown }
+  if (code !== 'PT409' || typeof message !== 'string' || !/assinatura/i.test(message)) return null
+  return typeof hint === 'string' && hint ? `${message} ${hint}` : message
 }

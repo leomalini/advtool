@@ -741,6 +741,74 @@ envio que não terminou.
   conversão do DOCX e o limite por método. E as migrations 79 e 80 não rodaram
   em nenhum Postgres. É o primeiro envio de verdade, com a sua autorização.
 
+## Como ficou a fase 3
+
+Branch `feat/d4sign-documentos`, sobre a `feat/d4sign-contratos` (`fa5a4a4`),
+adiantada a pedido (2026-10-26). Sem migration nova: o modelo da 79 e as
+funções da 80 já serviam a documentos.
+
+### Servidor
+
+- `POST /api/assinaturas` aceita `contractId: null` — um documento avulso. A
+  permissão vem do alvo do pedido (`contratos:update` ou `documentos:update`)
+  e o arquivo confirma: arquivo de contrato só sai pelo contrato, anexo de
+  lançamento não sai, documento que não existe é 404.
+- O cliente da pasta é o do arquivo, o do caso ou, por último, o do primeiro
+  signatário que é cliente (o caso do processo, cujas partes podem ser mais de
+  um cliente). Sem nenhum, a pasta é "Sem cliente".
+- O e-mail digitado não completa o cadastro do cliente: lá é outra
+  permissão. Só a parte do contrato é completada, como na fase 2.
+- A cópia assinada já ia ao lado do original, com os mesmos donos e a mesma
+  categoria (`storage.ts`); o aviso do sino é de Documentos.
+- `GET /api/assinaturas/disponivel` (`documentos:view`) responde só se a
+  D4Sign está pronta — as abas de Documentos vivem dentro de telas de cliente,
+  caso, processo e evento, longe de uma página de servidor que passe a
+  informação.
+
+### Tela
+
+- O que era só do contrato virou `src/features/assinaturas/`: o serviço, os
+  hooks (chaves em `['signatures']`), o diálogo de envio e a lista de envios
+  com as ações. A seção do contrato usa a mesma lista.
+- **Enviar:** o botão de assinatura aparece na página Documentos e nas abas
+  Documentos (cliente, pessoa, caso, processo, evento) para PDF/Word avulso
+  sem envio. O diálogo traz o arquivo fixo, o cofre da categoria e, como
+  lista inicial, só os clientes ligados ao arquivo — o do próprio arquivo, o
+  do caso e os do processo que são clientes —, assinando como "Signatário".
+  Advogado entra só se incluído.
+- **Selos:** "Em assinatura", "Envio parou", "Assinado" (com "ver a versão
+  assinada") e "Cópia assinada". O de documento abre os envios dele, com as
+  mesmas ações do contrato; o de arquivo de contrato leva à seção Assinatura
+  do contrato. Os selos vêm de uma consulta à parte, não do `DOCUMENT_SELECT`:
+  sem a migration 79, some o selo, não a lista.
+- Excluir arquivo ou contrato em assinatura mostra a mensagem da trava do
+  banco (`PT409`) com o que fazer, em vez do erro genérico.
+- O papel 1 da D4Sign aparece como "Signatário" e o 7 como "Só acusa
+  recebimento" ("Assina como assinar" saía antes).
+
+### Verificação
+
+- `tsc --noEmit`, `pnpm lint` (os mesmos avisos de antes, nenhum desta fase),
+  `pnpm build`; nenhum valor das chaves no bundle do navegador.
+- **No Node:** 11 verificações novas — a permissão pelo alvo, as recusas
+  (contrato, lançamento, tipo, 404, arquivo pedido como de outro contrato), o
+  cliente da pasta pelos três caminhos e "Sem cliente", as duas travas de
+  envio repetido, 403 antes de tudo, a cópia assinada de um documento de
+  processo (donos, categoria, pasta `processos/…`, aviso de Documentos), a
+  rota de disponibilidade, os selos (mais novo não cancelado, cópia que saiu
+  de novo) e a mensagem da trava. As 46 da fase 1 e as 42 da fase 2 continuam
+  passando.
+- **Tela** em páginas temporárias sob `/acompanhar` (já apagadas): a página
+  Documentos e a aba do cliente com os selos e o botão só onde cabe, o
+  diálogo de um documento (arquivo fixo, cofre de Procurações, o cliente com
+  CPF e WhatsApp, o payload com `contractId: null`), o selo abrindo os envios
+  com textos sem menção a contrato, o selo de contrato apontando para
+  `#assinatura`, nada de botão com a D4Sign indisponível e a seção do contrato
+  igual depois da mudança de lugar.
+- **Não verificado:** o mesmo da fase 2 — nada falou com a D4Sign de verdade
+  — e a consulta dos clientes do processo (`legal_process_parties` com
+  `clients.is_client`) só rodou contra o cache, não contra o banco.
+
 ## Riscos e pontos em aberto
 
 - **Plano Advanced × recursos escolhidos:** o Embed e o custo da autenticação

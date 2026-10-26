@@ -39,13 +39,13 @@ import {
   useContractStatusChanges,
 } from '../hooks/useContracts'
 import { useDeleteContract } from '../hooks/useContractMutations'
-import { useContractSignatures } from '../hooks/useContractSignatures'
+import { SendForSignatureDialog } from '@/features/assinaturas/components/SendForSignatureDialog'
+import { useContractSignatures } from '@/features/assinaturas/hooks/useSignatures'
 import {
   OPEN_SIGNATURE_STATUSES,
   UNFINISHED_SIGNATURE_STATUSES,
 } from '@/types/signature.types'
 import { ContractSignatureSection } from './ContractSignatureSection'
-import { SendForSignatureDialog } from './SendForSignatureDialog'
 import { buildContractEntryDrafts } from '../utils/contractEntries'
 import { ContractAssemblySteps, type AssemblyStep } from './ContractAssemblySteps'
 import { ContractEntriesDialog } from './ContractEntriesDialog'
@@ -431,9 +431,7 @@ export function ContractDetailPage({
         <SendForSignatureDialog
           open={sendOpen}
           onOpenChange={setSendOpen}
-          contract={contract}
-          parties={parties}
-          documents={documents}
+          target={{ kind: 'contract', contract, parties, documents }}
         />
       )}
 

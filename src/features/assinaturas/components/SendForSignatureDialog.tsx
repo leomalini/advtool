@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { FolderLock, Loader2, Plus, Send, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -27,35 +27,45 @@ import {
   useOfficeSettings,
 } from '@/features/configuracoes/hooks/useOfficeSettings'
 import { useProfiles } from '@/hooks/useProfiles'
-import { resolveSafe, safeRouteForContract } from '@/lib/d4sign/safeRoutes'
+import { resolveSafe, safeRouteForContract, safeRouteForDocument } from '@/lib/d4sign/safeRoutes'
 import { sendForSignatureSchema } from '@/schemas/signature.schema'
 import type { ContractParty, ContractWithRelations } from '@/types/contract.types'
-import type { D4SignSafe } from '@/types/d4sign.types'
+import type { D4SignSafe, D4SignSafeRoute } from '@/types/d4sign.types'
 import type { DocumentWithRelations } from '@/types/document.types'
 import {
   AUTH_METHODS_NEEDING_CPF,
   SIGNABLE_FILE_TYPES,
   SIGNATURE_ACTS,
-  SIGNATURE_ACT_LABELS,
   SIGNER_AUTH_LABELS,
   actForRole,
   availableAuthMethods,
+  signatureActOptionLabel,
   type SignatureAct,
   type SignerAuthMethod,
+  type SignerClient,
 } from '@/types/signature.types'
 import { formatDate } from '@/utils/date'
 import { toBrazilianE164 } from '@/utils/format'
 import { getDisplayName } from '@/utils/profile'
 import { SignatureRouteError } from '../services/signatures.service'
-import { useSendForSignature } from '../hooks/useContractSignatures'
+import { useDocumentSignerClients, useSendForSignature } from '../hooks/useSignatures'
+
+/** O que vai para assinatura: um arquivo do contrato, com as partes dele, ou
+ * um documento avulso (procuração, declaração) de cliente, caso ou processo. */
+export type SignatureSendTarget =
+  | {
+      kind: 'contract'
+      contract: ContractWithRelations
+      parties: ContractParty[]
+      /** Os arquivos do contrato — vai um PDF ou Word deles. */
+      documents: DocumentWithRelations[]
+    }
+  | { kind: 'document'; document: DocumentWithRelations }
 
 interface SendForSignatureDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  contract: ContractWithRelations
-  parties: ContractParty[]
-  /** Os arquivos do contrato — vai um PDF ou Word deles. */
-  documents: DocumentWithRelations[]
+  target: SignatureSendTarget
 }
 
 /** Uma linha da lista de quem assina, como o formulário a edita. */
@@ -86,7 +96,7 @@ const nextKey = () => `novo-${++draftCounter}`
 
 /** As partes do contrato viram a lista inicial; a do escritório vira o
  * responsável pelo contrato, que pode ser trocado. */
-function initialSigners(contract: ContractWithRelations, parties: ContractParty[]): SignerDraft[] {
+function signersFromParties(contract: ContractWithRelations, parties: ContractParty[]): SignerDraft[] {
   return parties.map((party) => {
     const office = party.source === 'escritorio'
     return {
@@ -109,38 +119,135 @@ function initialSigners(contract: ContractWithRelations, parties: ContractParty[
   })
 }
 
+/** O cliente do documento assina sozinho — procuração e declaração não levam
+ * a assinatura do advogado. Empresa assina pela razão social. */
+function signerFromClient(client: SignerClient): SignerDraft {
+  return {
+    key: client.id,
+    roleLabel: 'Cliente',
+    name:
+      (client.type === 'company' ? (client.company_name ?? client.trade_name) : client.name) ?? '',
+    email: client.email ?? '',
+    document: digits(client.type === 'company' ? client.cnpj : client.cpf),
+    phone: client.phone ? toBrazilianE164(client.phone) : null,
+    whatsapp: false,
+    act: 1,
+    auth: 'email',
+    contractPartyId: null,
+    clientId: client.id,
+    profileId: null,
+    office: false,
+  }
+}
+
+/** Os arquivos que podem ir: PDF ou Word, a minuta mais nova primeiro. */
+function signableFiles(documents: DocumentWithRelations[]): DocumentWithRelations[] {
+  return documents
+    .filter((document) => SIGNABLE_FILE_TYPES.includes(document.file_type))
+    .sort((a, b) => {
+      const roleOrder =
+        Number(b.contract_file_role === 'minuta') - Number(a.contract_file_role === 'minuta')
+      return roleOrder !== 0 ? roleOrder : b.created_at.localeCompare(a.created_at)
+    })
+}
+
 /**
  * "Enviar para assinatura" pela D4Sign: o arquivo, o cofre (o do tipo, que dá
  * para trocar), quem assina e como, e o prazo. O servidor confere tudo de
  * novo — inclusive os recursos do plano — antes de gastar o envio.
  */
-export function SendForSignatureDialog(props: SendForSignatureDialogProps) {
+export function SendForSignatureDialog({ open, onOpenChange, target }: SendForSignatureDialogProps) {
   const send = useSendForSignature()
+  const onClose = () => onOpenChange(false)
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={(value) => !send.isPending && props.onOpenChange(value)}
-    >
+    <Dialog open={open} onOpenChange={(value) => !send.isPending && onOpenChange(value)}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         {/* Montado a cada abertura: a lista nasce das partes de agora. */}
-        {props.open && (
-          <SendForm {...props} send={send} onClose={() => props.onOpenChange(false)} />
-        )}
+        {open &&
+          (target.kind === 'contract' ? (
+            <SendForm
+              contractId={target.contract.id}
+              files={signableFiles(target.documents)}
+              fixedFile={false}
+              safeRoute={safeRouteForContract(target.contract.kind)}
+              initialSigners={signersFromParties(target.contract, target.parties)}
+              description="Pela D4Sign. Quem assina recebe o link por e-mail; o PDF assinado volta para os arquivos do contrato."
+              emptySignersText="O contrato não tem partes. Inclua quem assina pelos botões acima."
+              send={send}
+              onClose={onClose}
+            />
+          ) : (
+            <DocumentSendForm document={target.document} send={send} onClose={onClose} />
+          ))}
       </DialogContent>
     </Dialog>
   )
 }
 
-function SendForm({
-  contract,
-  parties,
-  documents,
+/** Documento avulso: espera os clientes ligados a ele para montar a lista. */
+function DocumentSendForm({
+  document,
   send,
   onClose,
-}: SendForSignatureDialogProps & {
+}: {
+  document: DocumentWithRelations
   send: ReturnType<typeof useSendForSignature>
   onClose: () => void
 }) {
+  const clients = useDocumentSignerClients(document)
+
+  if (clients.isLoading) {
+    return (
+      <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Procurando o cliente do documento…
+      </p>
+    )
+  }
+
+  return (
+    <SendForm
+      contractId={null}
+      files={[document]}
+      fixedFile
+      safeRoute={safeRouteForDocument(document.category)}
+      initialSigners={(clients.data ?? []).map(signerFromClient)}
+      description="Pela D4Sign. Quem assina recebe o link por e-mail; a cópia assinada fica ao lado do original."
+      emptySignersText={
+        clients.error
+          ? 'Não foi possível ler o cliente do documento. Inclua quem assina pelos botões acima.'
+          : 'O documento não tem cliente ligado. Inclua quem assina pelos botões acima.'
+      }
+      send={send}
+      onClose={onClose}
+    />
+  )
+}
+
+interface SendFormProps {
+  contractId: string | null
+  files: DocumentWithRelations[]
+  /** Documento avulso: o arquivo é o da linha, sem escolha. */
+  fixedFile: boolean
+  safeRoute: D4SignSafeRoute
+  initialSigners: SignerDraft[]
+  description: string
+  emptySignersText: string
+  send: ReturnType<typeof useSendForSignature>
+  onClose: () => void
+}
+
+function SendForm({
+  contractId,
+  files,
+  fixedFile,
+  safeRoute,
+  initialSigners,
+  description,
+  emptySignersText,
+  send,
+  onClose,
+}: SendFormProps) {
   const { data: settings = null } = useOfficeSettings()
   const { data: profiles = [] } = useProfiles()
   const listSafes = useListD4SignSafes()
@@ -152,27 +259,15 @@ function SendForm({
     (profile) => profile.is_active && (profile.role === 'attorney' || profile.role === 'admin'),
   )
 
-  const files = useMemo(
-    () =>
-      documents
-        .filter((document) => SIGNABLE_FILE_TYPES.includes(document.file_type))
-        // A minuta mais nova primeiro; o resto depois.
-        .sort((a, b) => {
-          const roleOrder = Number(b.contract_file_role === 'minuta') - Number(a.contract_file_role === 'minuta')
-          return roleOrder !== 0 ? roleOrder : b.created_at.localeCompare(a.created_at)
-        }),
-    [documents],
-  )
-
   const [documentId, setDocumentId] = useState(files[0]?.id ?? '')
   const [chosenSafe, setChosenSafe] = useState<D4SignSafe | null>(null)
-  const [signers, setSigners] = useState<SignerDraft[]>(() => initialSigners(contract, parties))
+  const [signers, setSigners] = useState<SignerDraft[]>(initialSigners)
   const [ordered, setOrdered] = useState(false)
   const [message, setMessage] = useState('')
   const [deadline, setDeadline] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const suggestedSafe = resolveSafe(safeMap, safeRouteForContract(contract.kind))
+  const suggestedSafe = resolveSafe(safeMap, safeRoute)
   const safe = chosenSafe ?? suggestedSafe
   // Os cofres do mapa e, se pedidos, todos os da conta — no máximo uns 15.
   const safeOptionsByUuid = new Map<string, D4SignSafe>()
@@ -240,7 +335,7 @@ function SendForm({
       return
     }
     const parsed = sendForSignatureSchema.safeParse({
-      contractId: contract.id,
+      contractId,
       documentId,
       safe,
       signers: signers.map((signer) => ({
@@ -283,10 +378,7 @@ function SendForm({
     <>
       <DialogHeader>
         <DialogTitle>Enviar para assinatura</DialogTitle>
-        <DialogDescription>
-          Pela D4Sign. Quem assina recebe o link por e-mail; o PDF assinado volta para os arquivos do
-          contrato.
-        </DialogDescription>
+        <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
 
       <div className="space-y-5">
@@ -295,7 +387,13 @@ function SendForm({
             <Label>Arquivo</Label>
             {files.length === 0 ? (
               <p className="text-xs text-destructive">
-                O contrato não tem PDF nem Word. Gere a minuta ou anexe o arquivo antes.
+                {contractId
+                  ? 'O contrato não tem PDF nem Word. Gere a minuta ou anexe o arquivo antes.'
+                  : 'A D4Sign recebe PDF ou Word.'}
+              </p>
+            ) : fixedFile ? (
+              <p className="flex h-9 items-center truncate rounded-md border bg-muted/40 px-3 text-sm">
+                {files[0].file_name}
               </p>
             ) : (
               <Select value={documentId} onValueChange={setDocumentId} disabled={send.isPending}>
@@ -373,7 +471,7 @@ function SendForm({
 
           {signers.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              O contrato não tem partes. Inclua quem assina pelos botões acima.
+              {emptySignersText}
             </p>
           )}
 
@@ -461,7 +559,7 @@ function SendForm({
                       <SelectContent>
                         {SIGNATURE_ACTS.map((act) => (
                           <SelectItem key={act} value={String(act)}>
-                            Assina como {SIGNATURE_ACT_LABELS[act].toLowerCase()}
+                            {signatureActOptionLabel(act)}
                           </SelectItem>
                         ))}
                       </SelectContent>

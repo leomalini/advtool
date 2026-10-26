@@ -16,8 +16,6 @@ export const contractKeys = {
   detail: (id: string) => ['contracts', 'detail', id] as const,
   statusChanges: (id: string) => ['contracts', 'status-changes', id] as const,
   parties: (id: string) => ['contracts', 'parties', id] as const,
-  /** Envios à D4Sign (migration 79). */
-  signatures: (id: string) => ['contracts', 'signatures', id] as const,
   forEntity: (clientId: string | null, legalProcessId: string | null) =>
     ['contracts', 'entity', clientId ?? '-', legalProcessId ?? '-'] as const,
 }

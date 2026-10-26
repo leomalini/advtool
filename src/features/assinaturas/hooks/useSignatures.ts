@@ -1,27 +1,87 @@
 'use client'
 
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useInvalidateContractSurfaces } from '@/features/contratos/hooks/useContractMutations'
 import type { SendForSignatureInput } from '@/schemas/signature.schema'
+import type { DocumentRecord } from '@/types/document.types'
+import { buildSignatureSeals } from '@/types/signature.types'
 import {
   cancelSignature,
   changeSignatureEmail,
   getContractSignatureRequests,
+  getDocumentSignatureRequests,
+  getDocumentSignerClients,
+  getSignatureAvailability,
+  getSignatureSealRows,
   refreshSignature,
   resendSignatureLink,
   retrySignature,
   sendForSignature,
 } from '../services/signatures.service'
-import { useInvalidateContractSurfaces } from './useContractMutations'
-import { contractKeys } from './useContracts'
+
+/** Tudo sob ['signatures']: uma invalidação alcança seção, selos e diálogos. */
+export const signatureKeys = {
+  all: ['signatures'] as const,
+  contract: (id: string) => ['signatures', 'contract', id] as const,
+  document: (id: string) => ['signatures', 'document', id] as const,
+  seals: ['signatures', 'seals'] as const,
+  availability: ['signatures', 'availability'] as const,
+  signerClients: (documentId: string) => ['signatures', 'signer-clients', documentId] as const,
+}
 
 /** Os envios do contrato. Desligado quando a D4Sign não está configurada —
  * sem a migration 79, a consulta falharia. */
 export function useContractSignatures(contractId: string, enabled: boolean) {
   return useQuery({
-    queryKey: contractKeys.signatures(contractId),
+    queryKey: signatureKeys.contract(contractId),
     queryFn: () => getContractSignatureRequests(contractId),
     enabled: enabled && !!contractId,
+  })
+}
+
+/** Os envios de um arquivo avulso, para o diálogo do selo. */
+export function useDocumentSignatures(documentId: string | null) {
+  return useQuery({
+    queryKey: signatureKeys.document(documentId ?? '-'),
+    queryFn: () => getDocumentSignatureRequests(documentId as string),
+    enabled: !!documentId,
+  })
+}
+
+/**
+ * Se dá para enviar: a D4Sign configurada no servidor. Não muda com a tela
+ * aberta — uma consulta por sessão.
+ */
+export function useSignatureAvailability() {
+  return useQuery({
+    queryKey: signatureKeys.availability,
+    queryFn: getSignatureAvailability,
+    staleTime: Infinity,
+    retry: false,
+  })
+}
+
+/** Arquivo → selo, para as listas de Documentos. Sem a D4Sign, nem consulta. */
+export function useSignatureSeals(enabled: boolean) {
+  return useQuery({
+    queryKey: signatureKeys.seals,
+    queryFn: getSignatureSealRows,
+    select: buildSignatureSeals,
+    enabled,
+    // Sem a migration 79 a tabela não existe: o selo some, a lista fica.
+    retry: false,
+  })
+}
+
+/** O cliente do arquivo, do caso e do processo — a lista inicial do envio. */
+export function useDocumentSignerClients(
+  document: Pick<DocumentRecord, 'id' | 'client_id' | 'crm_item_id' | 'legal_process_id'> | null,
+) {
+  return useQuery({
+    queryKey: signatureKeys.signerClients(document?.id ?? '-'),
+    queryFn: () => getDocumentSignerClients(document as NonNullable<typeof document>),
+    enabled: !!document,
   })
 }
 
@@ -30,15 +90,16 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 /**
- * Todo envio mexe no contrato (status, arquivo assinado) e no próprio envio:
- * invalida as duas coisas mesmo quando falha — o envio que parou num passo
- * aparece na seção com "Tentar de novo".
+ * Todo envio mexe no próprio envio e no dono do arquivo (o status do contrato,
+ * a cópia assinada nos Documentos): invalida tudo mesmo quando falha — o envio
+ * que parou num passo aparece com "Tentar de novo".
  */
 function useSignatureMutation<TInput, TResult>(
   mutationFn: (input: TInput) => Promise<TResult>,
   messages: { success: string | ((result: TResult) => string); error: string },
 ) {
-  const invalidate = useInvalidateContractSurfaces()
+  const queryClient = useQueryClient()
+  const invalidateContract = useInvalidateContractSurfaces()
 
   return useMutation({
     mutationFn,
@@ -47,8 +108,11 @@ function useSignatureMutation<TInput, TResult>(
         typeof messages.success === 'function' ? messages.success(result) : messages.success,
       ),
     onError: (error) => toast.error(errorMessage(error, messages.error)),
-    // Prefixo ['contracts']: alcança a seção, o detalhe e o histórico.
-    onSettled: () => invalidate(),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: signatureKeys.all })
+      // Contratos, documentos e o compromisso do vencimento.
+      invalidateContract()
+    },
   })
 }
 
