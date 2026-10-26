@@ -640,6 +640,107 @@ Rotas:
 - **Não verificado:** a migration não rodou em nenhum Postgres, e nada que
   cria ou envia falou com a D4Sign — isso é o resto do spike.
 
+## Como ficou a fase 2
+
+Branch `feat/d4sign-contratos`, sobre a `feat/d4sign-base` (`5a719aa`),
+adiantada antes do resto do spike a pedido (2026-10-26). O que o spike já
+confirmou (upload, cancelamento, o formato do aviso, `x-signature`) entrou
+como fato; o resto é lido com folga até o primeiro envio de verdade.
+
+### Banco — migration 80 (escrita, NÃO aplicada)
+
+`20260101000080_d4sign_send_flow.sql`, depende da 79:
+
+- o trigger do histórico passa a aceitar o autor por
+  `app.status_changed_by` quando não há sessão (`auth.uid()` vem primeiro);
+- `finish_signature_request` — envio `signed`, signatários `signed` e o
+  contrato `vigente` com a data de Brasília, numa transação. Só age sobre
+  envio `sent`: o segundo caminho (aviso e "Atualizar status" juntos) recebe
+  `finished = false` e desfaz a cópia que acabou de subir;
+- `cancel_signature_request` — envio `canceled` e o contrato de volta a
+  `rascunho`, se estava aguardando e não sobrou outro envio aberto. A origem
+  (`d4sign`) ou quem clicou vão para o histórico;
+- as duas sem `execute` para `anon`/`authenticated`: só o servidor chama.
+
+⚠️ **Ordem do deploy:** 79 e 80 antes do código.
+
+### Servidor — `src/lib/d4sign/`
+
+| Arquivo | O que faz |
+|---|---|
+| `documents.ts` | O documento na D4Sign: upload (`uploadbigfile` acima de 20 MB, 90 s), os parâmetros de cada autenticação (tudo em texto), `createlist`, a lista de signatários procurada em profundidade (a resposta não é documentada), envio, fase, download (só o PDF, conferindo o `%PDF-`), cancelamento, reenvio e troca de e-mail |
+| `send.ts` | O envio em passos — pasta, upload, webhook, signatários, envio —, gravando o progresso. "Tentar de novo" continua do passo que falhou, sem subir o arquivo outra vez. Sem endereço público ou sem a Secret Key MAC, segue sem registrar o webhook |
+| `requests.ts` | Ler e gravar envio e signatários; os avisos do sino (só para quem vê o módulo do envio) |
+| `storage.ts` | O arquivo que sobe e a cópia assinada que volta: no contrato, como `assinado`, autor = quem enviou |
+| `finish.ts` | Finalizar, cancelar, "uma pessoa assinou", "e-mail não entregue" e o "Atualizar status". Finalizar e cancelar só depois de a API confirmar a fase — o aviso assina só o UUID; os outros dois são pista e não mexem no contrato |
+| `deliveries.ts` | Processa um aviso já gravado e anota o resultado na mesma linha de `webhook_events` |
+| `signers.ts` | A chave do signatário: a guardada ou a da lista da D4Sign |
+| `routeGuard.ts` | Carrega o envio e confere a permissão do módulo dele; o contrato vai a "aguardando" pelo client de sessão, com o autor no histórico |
+
+A rota do webhook grava e responde na hora; o processamento corre em
+`after()` (`maxDuration = 60`, por causa do download). Falha ao processar
+fica `error` na linha, sem a chave, e o "Atualizar status" refaz.
+
+Rotas novas, todas com a permissão conferida antes de qualquer chamada:
+
+| Rota | O que faz |
+|---|---|
+| `POST /api/assinaturas` | Envia um arquivo do contrato (`contratos:update`). Confere que o arquivo é do contrato e é PDF/Word, os recursos do plano ligados, o e-mail de login de quem assina pelo escritório e e-mail repetido; completa o e-mail da parte que não tinha. 409 com o arquivo já em assinatura ou com um envio dele parado num passo; 502 com o envio quando um passo falha |
+| `…/[id]/tentar` | Continua um envio que falhou |
+| `…/[id]/cancelar` | Cancela na D4Sign primeiro (se o documento chegou lá) e depois aqui, com o motivo |
+| `…/[id]/atualizar` | Pergunta a fase: finaliza, cancela ou marca quem já assinou |
+| `…/signatarios/[signerId]/reenviar` | Reenvia o link |
+| `…/signatarios/[signerId]/email` | Troca o e-mail na D4Sign, no signatário e na parte do contrato |
+
+**Um envio por vez:** o índice da 79 segura o envio aberto; o que falhou
+também segura o arquivo (a rota recusa um novo), senão o "Tentar de novo"
+dele bateria no índice. A tela esconde o botão enquanto o contrato tiver um
+envio que não terminou.
+
+### Tela — contrato
+
+- "Enviar para assinatura" (o botão principal do rascunho, com a D4Sign
+  configurada) abre o diálogo; mudar só o status vai para o menu, como "Só
+  marcar como aguardando (assinatura por fora)".
+- Diálogo: o arquivo (PDF/Word, a minuta primeiro), o cofre do tipo (dá para
+  trocar, ou ver todos os da conta), quem assina a partir das partes — a do
+  escritório vira o responsável, com o e-mail do login —, o papel, a
+  autenticação (só as ligadas no plano), WhatsApp, prazo, ordem e mensagem, e
+  quantos envios restam. Erro de um signatário diz de quem é.
+- Seção "Assinatura": cada envio com o status, o passo e o motivo da falha,
+  quem já assinou; "Atualizar status" (segura 2 minutos), "Tentar de novo",
+  "Cancelar envio" com motivo; por signatário, "Reenviar" e "Corrigir e-mail".
+- "Marcar como assinado" avisa quando há envio aberto.
+- Sino: assinado por todos, cancelado na D4Sign, e-mail não entregue.
+
+### Verificação
+
+- `tsc --noEmit`, `pnpm lint` (sem erro; os avisos são de arquivos que a fase
+  não tocou) e `pnpm build`. Nenhum valor das chaves no bundle do navegador.
+- **No Node, com o código real** (o mesmo loader, agora com o client de
+  sessão, o RPC, o Storage e o `after()` simulados): 42 verificações — os
+  parâmetros de cada autenticação, a lista de signatários em envelopes
+  diferentes, upload e arquivo grande, envio com prazo e ordem, cota, fase em
+  texto ou número, download que não é PDF; os passos em ordem, sem webhook
+  quando não há endereço ou segredo, falha no meio e a retomada sem novo
+  upload, o índice batendo na retomada; finalizar (cópia no contrato, RPC,
+  vigente, aviso), fase errada, o outro caminho chegando antes, erro no banco
+  desfazendo a cópia; cancelar pela D4Sign; pistas de assinatura e de e-mail;
+  "Atualizar status"; o aviso inteiro pela rota até o `after()`, sem a chave
+  no log; e as seis rotas com permissão, validações (nenhuma gasta chamada),
+  409, 502, desfazer o envio sem signatários e o autor pela sessão. As 46 da
+  fase 1 continuam passando.
+- **Tela** numa página temporária sob `/acompanhar` (já apagada): a seção com
+  os quatro estados, o diálogo (e-mail cobrado com o nome de quem, só as
+  autenticações do plano, o payload enviado), envio que falha fechando o
+  diálogo e aparecendo como "Falhou", tentar de novo, atualizar com a espera,
+  reenviar, corrigir e-mail e cancelar com motivo.
+- **Não verificado:** nada desta fase falou com a D4Sign — a resposta do
+  `createlist` (se traz `key_signer`), o aviso de "assinado" e de "e-mail não
+  entregue" (onde vem o e-mail), o link de download e a validade dele, a
+  conversão do DOCX e o limite por método. E as migrations 79 e 80 não rodaram
+  em nenhum Postgres. É o primeiro envio de verdade, com a sua autorização.
+
 ## Riscos e pontos em aberto
 
 - **Plano Advanced × recursos escolhidos:** o Embed e o custo da autenticação

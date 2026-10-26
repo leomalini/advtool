@@ -11,8 +11,11 @@ import {
   BrushCleaning,
   CheckCheck,
   CircleAlert,
+  FileCheck2,
   FileClock,
   FileExclamationPoint,
+  FileX2,
+  MailWarning,
   Gavel,
   Newspaper,
   TriangleAlert,
@@ -51,6 +54,9 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   pagamento_alerta: CircleAlert,
   contrato_vencendo: FileClock,
   contrato_vencido: FileExclamationPoint,
+  assinatura_concluida: FileCheck2,
+  assinatura_cancelada: FileX2,
+  assinatura_email_falhou: MailWarning,
 }
 
 function relativeTime(iso: string): string {

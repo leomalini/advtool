@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { d4signWebhookSecret, getD4SignConfig } from '@/lib/d4sign/config'
+import { processD4SignDelivery } from '@/lib/d4sign/deliveries'
 import {
   d4signDiagnosticHeaders,
   d4signSignatureHeader,
@@ -15,10 +16,11 @@ import { WEBHOOK_PROVIDERS, type WebhookEventStatus } from '@/types/webhookEvent
  * endereço é registrado em cada documento, no envio): finalizado, cancelado,
  * assinado por alguém ou com e-mail não entregue.
  *
- * Nesta fase a rota só autentica, procura o envio e grava a entrega em
- * `webhook_events`; o que cada evento muda (o contrato vigente, a cópia
- * assinada) chega na fase 2, sempre depois de confirmar na API — o HMAC
- * assina só o UUID, não o corpo.
+ * A rota autentica, procura o envio, grava a entrega em `webhook_events` e
+ * responde; o que o evento muda (a cópia assinada, o contrato vigente, o
+ * cancelamento) corre depois, em `after()` — `lib/d4sign/deliveries.ts`.
+ * Finalizar e cancelar só depois de confirmar na API: a assinatura cobre só o
+ * UUID, não o corpo.
  *
  * Respostas:
  *   · 401 quando a assinatura não confere — a D4Sign vê a falha, e a entrega
@@ -30,6 +32,9 @@ import { WEBHOOK_PROVIDERS, type WebhookEventStatus } from '@/types/webhookEvent
  *
  * Entregas que chegam com o ambiente em sandbox ficam marcadas `is_test`.
  */
+/** O `after()` baixa o PDF assinado e o guarda no Storage. */
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now()
   const contentType = request.headers.get('content-type')
@@ -52,6 +57,7 @@ export async function POST(request: NextRequest) {
   let status: WebhookEventStatus = 'received'
   let reason: string | null = null
   let lookupError: string | null = null
+  let requestId: string | null = null
 
   if (!delivery) {
     status = 'invalid'
@@ -76,10 +82,12 @@ export async function POST(request: NextRequest) {
     } else if (!signatureRequest) {
       status = 'unmatched'
       reason = 'Nenhum envio do app com este documento.'
+    } else {
+      requestId = signatureRequest.id as string
     }
   }
 
-  const { error: logError } = await supabase.from('webhook_events').insert({
+  const { data: logged, error: logError } = await supabase.from('webhook_events').insert({
     provider: WEBHOOK_PROVIDERS.d4sign,
     event: delivery?.event ?? delivery?.typePost ?? null,
     external_id: delivery?.uuid ?? null,
@@ -92,15 +100,24 @@ export async function POST(request: NextRequest) {
     headers: d4signDiagnosticHeaders(request.headers),
     duration_ms: Date.now() - startedAt,
   })
+    .select('id')
+    .single()
 
-  if (logError) {
-    console.error('[d4sign/webhook] entrega não gravada:', logError.message)
+  if (logError || !logged) {
+    console.error('[d4sign/webhook] entrega não gravada:', logError?.message)
     return NextResponse.json({ received: false }, { status: 503 })
   }
 
   if (status === 'error') return NextResponse.json({ received: false }, { status: 503 })
   if (status === 'invalid' && delivery && secret) {
     return NextResponse.json({ received: false }, { status: 401 })
+  }
+
+  if (status === 'received' && requestId && delivery && fields) {
+    const input = { eventId: logged.id as string, requestId, delivery, fields, startedAt }
+    after(async () => {
+      await processD4SignDelivery(supabase, input)
+    })
   }
   return NextResponse.json({ received: true })
 }

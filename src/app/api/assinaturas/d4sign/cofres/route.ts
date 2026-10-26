@@ -7,14 +7,18 @@ import { d4signErrorResponse } from '@/lib/d4sign/http'
 export const maxDuration = 60
 
 /**
- * GET /api/assinaturas/d4sign/cofres — os cofres da conta, para escolher onde
- * os envios caem.
+ * GET /api/assinaturas/d4sign/cofres — os cofres da conta: para ligar cada
+ * tipo a um cofre em Configurações, e para trocar o cofre sugerido no envio
+ * (um aditivo vai para "Aditivos").
  *
  * Gasta uma das 10 chamadas por hora da API, por isso só roda quando alguém
- * pede na tela, e só para quem administra Configurações.
+ * pede na tela: quem administra Configurações ou quem envia contratos.
  */
 export async function GET() {
-  const guard = await requireApiPermission('configuracoes', 'manage')
+  let guard = await requireApiPermission('configuracoes', 'manage')
+  if (!guard.ok && guard.response.status === 403) {
+    guard = await requireApiPermission('contratos', 'update')
+  }
   if (!guard.ok) return guard.response
 
   try {

@@ -98,8 +98,12 @@ export function d4signError(
 
 interface RequestOptions {
   method?: 'GET' | 'POST'
-  /** Corpo JSON. Sem ele, a chamada é GET. */
+  /** Corpo JSON. Sem ele (e sem `form`), a chamada é GET. */
   json?: Record<string, unknown>
+  /** Corpo multipart — o upload de arquivo. */
+  form?: FormData
+  /** Para a chamada que demora mais que as consultas, como o upload. */
+  timeoutMs?: number
 }
 
 /**
@@ -117,17 +121,19 @@ export async function d4signRequest(path: string, options: RequestOptions = {}):
   const query = new URLSearchParams({ tokenAPI: config.tokenApi })
   if (config.cryptKey) query.set('cryptKey', config.cryptKey)
 
+  const timeoutMs = options.timeoutMs ?? TIMEOUT_MS
   let response: Response
   try {
     response = await fetch(`${config.apiUrl}${path}?${query.toString()}`, {
-      method: options.method ?? (options.json ? 'POST' : 'GET'),
+      method: options.method ?? (options.json || options.form ? 'POST' : 'GET'),
       headers: {
         Accept: 'application/json',
+        // Multipart: o fetch põe o Content-Type com o boundary sozinho.
         ...(options.json ? { 'Content-Type': 'application/json' } : {}),
       },
-      body: options.json ? JSON.stringify(options.json) : undefined,
+      body: options.json ? JSON.stringify(options.json) : options.form,
       cache: 'no-store',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === 'TimeoutError'
@@ -135,7 +141,7 @@ export async function d4signRequest(path: string, options: RequestOptions = {}):
       'unavailable',
       timedOut ? 504 : 502,
       timedOut
-        ? `A D4Sign não respondeu em ${TIMEOUT_MS / 1000} s (${path}).`
+        ? `A D4Sign não respondeu em ${timeoutMs / 1000} s (${path}).`
         : `Falha de rede ao chamar a D4Sign (${path}).`,
     )
   }
