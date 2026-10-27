@@ -56,6 +56,7 @@ import { ReadDocumentsDialog } from './ReadDocumentsDialog'
 import { ContractFormDialog } from './ContractFormDialog'
 import { ContractSituationBadge } from './ContractSituationBadge'
 import { ContractStatusActions } from './ContractStatusActions'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 
 function clientName(contract: ContractWithRelations): string | null {
   return contract.client
@@ -99,6 +100,27 @@ export function ContractDetailPage({
 }) {
   const router = useRouter()
   const { data: contract, isLoading, error } = useContract(contractId)
+  useAssistantScreen(
+    contract
+      ? {
+          entities: [
+            { kind: 'contrato', id: contract.id, label: contract.title },
+            ...(contract.client
+              ? [{ kind: 'cliente' as const, id: contract.client.id, label: clientName(contract) ?? '' }]
+              : []),
+            ...(contract.legal_process
+              ? [
+                  {
+                    kind: 'processo' as const,
+                    id: contract.legal_process.id,
+                    label: contract.legal_process.cnj_number ?? '',
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
+  )
   const { data: signatureRequests = [] } = useContractSignatures(contractId, signatureReady)
   const [sendOpen, setSendOpen] = useState(false)
   const { data: statusChanges = [] } = useContractStatusChanges(contractId)

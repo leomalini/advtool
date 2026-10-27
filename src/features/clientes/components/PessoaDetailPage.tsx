@@ -20,6 +20,7 @@ import { CadastroTab } from './CadastroTab'
 import { ClienteForm } from './ClienteForm'
 import { ClientComments } from './ClientComments'
 import { ConvertToClientDialog } from './ConvertToClientDialog'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 
 type Tab = 'cadastro' | 'notas' | 'processos' | 'contratos' | 'arquivos'
 
@@ -44,6 +45,12 @@ export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
   const router = useRouter()
   const { data: pessoa, isLoading, error } = useCliente(pessoaId)
   const { can } = usePermissions()
+
+  useAssistantScreen(
+    pessoa
+      ? { entities: [{ kind: 'pessoa', id: pessoa.id, label: getClientDisplayName(pessoa) }] }
+      : null,
+  )
 
   const [tab, setTab] = useState<Tab>('cadastro')
   const [editOpen, setEditOpen] = useState(false)

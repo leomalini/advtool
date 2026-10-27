@@ -1,8 +1,9 @@
 'use client'
 
 import { getToolName, isToolUIPart } from 'ai'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, MapPin, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { screenContextSummary } from '../context/screenContext'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES, type ActionOutput, type ActionToolName } from '../tools/actions'
 import type { PendingAction } from '../hooks/useExecuteAction'
@@ -98,6 +99,21 @@ export function MessageParts({
           return (
             <p key={key} className="whitespace-pre-wrap break-words leading-relaxed">
               {part.text}
+            </p>
+          )
+        }
+
+        if (part.type === 'data-context') {
+          // A tela de onde a pergunta saiu (painel lateral). Fica no histórico
+          // para dizer a que "isto" a pergunta se referia.
+          return (
+            <p
+              key={`context-${index}`}
+              className="flex items-center gap-1 text-[11px] opacity-75"
+              title="Tela de onde a pergunta foi feita"
+            >
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{screenContextSummary(part.data)}</span>
             </p>
           )
         }

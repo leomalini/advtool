@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
+import { AssistantPanel } from '@/features/ia/components/AssistantPanel'
 
 /**
  * O shell é `fixed inset-0`, não `h-screen`.
@@ -24,6 +25,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Header />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+      <AssistantPanel />
     </div>
   )
 }

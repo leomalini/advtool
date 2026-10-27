@@ -1,4 +1,5 @@
-import type { InferUITools, UIDataTypes, UIMessage } from 'ai'
+import type { InferUITools, UIMessage } from 'ai'
+import type { ScreenContext } from '../context/screenContext'
 import { actionTools } from './actions'
 import { createAgendaTools } from './read/agenda'
 import { createClientTools } from './read/clients'
@@ -41,6 +42,13 @@ export function createAssistantTools(supabase: ToolClient, context: AssistantToo
 
 export type AssistantTools = ReturnType<typeof createAssistantTools>
 
+/** Partes de dados do chat. `context` é a tela de onde a pergunta saiu, pelo
+ * painel do Assistente (ver `context/screenContext.ts`). Alias, não interface:
+ * só o alias satisfaz o `Record<string, unknown>` que o `UIMessage` exige. */
+export type AssistantDataTypes = {
+  context: ScreenContext
+}
+
 /** Mensagem tipada do chat: `parts` conhece cada tool pelo nome. É o que a
  * tela renderiza e o que vai para `ai_messages.parts`. */
-export type AssistantUIMessage = UIMessage<never, UIDataTypes, InferUITools<AssistantTools>>
+export type AssistantUIMessage = UIMessage<never, AssistantDataTypes, InferUITools<AssistantTools>>

@@ -8,11 +8,12 @@ import {
   isToolUIPart,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
-import { Loader2, Paperclip, SendHorizonal, Sparkles, Square } from 'lucide-react'
+import { Loader2, MapPin, Paperclip, SendHorizonal, Sparkles, Square } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { screenContextSummary, type ScreenContext } from '../context/screenContext'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES } from '../tools/actions'
 import { AI_ERROR_MESSAGES } from '../errorMessages'
@@ -74,9 +75,20 @@ interface ChatPanelProps {
   initialMessages: AssistantUIMessage[]
   /** Fim de cada turno — a conversa já está gravada quando isto dispara. */
   onTurnEnd: () => void
+  /** A tela por trás do painel lateral. Vai junto com cada pergunta, como a
+   * tela estava no momento do envio. O /ia não manda. */
+  screenContext?: ScreenContext
+  /** `panel`: o painel lateral, estreito. */
+  variant?: 'page' | 'panel'
 }
 
-export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPanelProps) {
+export function ChatPanel({
+  conversationId,
+  initialMessages,
+  onTurnEnd,
+  screenContext,
+  variant = 'page',
+}: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [runningCallId, setRunningCallId] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -124,7 +136,18 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
     if (inputLocked || attachments.isUploading || (!trimmed && files.length === 0)) return
     setInput('')
     attachments.clear()
-    void sendMessage({ text: trimmed, files: files.length > 0 ? files : undefined })
+    if (!screenContext) {
+      void sendMessage({ text: trimmed, files: files.length > 0 ? files : undefined })
+      return
+    }
+    // As mesmas partes que o `{ text, files }` monta, com a tela na frente.
+    void sendMessage({
+      parts: [
+        { type: 'data-context', data: screenContext },
+        ...files,
+        { type: 'text', text: trimmed },
+      ],
+    })
   }
 
   function addFiles(list: FileList | null) {
@@ -200,11 +223,18 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
             </div>
             <div>
               <h3 className="text-lg font-semibold">Assistente do escritório</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                Pergunte sobre clientes, processos, agenda, tarefas, publicações e financeiro,
-                peça para criar uma tarefa ou compromisso — ou anexe um PDF, imagem, Word ou
-                planilha para a IA ler.
-              </p>
+              {variant === 'panel' ? (
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Pergunte sobre o que está na tela — “resuma isto”, “crie uma tarefa para este
+                  processo” — ou sobre qualquer parte do escritório.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Pergunte sobre clientes, processos, agenda, tarefas, publicações e financeiro,
+                  peça para criar uma tarefa ou compromisso — ou anexe um PDF, imagem, Word ou
+                  planilha para a IA ler.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap justify-center gap-2 max-w-lg">
               {SUGGESTIONS.map((suggestion) => (
@@ -228,7 +258,8 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
           >
             <div
               className={cn(
-                'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
+                'rounded-2xl px-4 py-2.5 text-sm',
+                variant === 'panel' ? 'max-w-[90%]' : 'max-w-[80%]',
                 message.role === 'user'
                   ? 'bg-primary text-primary-foreground rounded-br-sm'
                   : 'bg-muted rounded-bl-sm',
@@ -272,6 +303,16 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
           submit(input)
         }}
       >
+        {screenContext && (
+          <p
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="A tela vai junto com a pergunta"
+          >
+            <MapPin className="h-3 w-3 shrink-0" />
+            <span className="truncate">{screenContextSummary(screenContext)}</span>
+          </p>
+        )}
+
         {attachments.attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.attachments.map((attachment) => (
@@ -318,7 +359,11 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
                 submit(input)
               }
             }}
-            placeholder="Pergunte algo ou anexe um arquivo… (Enter envia, Shift+Enter quebra linha)"
+            placeholder={
+              variant === 'panel'
+                ? 'Pergunte algo… (Enter envia)'
+                : 'Pergunte algo ou anexe um arquivo… (Enter envia, Shift+Enter quebra linha)'
+            }
             rows={1}
             className="min-h-[40px] max-h-40 resize-none"
             disabled={inputLocked}

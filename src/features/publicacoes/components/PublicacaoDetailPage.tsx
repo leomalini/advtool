@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PublicacaoAtividades } from './PublicacaoAtividades'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 import {
   usePublication,
   usePublicationQueue,
@@ -169,6 +170,34 @@ export function PublicacaoDetailPage({ publicacaoId }: { publicacaoId: string })
   const [onlyUnreadQueue, setOnlyUnreadQueue] = useState(true)
 
   const { data: publicacao, isLoading } = usePublication(publicacaoId)
+  useAssistantScreen(
+    publicacao
+      ? {
+          entities: [
+            {
+              kind: 'publicacao',
+              id: publicacao.id,
+              label: [
+                `#${publicacao.sequence_number}`,
+                publicacao.publication_type ?? publicacao.title,
+                formatDate(publicacao.publication_date),
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            },
+            ...(publicacao.legal_process
+              ? [
+                  {
+                    kind: 'processo' as const,
+                    id: publicacao.legal_process.id,
+                    label: publicacao.legal_process.cnj_number ?? '',
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
+  )
   const { data: queue = [] } = usePublicationQueue(onlyUnreadQueue)
   const { data: unreadCount = 0 } = useUnreadPublicationCount()
 

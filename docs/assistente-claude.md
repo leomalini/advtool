@@ -609,6 +609,53 @@ Verificado:
 - Cada tool continua com a RLS de quem pergunta: mais alcance não dá mais
   acesso.
 
+**Como ficou a 4a (2026-10-27, branch `feat/ia-painel-global`, de
+`feat/portal-perguntas-fixas`):**
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Painel | `features/ia/components/AssistantPanel.tsx` | Ao lado do conteúdo no layout do app. Em tela de 1280 px ou mais, fica à direita (420 px) e o conteúdo encolhe; abaixo disso, por cima, e no celular ocupa a tela. Barra com conversas (a mesma lista do /ia), nova conversa, abrir no /ia e fechar. Monta na primeira abertura; fechar só esconde, então a conversa (e uma resposta ainda chegando) sobrevive. No /ia não aparece |
+| Botão e atalho | `AssistantPanelButton.tsx` no `Header`; Ctrl+J / ⌘J | Só para quem tem `ia:view`, a mesma permissão da rota. O ⌘K já era a busca |
+| Estado | `features/ia/stores/assistantPanel.store.ts` (zustand) | Aberto/fechado, a conversa do painel e o que cada tela registrou. A conversa atravessa a troca de tela |
+| Contexto da tela | `features/ia/context/screenContext.ts`, `hooks/useAssistantScreen.ts` | Cada tela registra o registro aberto (tipo, id, rótulo) e os filtros visíveis. Vai com a pergunta como parte `data-context`, gravada com ela em `ai_messages.parts`: o histórico sai igual a cada turno (cache e raciocínio dependem disso) e cada pergunta guarda a tela daquele momento |
+| Rota | `api/ia/chat/route.ts` | Valida a parte com zod (`dataSchemas`: id uuid, só os tipos conhecidos, limites de tamanho; outra parte de dados é recusada) e a converte num bloco `<tela_atual>` no começo da pergunta. O `system` não muda por tela |
+| Prompt | `prompts/system.ts`, seção "Tela atual" | O registro em foco resolve "isto" e "este processo"; o id serve direto nas tools e nas ações; o bloco não é pedido e não aparece para o usuário |
+| Telas ligadas | detalhe de processo (com o cliente), cliente, pessoa, contrato (com cliente e processo) e publicação (com o processo); filtros de Tarefas, Processos e Financeiro | Na tela, o chip com o registro em foco fica acima do campo e em cada pergunta do histórico |
+
+- **Compromisso e audiência ficaram de fora.** Abrem em modal do Radix, que
+  trava o resto da tela (foco, clique e leitores de tela), o painel
+  inclusive. Com o modal aberto não há como digitar no painel, e ao fechar o
+  registro some. Caminho para a 4b: um botão "Perguntar ao Assistente" dentro
+  do modal, que fecha o modal e abre o painel com o registro.
+- **Verificação:**
+  - tsc, lint e build;
+  - `verify-panel-context.mjs` (scratchpad), 21 checagens sem modelo: ordem
+    e limites do contexto, o bloco (um rótulo não fecha o `<tela_atual>`),
+    a validação da rota recusando id inválido, tipo desconhecido, parte de
+    dados desconhecida e rótulo grande, e conversão determinística;
+  - com o modelo real (Opus 5.5, sem gravar nada), num processo:
+    - "Resuma isto" foi direto ao `detalhar_processo` com o id do bloco, sem
+      buscar;
+    - "Crie uma tarefa para este processo…" propôs `criar_tarefa` com o
+      `processo_id` certo;
+    - 2 turnos, R$ 0,92, quase tudo na escrita do prefixo (26 mil tokens); o
+      segundo turno leu o prefixo do cache;
+  - no navegador, com página temporária (usuário, permissão e rota do chat
+    simulados; painel, botão, store, chat e a barra de filtros de Tarefas
+    reais):
+    - Ctrl+J abre e não deixa o navegador agir;
+    - a pergunta sai com o processo em foco e o filtro "só atrasadas";
+    - fechar e reabrir mantém a conversa, inclusive fechando com a resposta
+      chegando;
+    - histórico com o chip, nova conversa e o link para o /ia;
+    - 1440 px ao lado, 1024 px por cima, celular em tela cheia sem rolagem
+      lateral.
+- **Não verificado:** as telas reais logadas (o detalhe de cada registro
+  passa no tsc, mas o rótulo de cada um só aparece com login) e a volta do
+  /ia para o painel (que deve carregar a conversa do banco).
+- Em desenvolvimento, o botão do TanStack Query Devtools cobre o Enviar do
+  painel; o Enter envia. Em produção o botão não existe.
+
 **4b. Ações rápidas por tela.** Botões com pedido fixo, a mesma ideia do
 portal:
 
