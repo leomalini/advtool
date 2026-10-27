@@ -36,17 +36,31 @@ interface ContractStatusActionsProps {
   /** Depois de "Marcar como assinado" dar certo — a página oferece a prévia
    * dos lançamentos. */
   onSigned?: (signedAt: string) => void
+  /** Com a D4Sign configurada, "Enviar para assinatura" abre o envio por ela;
+   * marcar só o status (assinatura em papel) fica no menu. */
+  onSendForSignature?: () => void
+  /** Há um envio aberto na D4Sign — "Marcar como assinado" avisa. */
+  hasOpenSignature?: boolean
 }
 
 /** O próximo passo do ciclo como botão principal; os demais status num menu,
  * para corrigir um clique errado ou pular etapas. */
-export function ContractStatusActions({ contract, onSigned }: ContractStatusActionsProps) {
+export function ContractStatusActions({
+  contract,
+  onSigned,
+  onSendForSignature,
+  hasOpenSignature = false,
+}: ContractStatusActionsProps) {
   const changeStatus = useChangeContractStatus()
   const [signOpen, setSignOpen] = useState(false)
   const [closing, setClosing] = useState<ContractStatus | null>(null)
 
   const next = CONTRACT_NEXT_STATUS[contract.status]
-  const others = CONTRACT_STATUSES.filter((status) => status !== contract.status && status !== next)
+  // O botão principal envia pela D4Sign; mudar só o status vira item do menu.
+  const sendsBySignature = next === 'aguardando_assinatura' && !!onSendForSignature
+  const others = CONTRACT_STATUSES.filter(
+    (status) => status !== contract.status && (status !== next || sendsBySignature),
+  )
   const hasSignedFile =
     contract.documents?.some((document) => document.contract_file_role === 'assinado') ?? false
 
@@ -70,7 +84,7 @@ export function ContractStatusActions({ contract, onSigned }: ContractStatusActi
             size="sm"
             className="rounded-r-none"
             disabled={changeStatus.isPending}
-            onClick={() => request(next)}
+            onClick={() => (sendsBySignature ? onSendForSignature?.() : request(next))}
           >
             {changeStatus.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {CONTRACT_STATUS_ACTION_LABELS[next]}
@@ -96,7 +110,9 @@ export function ContractStatusActions({ contract, onSigned }: ContractStatusActi
                 {status === 'vigente' &&
                 (contract.status === 'encerrado' || contract.status === 'rescindido')
                   ? 'Reabrir como vigente'
-                  : CONTRACT_STATUS_ACTION_LABELS[status]}
+                  : status === 'aguardando_assinatura' && sendsBySignature
+                    ? 'Só marcar como aguardando (assinatura por fora)'
+                    : CONTRACT_STATUS_ACTION_LABELS[status]}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -107,6 +123,7 @@ export function ContractStatusActions({ contract, onSigned }: ContractStatusActi
         open={signOpen}
         onOpenChange={setSignOpen}
         hasSignedFile={hasSignedFile}
+        hasOpenSignature={hasOpenSignature}
         isLoading={changeStatus.isPending}
         onConfirm={(signedAt, signedFile) =>
           changeStatus.mutate(

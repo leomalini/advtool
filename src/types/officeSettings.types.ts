@@ -1,3 +1,5 @@
+import type { D4SignFeatures, D4SignSafeMap } from './d4sign.types'
+
 /** Espelha `public.office_settings` (migration 66) — uma linha só. */
 export interface OfficeSettings {
   name: string | null
@@ -20,17 +22,34 @@ export interface OfficeSettings {
   /** InfiniteTag da conta que recebe os links de pagamento, sem o `$`
    * (migration 67). */
   infinitepay_handle: string | null
+  // ── D4Sign (migration 79) ──
+  // Opcionais: a linha só os traz depois da migration, e a tela não pode
+  // quebrar antes dela.
+  /** O cofre de cada tipo de envio; tipo ausente usa o `padrao`. */
+  d4sign_safes?: D4SignSafeMap
+  /** Recursos do plano, ligados à mão: a API não informa o plano. */
+  d4sign_features?: D4SignFeatures
+  /** O último saldo lido (`GET /account/balance`) — cada leitura gasta uma
+   * chamada das 10 por hora. */
+  d4sign_balance_credit?: number | null
+  d4sign_balance_sent?: number | null
+  d4sign_balance_checked_at?: string | null
   updated_by: string | null
   updated_at: string
 }
 
-/** O que o formulário do escritório grava — timbrado e InfiniteTag têm fluxo
- * próprio. */
+/** O que o formulário do escritório grava — timbrado, InfiniteTag e D4Sign têm
+ * fluxo próprio. */
 export type OfficeSettingsInput = Omit<
   OfficeSettings,
   | 'letterhead_path'
   | 'letterhead_file_name'
   | 'infinitepay_handle'
+  | 'd4sign_safes'
+  | 'd4sign_features'
+  | 'd4sign_balance_credit'
+  | 'd4sign_balance_sent'
+  | 'd4sign_balance_checked_at'
   | 'updated_by'
   | 'updated_at'
 >

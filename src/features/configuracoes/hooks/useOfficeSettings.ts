@@ -3,10 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
+import type { D4SignFeatures, D4SignSafeMap } from '@/types/d4sign.types'
 import type { OfficeSettings, OfficeSettingsInput } from '@/types/officeSettings.types'
 import {
   getOfficeSettings,
+  listD4SignSafes,
+  refreshD4SignBalance,
   removeLetterhead,
+  saveD4SignFeatures,
+  saveD4SignSafes,
   saveInfinitePayHandle,
   saveOfficeSettings,
   uploadLetterhead,
@@ -86,4 +91,35 @@ export function useVerifyInfinitePayHandle() {
     mutationFn: (handle: string) => verifyInfinitePayHandle(handle),
     onError: (error) => toast.error(errorMessage(error, 'Não foi possível verificar a conta.')),
   })
+}
+
+/** Os cofres da D4Sign, sob demanda: cada consulta gasta uma chamada das 10 por
+ * hora, então a lista vem do clique, não da abertura da aba. Fica em `data`. */
+export function useListD4SignSafes() {
+  return useMutation({
+    mutationFn: listD4SignSafes,
+    onError: (error) => toast.error(errorMessage(error, 'Não foi possível listar os cofres.')),
+  })
+}
+
+export function useSaveD4SignSafes() {
+  return useOfficeMutation(
+    (safes: D4SignSafeMap, userId) => saveD4SignSafes(safes, userId),
+    { success: 'Cofres salvos.', error: 'Erro ao salvar os cofres.' },
+  )
+}
+
+/** Testa a conexão e guarda o saldo de envios. */
+export function useRefreshD4SignBalance() {
+  return useOfficeMutation<void>(() => refreshD4SignBalance(), {
+    success: 'A D4Sign respondeu. Saldo atualizado.',
+    error: 'Não foi possível consultar a D4Sign.',
+  })
+}
+
+export function useSaveD4SignFeatures() {
+  return useOfficeMutation(
+    (features: D4SignFeatures, userId) => saveD4SignFeatures(features, userId),
+    { success: 'Recursos do plano salvos.', error: 'Erro ao salvar os recursos do plano.' },
+  )
 }

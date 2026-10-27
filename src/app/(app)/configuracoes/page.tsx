@@ -1,5 +1,6 @@
 import { requirePermission } from '@/lib/auth/requirePermission'
 import { infinitePayWebhookEndpoint } from '@/lib/infinitepay/urls'
+import { d4signSetupStatus } from '@/lib/d4sign/config'
 import { ConfiguracoesContent } from '@/features/configuracoes/components/ConfiguracoesContent'
 
 export default async function ConfiguracoesPage({
@@ -14,6 +15,7 @@ export default async function ConfiguracoesPage({
     <ConfiguracoesContent
       initialTab={typeof aba === 'string' ? aba : undefined}
       paymentsWebhookEndpoint={infinitePayWebhookEndpoint()}
+      signatureSetup={d4signSetupStatus()}
     />
   )
 }

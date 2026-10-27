@@ -22,6 +22,8 @@ interface ContractSignDialogProps {
   onOpenChange: (open: boolean) => void
   /** Já existe versão assinada anexada: o arquivo vira opcional de verdade. */
   hasSignedFile: boolean
+  /** Há um envio aberto na D4Sign: marcar aqui não o cancela. */
+  hasOpenSignature?: boolean
   isLoading: boolean
   onConfirm: (signedAt: string, signedFile: File | null) => void
 }
@@ -37,6 +39,7 @@ export function ContractSignDialog({
   open,
   onOpenChange,
   hasSignedFile,
+  hasOpenSignature,
   isLoading,
   onConfirm,
 }: ContractSignDialogProps) {
@@ -47,6 +50,7 @@ export function ContractSignDialog({
         {open && (
           <SignForm
             hasSignedFile={hasSignedFile}
+            hasOpenSignature={hasOpenSignature}
             isLoading={isLoading}
             onCancel={() => onOpenChange(false)}
             onConfirm={onConfirm}
@@ -59,6 +63,7 @@ export function ContractSignDialog({
 
 function SignForm({
   hasSignedFile,
+  hasOpenSignature,
   isLoading,
   onCancel,
   onConfirm,
@@ -89,6 +94,12 @@ function SignForm({
       </DialogHeader>
 
       <div className="space-y-4">
+        {hasOpenSignature && (
+          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+            Há um envio aberto na D4Sign. Marcar como assinado aqui não o cancela: quem ainda não
+            assinou continua recebendo o link. Para parar, cancele o envio na seção Assinatura.
+          </p>
+        )}
         <div className="space-y-2">
           <Label htmlFor="contract-sign-date">Assinado em</Label>
           <Input

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle2, CircleAlert, CreditCard, Loader2, Save } from 'lucide-react'
+import { CreditCard, Loader2, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -13,7 +13,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { usePermissions } from '@/hooks/usePermissions'
-import { cn } from '@/lib/utils'
 import { infinitePayHandleSchema } from '@/schemas/officeSettings.schema'
 import {
   useOfficeSettings,
@@ -21,6 +20,7 @@ import {
   useVerifyInfinitePayHandle,
 } from '../hooks/useOfficeSettings'
 import type { InfinitePayVerification } from '../services/officeSettings.service'
+import { StatusRow } from './StatusRow'
 
 interface PaymentSettingsCardProps {
   /** Onde a InfinitePay entrega os pagamentos, montado no servidor a partir de
@@ -120,30 +120,6 @@ export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProp
         </p>
       </CardContent>
     </Card>
-  )
-}
-
-function StatusRow({
-  ok,
-  title,
-  children,
-}: {
-  ok: boolean
-  title: string
-  children: React.ReactNode
-}) {
-  const Icon = ok ? CheckCircle2 : CircleAlert
-  return (
-    <div className="flex items-start gap-2.5">
-      <Icon
-        className={cn('mt-0.5 h-4 w-4 shrink-0', ok ? 'text-success' : 'text-warning')}
-        aria-hidden
-      />
-      <div className="min-w-0 space-y-0.5">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="text-xs text-muted-foreground">{children}</p>
-      </div>
-    </div>
   )
 }
 

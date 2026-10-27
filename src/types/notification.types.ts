@@ -14,6 +14,11 @@ export type NotificationKind =
   // passou do fim e continua vigente.
   | 'contrato_vencendo'
   | 'contrato_vencido'
+  // Envio à D4Sign (migration 80): todos assinaram, cancelado no painel ou
+  // pelo prazo, e-mail de um signatário que voltou.
+  | 'assinatura_concluida'
+  | 'assinatura_cancelada'
+  | 'assinatura_email_falhou'
   | (string & {})
 
 export interface Notification {

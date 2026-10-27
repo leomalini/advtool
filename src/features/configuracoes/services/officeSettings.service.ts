@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { AI_FILE_TYPES, aiFileTypeFromName, sanitizeFileName } from '@/features/ia/files/constants'
+import type { D4SignFeatures, D4SignSafe, D4SignSafeMap } from '@/types/d4sign.types'
 import type { OfficeSettings, OfficeSettingsInput } from '@/types/officeSettings.types'
 
 const supabase = createClient()
@@ -70,6 +71,62 @@ export async function verifyInfinitePayHandle(handle: string): Promise<InfiniteP
     throw new Error(body?.error ?? 'Não foi possível verificar a conta agora.')
   }
   return body
+}
+
+/** Rota de D4Sign: o corpo de erro traz a frase para a tela. */
+async function d4signRoute<T>(url: string, init: RequestInit, fallback: string): Promise<T> {
+  const response = await fetch(url, init)
+  const body = (await response.json().catch(() => null)) as (T & { error?: string }) | null
+  if (!response.ok || !body) throw new Error(body?.error ?? fallback)
+  return body
+}
+
+/** Os cofres da conta — pela rota, porque as chaves da D4Sign só existem no
+ * servidor. Cada consulta gasta uma das 10 chamadas por hora. */
+export async function listD4SignSafes(): Promise<D4SignSafe[]> {
+  const body = await d4signRoute<{ safes: D4SignSafe[] }>(
+    '/api/assinaturas/d4sign/cofres',
+    { method: 'GET' },
+    'Não foi possível listar os cofres agora.',
+  )
+  return body.safes
+}
+
+/** O cofre de cada tipo de envio. Escolhido da lista que a D4Sign devolveu;
+ * nada a conferir no servidor — um UUID errado só faria a D4Sign recusar o
+ * envio. */
+export async function saveD4SignSafes(safes: D4SignSafeMap, userId: string): Promise<OfficeSettings> {
+  const { data, error } = await supabase
+    .from('office_settings')
+    .upsert({ id: ROW_ID, d4sign_safes: safes, updated_by: userId }, { onConflict: 'id' })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as OfficeSettings
+}
+
+/** Lê o saldo de envios na D4Sign e devolve a linha com ele guardado. */
+export async function refreshD4SignBalance(): Promise<OfficeSettings> {
+  const body = await d4signRoute<{ settings: OfficeSettings }>(
+    '/api/assinaturas/d4sign/saldo',
+    { method: 'POST' },
+    'Não foi possível consultar a D4Sign agora.',
+  )
+  return body.settings
+}
+
+/** Os recursos que o plano libera — só desta tela, a API não informa. */
+export async function saveD4SignFeatures(
+  features: D4SignFeatures,
+  userId: string,
+): Promise<OfficeSettings> {
+  const { data, error } = await supabase
+    .from('office_settings')
+    .upsert({ id: ROW_ID, d4sign_features: features, updated_by: userId }, { onConflict: 'id' })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as OfficeSettings
 }
 
 /** Falhar aqui deixa um arquivo órfão, bem menos grave que desfazer uma troca

@@ -8,6 +8,7 @@ import { useInvalidateFinancialSurfaces } from '@/features/financeiro/hooks/useF
 import { createFinancialEntries } from '@/features/financeiro/services/financialEntries.service'
 import { useAuth } from '@/hooks/useAuth'
 import type { ContractInput, UpdateContractInput } from '@/schemas/contract.schema'
+import { signatureGuardMessage } from '@/types/signature.types'
 import {
   CONTRACT_STATUS_LABELS,
   type ContractFileRole,
@@ -205,6 +206,9 @@ export function useDeleteContract() {
       toast.success('Contrato excluído.')
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : 'Erro ao excluir o contrato.'),
+      toast.error(
+        signatureGuardMessage(error) ??
+          (error instanceof Error ? error.message : 'Erro ao excluir o contrato.'),
+      ),
   })
 }

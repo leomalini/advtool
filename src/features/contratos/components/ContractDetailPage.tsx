@@ -39,6 +39,13 @@ import {
   useContractStatusChanges,
 } from '../hooks/useContracts'
 import { useDeleteContract } from '../hooks/useContractMutations'
+import { SendForSignatureDialog } from '@/features/assinaturas/components/SendForSignatureDialog'
+import { useContractSignatures } from '@/features/assinaturas/hooks/useSignatures'
+import {
+  OPEN_SIGNATURE_STATUSES,
+  UNFINISHED_SIGNATURE_STATUSES,
+} from '@/types/signature.types'
+import { ContractSignatureSection } from './ContractSignatureSection'
 import { buildContractEntryDrafts } from '../utils/contractEntries'
 import { ContractAssemblySteps, type AssemblyStep } from './ContractAssemblySteps'
 import { ContractEntriesDialog } from './ContractEntriesDialog'
@@ -82,9 +89,18 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   )
 }
 
-export function ContractDetailPage({ contractId }: { contractId: string }) {
+export function ContractDetailPage({
+  contractId,
+  signatureReady,
+}: {
+  contractId: string
+  /** As chaves da D4Sign estão no servidor (lido na página, sem valores). */
+  signatureReady: boolean
+}) {
   const router = useRouter()
   const { data: contract, isLoading, error } = useContract(contractId)
+  const { data: signatureRequests = [] } = useContractSignatures(contractId, signatureReady)
+  const [sendOpen, setSendOpen] = useState(false)
   const { data: statusChanges = [] } = useContractStatusChanges(contractId)
   const { data: parties = [] } = useContractParties(contractId)
   const { data: documents = [] } = useDocumentsForEntity({ contractId })
@@ -130,6 +146,14 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   const hasMinuta = documents.some((document) => document.contract_file_role === 'minuta')
   const partyNames = new Map(parties.map((party) => [party.id, party.name ?? party.role_label]))
   const assembling = contract.status === 'rascunho' || contract.status === 'aguardando_assinatura'
+  const hasOpenSignature = signatureRequests.some((request) =>
+    OPEN_SIGNATURE_STATUSES.includes(request.status),
+  )
+  // Um envio por vez: com um em andamento (ou parado num passo), o botão não
+  // abre outro — o que falhou continua ou é cancelado na seção Assinatura.
+  const canSendForSignature =
+    signatureReady &&
+    !signatureRequests.some((request) => UNFINISHED_SIGNATURE_STATUSES.includes(request.status))
 
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -241,7 +265,12 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
 
               <div className="flex flex-wrap items-center gap-2">
                 <Can resource="contratos" action="update">
-                  <ContractStatusActions contract={contract} onSigned={offerEntriesAfterSigning} />
+                  <ContractStatusActions
+                    contract={contract}
+                    onSigned={offerEntriesAfterSigning}
+                    onSendForSignature={canSendForSignature ? () => setSendOpen(true) : undefined}
+                    hasOpenSignature={hasOpenSignature}
+                  />
                   <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                     <Pencil className="h-3.5 w-3.5" />
                     Editar
@@ -304,6 +333,14 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
                   partyNames={partyNames}
                 />
               </div>
+              {signatureReady && (
+                <div id="assinatura" className="scroll-mt-4">
+                  <ContractSignatureSection
+                    contractId={contract.id}
+                    onSend={canSendForSignature ? () => setSendOpen(true) : undefined}
+                  />
+                </div>
+              )}
               {/* Sem ver o Financeiro, a RLS devolve a lista vazia: a seção
                   diria "nenhum lançamento" de um contrato que tem. */}
               <Can resource="financeiro" action="view">
@@ -389,6 +426,14 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
       </div>
 
       <ContractFormDialog open={editOpen} onOpenChange={setEditOpen} contract={contract} />
+
+      {signatureReady && (
+        <SendForSignatureDialog
+          open={sendOpen}
+          onOpenChange={setSendOpen}
+          target={{ kind: 'contract', contract, parties, documents }}
+        />
+      )}
 
       <GenerateDocumentDialog
         open={generateOpen}

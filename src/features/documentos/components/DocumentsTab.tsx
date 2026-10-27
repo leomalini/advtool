@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Download, FileText, Loader2, Trash2, Upload } from 'lucide-react'
+import { Download, FileText, Loader2, Signature, Trash2, Upload } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -30,6 +30,12 @@ import {
   useOpenDocument,
 } from '../hooks/useDocumentMutations'
 import { Can } from '@/components/shared/Can'
+import {
+  DocumentSignatureDialogs,
+  DocumentSignatureSealBadge,
+  canSendDocumentForSignature,
+  useDocumentSignatureSeals,
+} from '@/features/assinaturas/components/DocumentSignature'
 
 const ALL_CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 
@@ -89,6 +95,9 @@ export function DocumentsTab({
   const [category, setCategory] = useState<DocumentCategory>(defaultCategory)
   const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
   const [sizeError, setSizeError] = useState<string | null>(null)
+  const signature = useDocumentSignatureSeals()
+  const [sending, setSending] = useState<DocumentWithRelations | null>(null)
+  const [viewing, setViewing] = useState<DocumentWithRelations | null>(null)
 
   // Quem envia segue o dono do arquivo, como a RLS.
   const uploadPermission = documentPermission(
@@ -251,56 +260,91 @@ export function DocumentsTab({
         )
       ) : (
         <div className="space-y-2">
-          {documents.map((doc) => (
-            <div
-              key={doc.id}
-              className="flex items-center gap-3 rounded-lg border border-border p-3 group"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-[9px] font-bold text-muted-foreground">
-                {getFileExtension(doc.file_name)}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">{doc.file_name}</p>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                  <span>{DOCUMENT_CATEGORY_LABELS[doc.category]}</span>
-                  <span>·</span>
-                  <span>{formatFileSize(doc.file_size)}</span>
-                  <span>·</span>
-                  <span>{format(parseISO(doc.created_at), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                  {doc.uploader && (
-                    <>
-                      <span>·</span>
-                      <span className="truncate">{getDisplayName(doc.uploader.full_name)}</span>
-                    </>
-                  )}
+          {documents.map((doc) => {
+            const seal = signature.seals.get(doc.id)
+            const signedCopy =
+              seal?.kind === 'signed'
+                ? documents.find((item) => item.id === seal.signedDocumentId)
+                : undefined
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center gap-3 rounded-lg border border-border p-3 group"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-[9px] font-bold text-muted-foreground">
+                  {getFileExtension(doc.file_name)}
                 </div>
-              </div>
 
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  title="Abrir"
-                  onClick={() => openDocument.mutate(doc.file_path)}
-                  className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </button>
-                <Can {...documentPermission(doc, 'delete')}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{doc.file_name}</p>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                    <span>{DOCUMENT_CATEGORY_LABELS[doc.category]}</span>
+                    <span>·</span>
+                    <span>{formatFileSize(doc.file_size)}</span>
+                    <span>·</span>
+                    <span>{format(parseISO(doc.created_at), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                    {doc.uploader && (
+                      <>
+                        <span>·</span>
+                        <span className="truncate">{getDisplayName(doc.uploader.full_name)}</span>
+                      </>
+                    )}
+                    {seal && (
+                      <DocumentSignatureSealBadge
+                        seal={seal}
+                        onOpen={() => setViewing(doc)}
+                        onOpenSignedCopy={
+                          signedCopy ? () => openDocument.mutate(signedCopy.file_path) : undefined
+                        }
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-0.5 shrink-0">
                   <button
                     type="button"
-                    title="Excluir"
-                    onClick={() => setPendingDelete(doc)}
-                    className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Abrir"
+                    onClick={() => openDocument.mutate(doc.file_path)}
+                    className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Download className="w-3.5 h-3.5" />
                   </button>
-                </Can>
+                  {signature.ready && canSendDocumentForSignature(doc, seal) && (
+                    <Can resource="documentos" action="update">
+                      <button
+                        type="button"
+                        title="Enviar para assinatura"
+                        onClick={() => setSending(doc)}
+                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Signature className="w-3.5 h-3.5" />
+                      </button>
+                    </Can>
+                  )}
+                  <Can {...documentPermission(doc, 'delete')}>
+                    <button
+                      type="button"
+                      title="Excluir"
+                      onClick={() => setPendingDelete(doc)}
+                      className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Can>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
+
+      <DocumentSignatureDialogs
+        sending={sending}
+        onSendingChange={setSending}
+        viewing={viewing}
+        onViewingChange={setViewing}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}
