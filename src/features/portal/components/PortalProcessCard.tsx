@@ -30,9 +30,16 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
   return 'secondary'
 }
 
+/**
+ * As datas deste card são DIAS: `filing_date` é `date`, e `movement_date` é o
+ * dia gravado numa coluna timestamptz, que volta como meia-noite UTC (migration
+ * 72). Só o `yyyy-MM-dd` do começo entra no `parseISO`, que o lê como meia-noite
+ * local — o instante inteiro, convertido no fuso de quem está no Brasil, cairia
+ * no dia anterior.
+ */
 function formatDate(value: string): string {
   try {
-    return format(parseISO(value), "d 'de' MMMM 'de' yyyy", { locale: ptBR })
+    return format(parseISO(value.slice(0, 10)), "d 'de' MMMM 'de' yyyy", { locale: ptBR })
   } catch {
     return value
   }
@@ -41,7 +48,7 @@ function formatDate(value: string): string {
 /** Data curta para o resumo do card fechado, onde o espaço é de uma linha. */
 function formatShortDate(value: string): string {
   try {
-    return format(parseISO(value), "d 'de' MMM 'de' yyyy", { locale: ptBR })
+    return format(parseISO(value.slice(0, 10)), "d 'de' MMM 'de' yyyy", { locale: ptBR })
   } catch {
     return value
   }

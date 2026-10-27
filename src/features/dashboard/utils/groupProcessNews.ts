@@ -37,7 +37,10 @@ const RECENT_PER_PROCESS = 3
 function newsItem(movement: WebhookMovement): ProcessNewsItem {
   return {
     text: movement.title?.trim() || movement.description,
-    actDate: movement.movement_date,
+    // `movement_date` is the day stored as midnight UTC in a timestamptz
+    // (migration 72). Keep only the day: as an instant it would show the day
+    // before in Brazil.
+    actDate: movement.movement_date.slice(0, 10),
     receivedAt: movement.created_at,
   }
 }
