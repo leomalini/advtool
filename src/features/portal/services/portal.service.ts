@@ -5,6 +5,7 @@ import type {
   PortalPayload,
   PortalProcessTimeline,
 } from '@/types/clientPortal.types'
+import type { PortalAnswersResponse } from '../answers/portalAnswersSchema'
 
 /**
  * O acesso do cliente ao próprio andamento.
@@ -80,6 +81,29 @@ export async function getPortalProcessTimeline(
 }
 
 /** Confere o documento e, dando certo, ganha o cookie de sessão do portal. */
+/**
+ * As respostas das perguntas fixas de um processo. Só gera quando mudou o que
+ * a página mostra; quase sempre responde do banco. Falha vira `unavailable`:
+ * a seção some e o andamento continua na página.
+ */
+export async function getPortalAnswers(
+  token: string,
+  processId: string
+): Promise<PortalAnswersResponse> {
+  const response = await fetch(
+    `/api/portal/${encodeURIComponent(token)}/processos/${encodeURIComponent(processId)}/respostas`,
+    { method: 'POST', credentials: 'same-origin', cache: 'no-store' }
+  )
+
+  if (response.status === 401) {
+    const challenge = (await response.json()) as PortalChallenge
+    throw new PortalNeedsDocumentError(challenge)
+  }
+  if (!response.ok) return { status: 'unavailable' }
+
+  return (await response.json()) as PortalAnswersResponse
+}
+
 export async function verifyPortalDocument(token: string, document: string): Promise<void> {
   const response = await fetch(`/api/portal/${encodeURIComponent(token)}/verificar`, {
     method: 'POST',

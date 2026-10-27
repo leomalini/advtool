@@ -4,7 +4,7 @@
  * a reconhece (ver `ChatPanel`): texto fora desta lista vira a genérica.
  *
  * O cliente do portal nunca vê estas — chave, créditos e teto são assunto do
- * escritório. Ele tem as suas em `PORTAL_ASSISTANT_STREAM_ERRORS`.
+ * escritório. Para ele, as perguntas fixas só somem (`PortalAnswersResponse`).
  */
 export const AI_ERROR_MESSAGES = {
   generic: 'O assistente falhou ao responder. Tente de novo.',

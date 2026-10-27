@@ -74,6 +74,7 @@ import {
   useProcessSummary,
 } from '../hooks/useProcessSummary'
 import type { SummarySource } from '../summary/summarySchema'
+import { PortalAnswersReview } from '@/features/portal/components/PortalAnswersReview'
 import { findClientByDocument } from '@/features/clientes/services/clientes.service'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { CrmTag } from '@/schemas/crmItem.schema'
@@ -1073,6 +1074,16 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
             isRefreshing={isAutoRefreshing}
             onOpenSource={openSummarySource}
           />
+
+          {/* ── Portal do cliente: as respostas das perguntas fixas (D6) ──
+              Só com cliente: o portal é do cliente, e processo sem ele não
+              aparece em link nenhum. */}
+          {item?.client_id && (
+            <PortalAnswersReview
+              legalProcessId={processo.id}
+              canEdit={can('processos', 'update')}
+            />
+          )}
 
           {/* ── Cards de ação ── */}
           <div className="flex gap-4">

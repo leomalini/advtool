@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { refreshSummariesForRows } from '@/features/processos/summary/refreshProcessSummary'
+import { refreshPortalAnswersForMovements } from '@/features/portal/answers/ensurePortalAnswers'
 import { verifyWebhookAuth } from '@/lib/buscaprocessos/signature'
 import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
 import {
@@ -121,21 +122,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (replayOf) await markReplayed(supabase, replayOf)
 
     // Depois de responder: o resumo por IA dos processos que receberam algo
-    // novo, se já tinham resumo (fase 2b). A BuscaProcessos não espera por ele.
+    // novo, se já tinham resumo (fase 2b), e as respostas do portal do
+    // cliente, se já tinham respostas (fase 3). A BuscaProcessos não espera.
     const inserted = result.destinations.filter(
       (destination) => destination.action === 'inserted' && destination.id,
     )
     if (inserted.length > 0) {
-      after(() =>
-        refreshSummariesForRows({
-          movementIds: inserted
-            .filter((destination) => destination.table === 'legal_process_movements')
-            .map((destination) => destination.id as string),
-          publicationIds: inserted
-            .filter((destination) => destination.table === 'publications')
-            .map((destination) => destination.id as string),
-        }),
-      )
+      const movementIds = inserted
+        .filter((destination) => destination.table === 'legal_process_movements')
+        .map((destination) => destination.id as string)
+      const publicationIds = inserted
+        .filter((destination) => destination.table === 'publications')
+        .map((destination) => destination.id as string)
+      after(async () => {
+        await refreshSummariesForRows({ movementIds, publicationIds })
+        await refreshPortalAnswersForMovements(movementIds)
+      })
     }
 
     return NextResponse.json({
