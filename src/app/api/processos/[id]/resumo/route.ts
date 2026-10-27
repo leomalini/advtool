@@ -98,6 +98,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
         model: generated.modelId,
         generated_by: guard.userId,
         generated_at: new Date().toISOString(),
+        // Uma atualização automática em andamento perde a vez: este já é o novo.
+        refreshing_since: null,
       },
       { onConflict: 'legal_process_id' },
     )

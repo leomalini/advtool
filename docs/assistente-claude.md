@@ -439,11 +439,49 @@ pela página do processo.
   cliente passou pelo Claude e foi registrada, o que valida o portal na
   Fase 1.
 - **Em aberto:**
-  - O usuário disse ter gerado em alguns processos, mas só uma geração chegou
-    ao modelo. Se houve outras, elas falharam antes da resposta do Claude
-    (sem linha em `ai_usage`), e o motivo só aparece no log do servidor de
-    dev.
+  - O usuário confirmou que gerou só nesse processo.
   - A navegação pelos chips não foi conferida.
+- **Commit:** `ee4ebc7`.
+
+**Fase 2b — atualização automática (2026-10-27, mesma branch).**
+
+Decisões do usuário:
+
+- **Gatilho:** na chegada de movimentação e ao abrir o processo.
+- **Alcance:** só os processos que já têm resumo.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Reserva | migration 83 | `legal_process_summaries.refreshing_since`: quem vai refazer marca com um UPDATE condicional, e só um chamador simultâneo passa. A reserva vence em 5 min se a função morrer |
+| Regra | `summary/refreshProcessSummary.ts` | Refaz só se o processo já tem resumo, se chegou movimentação ou publicação depois dele e se o último tem mais de 15 min. Confere o teto do mês. Lê e grava pela service_role, com `generated_by` nulo. Nunca lança: devolve o desfecho (`refreshed`, ou `skipped` com o motivo, ou `failed`) |
+| Na chegada | webhook da BuscaProcessos e `POST /api/buscaprocessos/sync` | Depois de responder (`after()`, `maxDuration` 120), refaz os processos das linhas inseridas. No sync, só quando as movimentações foram consultadas |
+| Ao abrir | `POST /api/processos/[id]/resumo/atualizar` + `ProcessoDetailPage` | Com novidades depois do resumo, a página pede uma vez por visita. Basta `processos:view`: a regra limita o gasto. O aviso de novidades vira "Atualizando…" enquanto isso. Se outra atualização está em curso, relê em 30 s |
+
+O que sobra de uma rajada (movimentações chegando dentro dos 15 minutos) se
+refaz na próxima chegada ou quando alguém abrir o processo.
+
+Verificado:
+
+- tsc, lint e build.
+- Com dados reais e sem gravar:
+  - processo sem resumo é pulado;
+  - processo com resumo e sem novidade sai como "em dia".
+
+**Teste completo (2026-10-27, migration 83 aplicada pelo usuário):** o teste
+tornou velho o resumo do 5015529 e disparou duas atualizações ao mesmo tempo.
+Passou em 4 de 4 checagens:
+
+- uma refez e a outra saiu como `busy`;
+- o resumo foi gravado sem autor e com a reserva liberada;
+- logo depois, sem novidade, saiu como "em dia";
+- processo sem resumo é pulado.
+
+Em `ai_usage` entrou **uma** geração só (R$ 0,19): a reserva evitou a
+segunda. O resumo novo tem 13 fontes, todas no banco, e 20 citações, sem
+nenhuma inexistente.
+
+**Não verificado:** uma entrega real do webhook disparando a atualização, e o
+"Atualizando…" na tela logada.
 
 ### Fase 3 — Portal com perguntas fixas (migration nova)
 

@@ -28,6 +28,10 @@ interface ResumoIaCardProps {
   canGenerate: boolean
   onGenerate: () => void
   isGenerating: boolean
+  /** A atualização automática ao abrir (fase 2b) está em curso. Aparece só no
+   * aviso de novidades: na maior parte das vezes o servidor responde em
+   * instantes que não vai refazer, e o card não deve piscar. */
+  isRefreshing: boolean
   /** Leva ao item da linha do tempo que a referência cita. */
   onOpenSource: (source: SummarySource) => void
 }
@@ -90,6 +94,7 @@ export function ResumoIaCard({
   canGenerate,
   onGenerate,
   isGenerating,
+  isRefreshing,
   onOpenSource,
 }: ResumoIaCardProps) {
   const [expanded, setExpanded] = useState(false)
@@ -139,7 +144,7 @@ export function ResumoIaCard({
               <button
                 type="button"
                 onClick={onGenerate}
-                disabled={isGenerating}
+                disabled={isGenerating || isRefreshing}
                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground underline underline-offset-4 decoration-info/50 hover:decoration-info disabled:opacity-60"
               >
                 {isGenerating ? (
@@ -163,11 +168,20 @@ export function ResumoIaCard({
         )}
 
         {summary && newSinceSummary > 0 && !isGenerating && (
-          <p className="mt-3 rounded-md bg-info/10 px-3 py-2 text-xs text-foreground">
-            {newSinceSummary === 1
-              ? '1 movimentação ou publicação chegou depois deste resumo.'
-              : `${newSinceSummary} movimentações ou publicações chegaram depois deste resumo.`}
-            {canGenerate && ' Use “Atualizar” para incluí-las.'}
+          <p className="mt-3 flex items-center gap-1.5 rounded-md bg-info/10 px-3 py-2 text-xs text-foreground">
+            {isRefreshing ? (
+              <>
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                Atualizando o resumo com as novidades…
+              </>
+            ) : (
+              <span>
+                {newSinceSummary === 1
+                  ? '1 movimentação ou publicação chegou depois deste resumo.'
+                  : `${newSinceSummary} movimentações ou publicações chegaram depois deste resumo.`}
+                {canGenerate && ' Use “Atualizar” para incluí-las.'}
+              </span>
+            )}
           </p>
         )}
 

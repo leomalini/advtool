@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
@@ -68,7 +68,11 @@ import {
   useSyncProcesso,
   useSetProcessMonitoring,
 } from '../hooks/useLegalProcessMutations'
-import { useGenerateProcessSummary, useProcessSummary } from '../hooks/useProcessSummary'
+import {
+  useAutoRefreshProcessSummary,
+  useGenerateProcessSummary,
+  useProcessSummary,
+} from '../hooks/useProcessSummary'
 import type { SummarySource } from '../summary/summarySchema'
 import { findClientByDocument } from '@/features/clientes/services/clientes.service'
 import { getCrmItemClientName } from '@/types/crmItem.types'
@@ -500,6 +504,10 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const syncProcess = useSyncProcesso()
   const { data: processSummary = null } = useProcessSummary(processoId)
   const generateSummary = useGenerateProcessSummary(processoId)
+  const { mutate: autoRefreshSummary, isPending: isAutoRefreshing } =
+    useAutoRefreshProcessSummary(processoId)
+  /** Processo cuja atualização automática já foi pedida nesta visita. */
+  const autoRefreshRequestedFor = useRef<string | null>(null)
   const setMonitoring = useSetProcessMonitoring(processoId)
   const markMovement = useMarkMovement()
   const setMovementVisibility = useSetMovementClientVisibility()
@@ -662,6 +670,14 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
       (entry) => new Date(entry.created_at).getTime() > since,
     ).length
   }, [processSummary, processo])
+
+  // Resumo com novidades depois dele: pede a atualização automática uma vez
+  // por visita (fase 2b). O servidor decide se refaz — no máximo a cada 15 min.
+  useEffect(() => {
+    if (newSinceSummary === 0 || autoRefreshRequestedFor.current === processoId) return
+    autoRefreshRequestedFor.current = processoId
+    autoRefreshSummary()
+  }, [newSinceSummary, processoId, autoRefreshSummary])
 
   /** Referência do resumo → item da linha do tempo: tira filtro e busca, vai à
    * página do item e o destaca. */
@@ -1054,6 +1070,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
             canGenerate={can('processos', 'update')}
             onGenerate={() => generateSummary.mutate()}
             isGenerating={generateSummary.isPending}
+            isRefreshing={isAutoRefreshing}
             onOpenSource={openSummarySource}
           />
 
