@@ -1,10 +1,10 @@
 # Assistente com Claude
 
 > **Status:** plano aprovado em 2026-10-26 (recomendações D1–D7). **Fase 1**
-> implementada na branch `feat/ia-claude-base`. A migration 81 **não** foi
-> aplicada. A validação com perguntas reais depende da chave (Fase 0). Ver
-> "Como ficou" na Fase 1. Os custos são **estimativas**; a seção "Custos" diz
-> de onde vem cada número e o que falta medir.
+> na branch `feat/ia-claude-base`, enviada ao GitHub. Migration 81 aplicada no
+> remoto. O caminho principal do chat foi validado com perguntas reais em
+> 2026-10-26; faltam alguns casos (ver "Validação real" na Fase 1). Os custos
+> de chat foram medidos ("Medido na Fase 1"); os demais seguem estimativas.
 
 Pedido (2026-10-26):
 
@@ -109,6 +109,53 @@ A cada **1.000 perguntas por mês** (exemplo: 3 pessoas × 15 por dia útil), co
 O prefixo é igual para todos os usuários, então uma escrita de cache serve à
 equipe toda. O cache vence depois de 5 minutos sem uso, e cada uso renova o
 prazo.
+
+### Medido na Fase 1 (chat, 2026-10-26)
+
+4 perguntas reais em 2 conversas, 8 chamadas, lidas em `ai_usage`:
+
+| Pergunta | Chamadas | Saída (raciocínio) | US$ | R$ |
+|---|---|---|---|---|
+| 1ª do dia, sem cache: resumo das últimas movimentações | 2 | 1.356 (226) | 0,186 | 1,02 |
+| Gerar documento com modelo (lista os modelos) | 2 | 869 (89) | 0,035 | 0,19 |
+| Dados do documento (busca o cliente) | 2 | 618 (147) | 0,029 | 0,16 |
+| Completar os dados e gerar o documento | 2 | 873 (0) | 0,035 | 0,19 |
+| **Total** | **8** | **3.716** | **0,284** | **1,56** |
+
+O que mudou em relação à estimativa:
+
+- **O prefixo tem ~25,4 mil tokens, não 15 mil.** São ~1,9 caracteres por
+  token nas instruções e nos esquemas das tools, não 3,2. As tools são a maior
+  parte.
+- **2 chamadas por pergunta, não 3.** A saída ficou entre 0,6 e 1,4 mil
+  tokens, com pouco raciocínio: de 0 a 150 tokens por chamada em `medium`.
+- **Pergunta com o cache quente: R$ 0,16 a 0,19**, quase metade do estimado
+  (R$ 0,32).
+- **Pergunta fria: R$ 1,02**, mais que o estimado (R$ 0,74). Quase tudo é a
+  escrita do prefixo de 25 mil tokens no cache: US$ 0,128.
+- **84% da entrada veio do cache.** O prefixo escrito pela 1ª conversa foi
+  lido pela 2ª um minuto depois, então o cache é dividido entre conversas e
+  pessoas. O histórico também: a 2ª pergunta de uma conversa leu o 1º turno
+  do cache.
+
+A cada 1.000 perguntas por mês, o custo depende de quantas são frias, isto é,
+feitas mais de 5 minutos depois do último uso de alguém do escritório:
+
+- Com 30% frias: ≈ US$ 79 (R$ 435).
+- Com 70% frias (uso espaçado): ≈ US$ 140 (R$ 770).
+
+O que isso muda nas alavancas:
+
+- **O custo pesado é a pergunta fria.** Há duas saídas:
+  - **TTL de 1 hora no prefixo.** A escrita custa US$ 8 por milhão (US$ 0,20
+    por escrita) e vale por uma hora. Compensa a partir de 2 perguntas frias
+    por hora.
+  - **Tools sob demanda** (`defer_loading`), para encolher os 25 mil tokens.
+
+  Medir a proporção de frias numa semana de uso antes de escolher.
+- **Esforço `low` no chat rende pouco.** O raciocínio já é curto em `medium`
+  (≤ 150 tokens por chamada, menos de US$ 0,003). Não compensa o risco de
+  conferir menos.
 
 ### Resumo do processo, por resumo
 
@@ -262,13 +309,27 @@ Verificado:
   - o teto: liberado, estourado e valor inválido;
   - o mapeamento dos erros.
 
-**Não verificado:**
+**Validação real (2026-10-26):** chave nova e migration 81 aplicada pelo
+usuário. O usuário fez 4 perguntas no `/ia`; os números estão em "Medido na
+Fase 1".
 
-- Chamada real ao Claude. A chave do `.env` voltou 401.
-- As 10 perguntas da verificação.
-- O comportamento do `drop_block` na API.
-- O chat na tela, que exige login.
-- A migration 81 aplicada.
+- **Funciona:**
+  - chamada real ao `claude-opus-5-5`;
+  - registro em `ai_usage` (8 de 8 chamadas, com custo);
+  - cache do prefixo entre conversas e do histórico entre turnos;
+  - conversa de vários turnos com o raciocínio anterior no histórico, sem
+    400;
+  - cinco tools: `listar_publicacoes`, `buscar_processos`, `listar_modelos`,
+    `buscar_clientes` e `gerar_documento_de_modelo`.
+- **Ainda não exercitado (para fechar a fase):**
+  - pergunta com anexo seguida de outra pergunta na mesma conversa. É o caso
+    em que o histórico muda e o `drop_block` entra;
+  - ação com confirmação (criar tarefa, por exemplo);
+  - leitura de documentos (Contratos) e "Redigir com IA". Nenhuma linha de
+    `contract_reader` ou `drafting` ainda;
+  - o chat do portal;
+  - o teto com valor em `AI_MONTHLY_BUDGET_USD`;
+  - continuar uma conversa antiga, do tempo do Gemini.
 
 ### Fase 2 — Resumo do processo com Claude
 
@@ -284,6 +345,40 @@ Verificado:
   4. Linguagem.
 - Aceite: nenhum fato inventado, e o Claude melhor ou igual em pelo menos 4
   de 5 processos. Custo esperado da validação: menos de R$ 5.
+
+**Como ficou a validação (2026-10-27) — aguardando a avaliação do advogado:**
+
+- **Onde está:** o prompt, o esquema e a montagem dos dados estão em
+  `processSummary.ts` no scratchpad da sessão, e vão para
+  `src/features/processos/summary/` se aprovado. A comparação ficou em
+  `comparacao-resumos-medium.html`.
+- **Configuração:** `claude-opus-5-5`, esforço `medium`, uma chamada por
+  processo, só leitura no banco.
+- **Custo:** R$ 0,18 a 0,44 por resumo (média R$ 0,31), 9 a 19 s. As duas
+  rodadas custaram R$ 3,12.
+- **Checagem automática:** toda fonte citada existe e toda data confere com a
+  fonte, nos 5 processos.
+- **Leitura prévia (de quem montou, não do advogado):**
+  - **5017689: a BuscaProcessos está errada.** Ela diz que o pedido de efeito
+    suspensivo não foi decidido. A publicação de 27/08 traz "Pelo exposto,
+    DEFIRO o pedido de atribuição de efeito suspensivo". O Claude acertou.
+  - **5021684 e 5015526:** o resumo da BuscaProcessos é anterior a decisões e
+    prazos que o Claude já mostra (tutela deferida e suspensão pelo Tema 1.436
+    do STJ; decurso do prazo de custas).
+  - **5022806 e 5015528:** equivalentes; o Claude é mais detalhado.
+- **Limite dos dados:** o Claude só tem o título das movimentações e o texto
+  das publicações, não os autos, e diz quando algo não consta.
+- **Diferença de público:** a BuscaProcessos escreve para leigo ("Situação
+  agora: …"); o Claude, para advogado.
+- **Duas correções na 1ª rodada:**
+  - **Fuso:** `movement_date` guarda o DIA como meia-noite UTC (migration 72).
+    Formatado em Brasília, cai no dia anterior, então o 1º rascunho mandou
+    todas as datas com um dia a menos. O app faz certo nas telas internas
+    (`iso.slice(0, 10)`), mas o **portal tinha esse erro**: `PortalProcessCard`
+    e `formatOfficeDate` do chat do portal, além do card de monitoramento do
+    dashboard. Corrigido à parte na branch `fix/portal-movement-day`.
+  - **Prompt:** a 1ª frase do resumo passou a situar o caso (quem contra quem,
+    objeto, valor). Antes ele omitia isso para "não repetir a capa".
 
 **Se aprovado:**
 
@@ -303,6 +398,52 @@ Verificado:
   R$ 0,12 por processo.
 - **Fica fora do portal:** o resumo interno pode usar dado interno
   (publicações ocultas, tarefas). Por isso **não** é reaproveitado lá.
+
+**Como ficou a 2a (2026-10-27, branch `feat/resumo-processo-claude`, empilhada
+na Fase 1).** O usuário mandou seguir ("continue o plano") depois da
+comparação. A fase foi dividida em duas partes:
+
+- **2a, feita:** gerar sob demanda, guardar, mostrar e parar de pagar o resumo
+  da BuscaProcessos.
+- **2b, a fazer:** atualizar sozinho, em lote, quando chega movimentação nova.
+  Falta decidir o gatilho, e o repo não tem cron.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Tabela | migration 82 | `legal_process_summaries`: uma linha por processo, com `summary` (jsonb), `sources` (o que cada referência era: tipo, id, data, rótulo), modelo, quem gerou e quando. RLS: lê `processos:view`, grava `processos:update`. Também libera a rota `process_summary` em `ai_usage` |
+| Módulo | `features/processos/summary/` | Prompt e esquema validados; `buildSummaryInput` (lê `movement_date` como dia); `cleanCitations` (tira referência inexistente e loga datas que não batem); `loadSummaryData`; `generateProcessSummary` |
+| Rota | `POST /api/processos/[id]/resumo` | `processos:update`, teto do mês, dados e gravação com o client de quem pede, consumo em `ai_usage` com a rota `process_summary` (Opus 5.5, `medium`) |
+| Card | `ResumoIaCard.tsx` | Fase, último ato, parágrafos, pontos de atenção e próximos passos, cada um com chips de fonte. O mouse mostra a fonte; o clique em M#/P# leva ao item da linha do tempo (zera filtro e busca, vai à página, destaca). Avisa quantas movimentações e publicações chegaram depois do resumo. Sem resumo novo, mostra o da BuscaProcessos marcado como antigo. "Gerar/Atualizar" só para quem pode editar o processo |
+| Sync | `lib/buscaprocessos/sync.ts` | `DEFAULT_SYNC_BLOCKS` sem `resumo_ia`: processo novo deixa de pagar R$ 0,12 pelo resumo da BuscaProcessos |
+| Assistente | `detalhar_processo` | Devolve o resumo do Claude quando existe; senão, o antigo, com a origem dita |
+
+Verificado:
+
+- tsc, lint e build.
+- Os módulos reais de `src` com o Claude, num processo de 45 movimentações:
+  gerado em 20 s, sem referência inexistente.
+- O card renderizado em 13 de 13 checagens: chips, aviso de novidades, estado
+  vazio, resumo antigo e sem botão para quem não pode editar.
+
+**Na tela (2026-10-27):** o usuário aplicou a migration 82 e gerou o resumo
+pela página do processo.
+
+- **Gravado:**
+  - 1 resumo (processo 5015529, às 10:24): 13 fontes, todas ainda no banco;
+  - 17 citações, nenhuma inexistente;
+  - data do último ato igual à da fonte;
+  - `generated_by` preenchido.
+- **Consumo:** 1 linha `process_summary` em `ai_usage`, com 3.347 tokens de
+  entrada e 1.083 de saída (257 de raciocínio). Custou US$ 0,035 (R$ 0,19).
+- **De quebra:** às 09:44 houve 2 chamadas na rota `portal`. Uma pergunta de
+  cliente passou pelo Claude e foi registrada, o que valida o portal na
+  Fase 1.
+- **Em aberto:**
+  - O usuário disse ter gerado em alguns processos, mas só uma geração chegou
+    ao modelo. Se houve outras, elas falharam antes da resposta do Claude
+    (sem linha em `ai_usage`), e o motivo só aparece no log do servidor de
+    dev.
+  - A navegação pelos chips não foi conferida.
 
 ### Fase 3 — Portal com perguntas fixas (migration nova)
 

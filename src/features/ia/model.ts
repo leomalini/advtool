@@ -16,18 +16,21 @@ export type AssistantProvider = 'google' | 'anthropic'
  *
  * Esforço: no Opus 5.5 o raciocínio não desliga, e o esforço é o controle de
  * quanto ele pensa — o item mais caro, porque é cobrado como saída.
- * - `medium` (o padrão do modelo) no chat, na leitura e na redação. Segundo a
- *   Anthropic, o Opus 5.5 em `medium` supera o Opus 5 em `high`; subir só com
- *   medida que mostre ganho.
+ * - `medium` (o padrão do modelo) no chat, na leitura, na redação e no resumo
+ *   do processo. Segundo a Anthropic, o Opus 5.5 em `medium` supera o Opus 5
+ *   em `high`; subir só com medida que mostre ganho. O resumo foi validado lado
+ *   a lado nesta configuração (R$ 0,18 a 0,44 por processo).
  * - `low` no portal: resposta curta, sobre um recorte pequeno.
  *
- * Rota nova precisa entrar também no `check` de `ai_usage.route` (migration 81).
+ * Rota nova precisa entrar também no `check` de `ai_usage.route` (migrations
+ * 81 e 82).
  */
 export const AI_ROUTE_SETTINGS = {
   chat: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
   portal: { anthropicModel: 'claude-opus-5-5', effort: 'low' },
   contract_reader: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
   drafting: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
+  process_summary: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
 } as const satisfies Record<string, { anthropicModel: string; effort: AnthropicEffort }>
 
 export type AiRoute = keyof typeof AI_ROUTE_SETTINGS

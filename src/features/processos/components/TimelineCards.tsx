@@ -29,16 +29,32 @@ function formatDate(iso: string | null): string {
   }
 }
 
-export function PublicacaoTimelineCard({ publicacao }: { publicacao: Publication }) {
+/** Destaque do item que uma referência do resumo por IA mandou abrir. */
+export const TIMELINE_FOCUS_CLASS = 'ring-2 ring-inset ring-info/60'
+
+/** Âncora do item na linha do tempo — o alvo do clique numa referência do resumo. */
+export function timelineEntryAnchor(id: string): string {
+  return `timeline-entry-${id}`
+}
+
+export function PublicacaoTimelineCard({
+  publicacao,
+  focused = false,
+}: {
+  publicacao: Publication
+  focused?: boolean
+}) {
   const unread = !publicacao.read_at
 
   return (
     <Link
+      id={timelineEntryAnchor(publicacao.id)}
       href={`/publicacoes/${publicacao.id}`}
       className={cn(
         'group flex gap-4 border-l-2 p-4 transition-colors',
         'bg-info/[0.05] hover:bg-info/[0.09]',
         unread ? 'border-l-warning' : 'border-l-info/60',
+        focused && TIMELINE_FOCUS_CLASS,
       )}
     >
       <div className="flex w-[92px] shrink-0 flex-col">

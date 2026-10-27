@@ -26,6 +26,19 @@ import type { BpDocumentoPublico, BpMovimentacao } from './types'
 export const SYNC_BLOCKS = ['capa', 'movimentacoes', 'documentos', 'resumo_ia'] as const
 export type SyncBlock = (typeof SYNC_BLOCKS)[number]
 
+/**
+ * O que a sincronização busca quando ninguém diz quais blocos. Sem o
+ * `resumo_ia`: o resumo do processo agora é do Claude, com fontes
+ * (`legal_process_summaries`, docs/assistente-claude.md fase 2), e pagar
+ * R$ 0,12 pelo da BuscaProcessos em cada processo novo não compra nada. O
+ * bloco segue disponível para quem o pedir pelo nome.
+ */
+export const DEFAULT_SYNC_BLOCKS = [
+  'capa',
+  'movimentacoes',
+  'documentos',
+] as const satisfies readonly SyncBlock[]
+
 /** Preço-base por consulta, em BRL, conforme a tabela da API. Serve para
  * informar o custo estimado, não para faturar. */
 export const BLOCK_COST: Record<SyncBlock, number> = {
@@ -77,7 +90,7 @@ interface SyncInput {
 
 export async function syncProcessoFromBp(
   supabase: SupabaseClient,
-  { legalProcessId, cnj, blocks = SYNC_BLOCKS, force = false, assumeFresh = [] }: SyncInput,
+  { legalProcessId, cnj, blocks = DEFAULT_SYNC_BLOCKS, force = false, assumeFresh = [] }: SyncInput,
 ): Promise<SyncResult> {
   const result: SyncResult = {
     synced: [],
