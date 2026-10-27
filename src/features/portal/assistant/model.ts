@@ -1,8 +1,10 @@
 import { createAssistantModel, type AssistantModelResult } from '@/features/ia/model'
+import type { UsageScope } from '@/features/ia/usage/recordUsage'
 
 /**
  * O modelo do assistente do portal — o mesmo provedor do Assistente interno
- * (`AI_ASSISTANT_PROVIDER`), com a mesma chave e a mesma cota.
+ * (`AI_ASSISTANT_PROVIDER`), com a mesma chave, na rota `portal` (esforço e
+ * consumo próprios, ver `AI_ROUTE_SETTINGS`).
  *
  * Liga sozinho quando o provedor está configurado, como o Assistente da
  * equipe: exigir mais uma variável para "ligar" fazia a página abrir sem o
@@ -14,11 +16,11 @@ import { createAssistantModel, type AssistantModelResult } from '@/features/ia/m
  * não consegue contar o limite de uso e responde "indisponível" (o motivo fica
  * no log `[portal-ia]`).
  */
-export function createPortalAssistantModel(): AssistantModelResult {
+export function createPortalAssistantModel(scope: UsageScope = {}): AssistantModelResult {
   if (process.env.PORTAL_ASSISTANT_ENABLED?.trim().toLowerCase() === 'false') {
     return { ok: false, reason: 'PORTAL_ASSISTANT_ENABLED=false.' }
   }
-  return createAssistantModel()
+  return createAssistantModel('portal', scope)
 }
 
 export function isPortalAssistantEnabled(): boolean {

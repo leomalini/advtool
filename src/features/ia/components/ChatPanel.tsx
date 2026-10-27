@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES } from '../tools/actions'
+import { AI_ERROR_MESSAGES } from '../errorMessages'
 import { AI_FILE_ACCEPT } from '../files/constants'
 import { useChatAttachments } from '../hooks/useChatAttachments'
 import { useExecuteAction, type PendingAction } from '../hooks/useExecuteAction'
@@ -41,6 +42,31 @@ function hasPendingAction(messages: AssistantUIMessage[]): boolean {
       (ACTION_TOOL_NAMES as string[]).includes(getToolName(part)) &&
       part.state === 'input-available',
   )
+}
+
+const KNOWN_ERROR_MESSAGES: readonly string[] = Object.values(AI_ERROR_MESSAGES)
+
+/**
+ * O que dizer quando o turno falha.
+ *
+ * Falha no meio da resposta chega com uma das mensagens de `AI_ERROR_MESSAGES`
+ * (a rota escolhe pela causa: chave, créditos, limite, recusa). Recusa da rota
+ * antes do modelo (teto do mês, provedor não configurado) chega com o corpo
+ * JSON como mensagem do erro. Qualquer outra coisa — rede, erro do navegador —
+ * vira a genérica.
+ */
+function chatErrorMessage(error: Error): string {
+  if (KNOWN_ERROR_MESSAGES.includes(error.message)) return error.message
+
+  try {
+    const body: unknown = JSON.parse(error.message)
+    if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
+      return body.error
+    }
+  } catch {
+    // Não é JSON: a falha foi fora da rota.
+  }
+  return AI_ERROR_MESSAGES.generic
 }
 
 interface ChatPanelProps {
@@ -228,9 +254,7 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
         )}
 
         {error && (
-          <p className="text-sm text-destructive text-center">
-            O assistente falhou ao responder. Tente de novo.
-          </p>
+          <p className="text-sm text-destructive text-center">{chatErrorMessage(error)}</p>
         )}
         <div ref={bottomRef} />
       </div>

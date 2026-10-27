@@ -17,9 +17,11 @@ import {
 } from '@/lib/clientPortal/chat'
 import { getPortalProcesses } from '@/lib/clientPortal/data'
 import { hasVisibleContent } from '@/features/ia/utils/messageContent'
-import { isProviderQuotaError } from '@/features/ia/providerErrors'
+import { withHistoryBreakpoint } from '@/features/ia/promptCache'
+import { isProviderQuotaError, refusalAsError } from '@/features/ia/providerErrors'
+import { checkAiBudget } from '@/features/ia/usage/budget'
 import { createPortalAssistantModel } from '@/features/portal/assistant/model'
-import { buildPortalAssistantPrompt } from '@/features/portal/assistant/prompt'
+import { buildPortalAssistantInstructions } from '@/features/portal/assistant/prompt'
 import {
   createPortalAssistantTools,
   type PortalAssistantUIMessage,
@@ -61,7 +63,7 @@ function unavailable() {
  *
  * A ordem das checagens é a do custo: link e cookie de documento
  * (`requirePortalSession`, o mesmo porteiro das outras rotas do portal), a
- * chave que liga o assistente e o limite de uso — tudo ANTES de qualquer
+ * chave que liga o assistente, o limite de uso e o teto do mês — tudo ANTES de qualquer
  * chamada ao modelo, porque recusar depois já teria gastado cota.
  *
  * O que o modelo vê é o que a página mostra, e só isso: a lista de
@@ -86,13 +88,6 @@ export async function POST(
 
   const { link, client } = guard
 
-  const assistantModel = createPortalAssistantModel()
-  if (!assistantModel.ok) {
-    // O motivo cita variável de ambiente: vai para o log, não para o cliente.
-    console.error('[portal-ia] assistente indisponível:', assistantModel.reason)
-    return unavailable()
-  }
-
   const parsed = bodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
     return NextResponse.json(
@@ -102,6 +97,13 @@ export async function POST(
   }
   const { conversationId, text } = parsed.data
 
+  const assistantModel = createPortalAssistantModel({ portalLinkId: link.id, conversationId })
+  if (!assistantModel.ok) {
+    // O motivo cita variável de ambiente: vai para o log, não para o cliente.
+    console.error('[portal-ia] assistente indisponível:', assistantModel.reason)
+    return unavailable()
+  }
+
   const quota = await checkPortalChatQuota(link.id)
   if (!quota.ok) {
     if (quota.reason === 'error') return unavailable()
@@ -110,6 +112,11 @@ export async function POST(
       { status: 429, headers: NO_STORE }
     )
   }
+
+  // O teto do escritório é assunto do escritório: para o cliente, só
+  // "indisponível" (o motivo fica no log `[ia-teto]`).
+  const budget = await checkAiBudget()
+  if (!budget.ok) return unavailable()
 
   // As duas funções já registram o motivo no log quando falham.
   const loaded = await Promise.all([
@@ -175,8 +182,12 @@ export async function POST(
 
   const result = streamText({
     model: assistantModel.model,
-    system: buildPortalAssistantPrompt(new Date(), processes),
+    instructions: buildPortalAssistantInstructions(new Date(), processes),
     messages: modelMessages,
+    prepareStep: ({ messages: stepMessages }) => ({
+      messages: withHistoryBreakpoint(stepMessages),
+    }),
+    experimental_transform: refusalAsError(),
     tools,
     stopWhen: stepCountIs(MAX_STEPS),
     providerOptions: assistantModel.providerOptions,

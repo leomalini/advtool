@@ -12,11 +12,15 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
 import { ensureConversation } from '@/features/ia/conversation'
+import { AI_ERROR_MESSAGES } from '@/features/ia/errorMessages'
 import { createAiFileDownload } from '@/features/ia/files/download'
 import { InvalidAttachmentError, prepareMessagesForModel } from '@/features/ia/files/prepareMessages'
 import { createAssistantModel } from '@/features/ia/model'
-import { buildSystemPrompt } from '@/features/ia/prompts/system'
+import { withHistoryBreakpoint } from '@/features/ia/promptCache'
+import { buildSystemInstructions } from '@/features/ia/prompts/system'
+import { providerErrorMessage, refusalAsError } from '@/features/ia/providerErrors'
 import { createAssistantTools, type AssistantUIMessage } from '@/features/ia/tools'
+import { checkAiBudget } from '@/features/ia/usage/budget'
 import { hasVisibleContent } from '@/features/ia/utils/messageContent'
 
 /** Segundos. Um turno com várias consultas e raciocínio passa fácil de um
@@ -99,8 +103,14 @@ export async function POST(request: Request) {
   const guard = await requirePermissionApi('ia')
   if (!guard.ok) return guard.response
 
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Requisição inválida.' }, { status: 400 })
+  }
+  const { conversationId } = parsed.data
+
   // Antes de tocar no banco: sem provedor configurado não há o que fazer.
-  const assistantModel = createAssistantModel()
+  const assistantModel = createAssistantModel('chat', { userId: guard.userId, conversationId })
   if (!assistantModel.ok) {
     return NextResponse.json(
       { error: `Assistente não configurado: ${assistantModel.reason}` },
@@ -108,11 +118,16 @@ export async function POST(request: Request) {
     )
   }
 
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null))
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Requisição inválida.' }, { status: 400 })
+  const budget = await checkAiBudget()
+  if (!budget.ok) {
+    return NextResponse.json(
+      {
+        error:
+          budget.reason === 'exceeded' ? AI_ERROR_MESSAGES.budget : AI_ERROR_MESSAGES.unavailable,
+      },
+      { status: 503 },
+    )
   }
-  const { conversationId } = parsed.data
 
   const supabase = await createClient()
 
@@ -170,11 +185,16 @@ export async function POST(request: Request) {
 
   const result = streamText({
     model: assistantModel.model,
-    system: buildSystemPrompt(new Date()),
+    instructions: buildSystemInstructions(new Date()),
     messages: modelMessages,
+    // A cada passo, a marca de cache vai para o fim do histórico que cresce.
+    prepareStep: ({ messages: stepMessages }) => ({
+      messages: withHistoryBreakpoint(stepMessages),
+    }),
     // Anexo `ai-file://` → bucket, com a RLS de quem pergunta. Qualquer outra
     // URL é recusada (ver createAiFileDownload).
     experimental_download: createAiFileDownload(supabase),
+    experimental_transform: refusalAsError(),
     tools,
     stopWhen: stepCountIs(MAX_STEPS),
     providerOptions: assistantModel.providerOptions,
@@ -215,7 +235,8 @@ export async function POST(request: Request) {
         console.error('[ia] updated_at da conversa falhou:', touchError.code, touchError.message)
       }
     },
-    // Detalhe do erro fica no log (onError do streamText), não no chat.
-    onError: () => 'O assistente falhou ao responder. Tente de novo.',
+    // Detalhe do erro fica no log (onError do streamText); o chat recebe uma
+    // das mensagens de AI_ERROR_MESSAGES (chave, créditos, limite, recusa…).
+    onError: (error) => providerErrorMessage(error),
   })
 }

@@ -3,8 +3,10 @@ import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
+import { AI_ERROR_MESSAGES } from '@/features/ia/errorMessages'
 import { createAssistantModel } from '@/features/ia/model'
-import { isProviderQuotaError } from '@/features/ia/providerErrors'
+import { providerErrorKind } from '@/features/ia/providerErrors'
+import { checkAiBudget } from '@/features/ia/usage/budget'
 import {
   DRAFT_MAX_DOCUMENTS,
   DRAFT_MAX_FIELDS,
@@ -49,10 +51,17 @@ export async function POST(request: Request) {
   const guard = await requirePermissionApi('ia')
   if (!guard.ok) return guard.response
 
-  const assistantModel = createAssistantModel()
+  const assistantModel = createAssistantModel('drafting', { userId: guard.userId })
   if (!assistantModel.ok) {
     console.error('[modelos] IA indisponível:', assistantModel.reason)
     return jsonError('A IA não está configurada neste ambiente.', 503)
+  }
+  const budget = await checkAiBudget()
+  if (!budget.ok) {
+    return jsonError(
+      budget.reason === 'exceeded' ? AI_ERROR_MESSAGES.budget : AI_ERROR_MESSAGES.unavailable,
+      503,
+    )
   }
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null))
@@ -121,10 +130,16 @@ export async function POST(request: Request) {
     // IA não o leu antes de confiar no texto.
     return NextResponse.json({ texts, skipped: message.skipped })
   } catch (modelError) {
-    if (isProviderQuotaError(modelError)) {
-      return jsonError('A cota diária da IA acabou. Tente amanhã ou redija o texto à mão.', 429)
-    }
     console.error(`[modelos] redação (${assistantModel.provider}) falhou:`, modelError)
-    return jsonError('A IA não conseguiu redigir agora. Tente de novo.', 502)
+    switch (providerErrorKind(modelError)) {
+      case 'rate_limit':
+        return jsonError(`${AI_ERROR_MESSAGES.rateLimit} Ou redija o texto à mão.`, 429)
+      case 'credits':
+        return jsonError(`${AI_ERROR_MESSAGES.credits} Enquanto isso, redija o texto à mão.`, 402)
+      case 'auth':
+        return jsonError(`${AI_ERROR_MESSAGES.auth} Enquanto isso, redija o texto à mão.`, 503)
+      default:
+        return jsonError('A IA não conseguiu redigir agora. Tente de novo.', 502)
+    }
   }
 }
