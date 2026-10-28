@@ -108,7 +108,7 @@ export function useHearingKindMap(): Map<string, HearingKind> {
  * dashboard (que lê pelas chaves da Agenda) vão junto; a pendência "sem data"
  * conta fichas.
  */
-function useInvalidateHearingSurfaces() {
+export function useInvalidateHearingSurfaces() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: hearingKeys.all })

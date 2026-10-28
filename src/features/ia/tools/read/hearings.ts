@@ -56,6 +56,27 @@ const MOVEMENT_TEXT_LENGTH = 400
 
 export function createHearingTools(supabase: ToolClient) {
   return {
+    tipos_de_audiencia: tool({
+      description:
+        'Tipos de audiência do escritório (Conciliação, Instrução…), com o id que criar_audiencia ' +
+        'pede e a duração padrão do compromisso.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const { data, error } = await supabase
+          .from('hearing_kinds')
+          .select('id, label, default_duration_minutes')
+          .order('position')
+        if (error) return toolError('os tipos de audiência', error)
+        return {
+          tipos: (data ?? []).map((kind) => ({
+            id: kind.id as string,
+            nome: kind.label as string,
+            duracao_minutos: kind.default_duration_minutes as number,
+          })),
+        }
+      },
+    }),
+
     ver_audiencias: tool({
       description:
         'Audiências pela ficha: tipo, situação, data e hora, modalidade, local ou link, se a data ' +

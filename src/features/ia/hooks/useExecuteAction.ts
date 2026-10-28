@@ -1,7 +1,6 @@
 'use client'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { InferUITool } from 'ai'
 import { useAuth } from '@/hooks/useAuth'
 import { createTask } from '@/features/tarefas/services/tasks.service'
 import { useInvalidateTaskSurfaces } from '@/features/tarefas/hooks/useTaskMutations'
@@ -45,9 +44,24 @@ import { templateKeys } from '@/features/documentos/hooks/useDocumentTemplates'
 import { TemplateSyntaxError } from '@/features/documentos/templates/errors'
 import { TEMPLATE_SCOPE_HREFS, templateScopeOf } from '@/types/documentTemplate.types'
 import { downloadAiFileAsFile } from '../services/aiFiles.service'
-import type { ActionOutput, ActionToolName, actionTools } from '../tools/actions'
-
-type ActionInput<N extends ActionToolName> = InferUITool<(typeof actionTools)[N]>['input']
+import type { ActionInput, ActionOutput } from '../tools/actions'
+import {
+  completeTask,
+  createHearingAction,
+  createPaymentLinkAction,
+  handlePublication,
+  linkPublication,
+  reassignTask,
+  registerFinancialEntry,
+  rescheduleEvent,
+  sendToSignature,
+} from '../actions/screenActions'
+import { useInvalidateHearingSurfaces } from '@/features/audiencias/hooks/useHearings'
+import { signatureKeys } from '@/features/assinaturas/hooks/useSignatures'
+import { useInvalidateFinancialSurfaces } from '@/features/financeiro/hooks/useFinancialEntryMutations'
+import { useInvalidatePaymentSurfaces } from '@/features/financeiro/hooks/usePaymentChargeMutations'
+import { useInvalidatePublications } from '@/features/publicacoes/hooks/usePublications'
+import { useInvalidateContractSurfaces } from '@/features/contratos/hooks/useContractMutations'
 
 export type PendingAction =
   | { tool: 'criar_tarefa'; input: ActionInput<'criar_tarefa'> }
@@ -59,6 +73,21 @@ export type PendingAction =
   | { tool: 'cadastrar_cliente'; input: ActionInput<'cadastrar_cliente'> }
   | { tool: 'completar_cliente'; input: ActionInput<'completar_cliente'> }
   | { tool: 'registrar_contrato'; input: ActionInput<'registrar_contrato'> }
+  | { tool: 'concluir_tarefa'; input: ActionInput<'concluir_tarefa'> }
+  | { tool: 'reatribuir_tarefa'; input: ActionInput<'reatribuir_tarefa'> }
+  | { tool: 'remarcar_evento'; input: ActionInput<'remarcar_evento'> }
+  | { tool: 'criar_audiencia'; input: ActionInput<'criar_audiencia'> }
+  | { tool: 'registrar_lancamento'; input: ActionInput<'registrar_lancamento'> }
+  | { tool: 'vincular_publicacao'; input: ActionInput<'vincular_publicacao'> }
+  | { tool: 'tratar_publicacao'; input: ActionInput<'tratar_publicacao'> }
+  | { tool: 'enviar_para_assinatura'; input: ActionInput<'enviar_para_assinatura'> }
+  | { tool: 'gerar_link_pagamento'; input: ActionInput<'gerar_link_pagamento'> }
+
+/** Invalida só quando gravou: uma recusa não mudou nada na tela. */
+function afterOk(output: ActionOutput, invalidate: () => void): ActionOutput {
+  if (output.ok) invalidate()
+  return output
+}
 
 /**
  * Executa uma ação proposta pela IA depois que o usuário confirmou.
@@ -74,6 +103,11 @@ export function useExecuteAction() {
   const invalidateTasks = useInvalidateTaskSurfaces()
   const invalidateEvents = useInvalidateEventSurfaces()
   const invalidateProcesses = useInvalidateLegalProcesses()
+  const invalidateHearings = useInvalidateHearingSurfaces()
+  const invalidateFinancial = useInvalidateFinancialSurfaces()
+  const invalidatePayments = useInvalidatePaymentSurfaces()
+  const invalidatePublications = useInvalidatePublications()
+  const invalidateContracts = useInvalidateContractSurfaces()
 
   return useMutation({
     mutationFn: async (action: PendingAction): Promise<ActionOutput> => {
@@ -268,6 +302,54 @@ export function useExecuteAction() {
             queryClient.invalidateQueries({ queryKey: contractKeys.all })
             queryClient.invalidateQueries({ queryKey: documentKeys.all })
           })
+
+        // Fase 4c: o service da tela grava (ver `actions/screenActions.ts`);
+        // aqui só a invalidação de cada módulo, para a tela por trás atualizar.
+        case 'concluir_tarefa':
+          return afterOk(await completeTask(action.input, userId), invalidateTasks)
+
+        case 'reatribuir_tarefa':
+          return afterOk(await reassignTask(action.input, userId), invalidateTasks)
+
+        case 'remarcar_evento':
+          return afterOk(await rescheduleEvent(action.input, userId), () => {
+            invalidateEvents()
+            invalidateHearings()
+          })
+
+        case 'criar_audiencia': {
+          // Falha só na data ainda deixa a ficha criada: invalida dos dois jeitos.
+          const output = await createHearingAction(action.input, userId)
+          invalidateHearings()
+          invalidateEvents()
+          return output
+        }
+
+        case 'registrar_lancamento':
+          return afterOk(await registerFinancialEntry(action.input, userId), invalidateFinancial)
+
+        case 'vincular_publicacao':
+          return afterOk(await linkPublication(action.input), () => {
+            invalidatePublications()
+            invalidateProcesses()
+          })
+
+        case 'tratar_publicacao':
+          return afterOk(await handlePublication(action.input), invalidatePublications)
+
+        case 'enviar_para_assinatura': {
+          // Criado e parado num passo também aparece na tela: invalida sempre.
+          const output = await sendToSignature(action.input)
+          queryClient.invalidateQueries({ queryKey: signatureKeys.all })
+          invalidateContracts()
+          return output
+        }
+
+        case 'gerar_link_pagamento': {
+          const output = await createPaymentLinkAction(action.input)
+          invalidatePayments()
+          return output
+        }
       }
     },
   })

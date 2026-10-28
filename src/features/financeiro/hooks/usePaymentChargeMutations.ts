@@ -31,7 +31,7 @@ export function notifyPaymentLinkError(error: unknown, fallback: string): void {
 }
 
 /** Cobrança muda o detalhe e a linha da lista (ícone e travas). */
-function useInvalidatePaymentSurfaces() {
+export function useInvalidatePaymentSurfaces() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: paymentChargeKeys.all })

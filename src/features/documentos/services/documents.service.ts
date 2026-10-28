@@ -68,6 +68,13 @@ function buildFilePath(input: DocumentUploadInput, fileName: string): string {
   return `${scope}/${id}/${Date.now()}-${safeName}`
 }
 
+/** Um documento pela linha crua — onde ele mora e de que tipo é. */
+export async function getDocumentRecord(id: string): Promise<DocumentRecord | null> {
+  const { data, error } = await supabase.from('documents').select('*').eq('id', id).maybeSingle()
+  if (error) throw error
+  return (data as DocumentRecord | null) ?? null
+}
+
 export async function getDocuments(): Promise<DocumentWithRelations[]> {
   const { data, error } = await supabase
     .from('documents')

@@ -147,6 +147,19 @@ export async function updatePublicationFields(
   if (error) throw error
 }
 
+/** Liga uma publicação a um processo já cadastrado, escolhido por alguém —
+ * inclusive de outro CNJ (recurso, incidente). */
+export async function linkPublicationToProcess(
+  publicationId: string,
+  legalProcessId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('publications')
+    .update({ legal_process_id: legalProcessId })
+    .eq('id', publicationId)
+  if (error) throw error
+}
+
 /**
  * Liga as publicações órfãs ao processo recém-cadastrado.
  *

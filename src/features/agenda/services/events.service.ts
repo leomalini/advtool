@@ -339,6 +339,13 @@ export async function getEvents(from?: string, to?: string): Promise<CalendarEve
   return (data ?? []).map(normalizeEventRow)
 }
 
+/** Um compromisso pelo id, com ou sem `show_in_agenda`. */
+export async function getEventById(id: string): Promise<CalendarEvent | null> {
+  const { data, error } = await supabase.from('events').select(EVENT_SELECT).eq('id', id).maybeSingle()
+  if (error) throw error
+  return data ? normalizeEventRow(data) : null
+}
+
 /**
  * Every event belonging to an entity.
  *
