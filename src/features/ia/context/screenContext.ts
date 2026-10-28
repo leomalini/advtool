@@ -12,11 +12,19 @@ import { z } from 'zod'
  */
 
 /**
- * Só o que abre em página. Compromisso e audiência abrem em modal, que trava o
- * resto da tela — o painel inclusive —, então não há como perguntar sobre eles
- * com o modal aberto.
+ * Os registros que abrem em página, mais a audiência. A ficha da audiência é
+ * um modal, que trava o resto da tela (o painel inclusive): ela não registra
+ * nada, e entra pelo botão do próprio modal, que manda a pergunta pronta com
+ * o contexto (ver `askAssistant`).
  */
-export const SCREEN_ENTITY_KINDS = ['cliente', 'pessoa', 'processo', 'contrato', 'publicacao'] as const
+export const SCREEN_ENTITY_KINDS = [
+  'cliente',
+  'pessoa',
+  'processo',
+  'contrato',
+  'publicacao',
+  'audiencia',
+] as const
 
 export type ScreenEntityKind = (typeof SCREEN_ENTITY_KINDS)[number]
 
@@ -26,6 +34,7 @@ export const SCREEN_ENTITY_LABELS: Record<ScreenEntityKind, string> = {
   processo: 'Processo',
   contrato: 'Contrato',
   publicacao: 'Publicação',
+  audiencia: 'Audiência',
 }
 
 /** Limites do que o navegador pode mandar: o bloco entra em toda pergunta. */
@@ -78,7 +87,7 @@ export function personFilterValue(id: string | null, name: string | undefined): 
   return name ? `${name} (id: ${id})` : `id: ${id}`
 }
 
-const SECTION_LABELS: Record<string, string> = {
+export const SECTION_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
   crm: 'CRM',
   processos: 'Processos',

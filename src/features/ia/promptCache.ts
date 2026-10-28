@@ -19,12 +19,26 @@ export function cachedInstructions(content: string): SystemModelMessage {
   return { role: 'system', content, providerOptions: CACHE_BREAKPOINT }
 }
 
+/** A mensagem sem a marca de cache (e o resto do que a Anthropic recebe dela). */
+function withoutBreakpoint(message: ModelMessage): ModelMessage {
+  const anthropic = message.providerOptions?.anthropic
+  if (!anthropic || !('cacheControl' in anthropic)) return message
+  const rest = Object.fromEntries(Object.entries(anthropic).filter(([key]) => key !== 'cacheControl'))
+  return { ...message, providerOptions: { ...message.providerOptions, anthropic: rest } }
+}
+
 /**
  * Marca o fim do histórico: o passo seguinte (a próxima consulta do mesmo
  * turno, ou a próxima pergunta em até 5 minutos) lê a conversa do cache e só
  * paga cheio o que é novo. Usado em cada passo, pelo `prepareStep`, para a
  * marca acompanhar o histórico que cresce — com a do `system`, são 2 das 4
  * permitidas.
+ *
+ * As mensagens que o `prepareStep` devolve seguem para o passo seguinte com a
+ * marca: sem tirar a dos passos anteriores, um turno de 4 passos chegava a 5
+ * marcas (o teto é 4) e a API ignorava uma. Tirar não perde o cache já
+ * gravado: cada marca procura acerto até 20 posições para trás, e um passo
+ * acrescenta poucas (uma sequência de tool_use ou de tool_result conta uma).
  */
 export function withHistoryBreakpoint(messages: ModelMessage[]): ModelMessage[] {
   const last = messages.at(-1)
@@ -33,5 +47,5 @@ export function withHistoryBreakpoint(messages: ModelMessage[]): ModelMessage[] 
     ...last,
     providerOptions: { ...last.providerOptions, ...CACHE_BREAKPOINT },
   }
-  return [...messages.slice(0, -1), marked]
+  return [...messages.slice(0, -1).map(withoutBreakpoint), marked]
 }

@@ -625,8 +625,8 @@ Verificado:
 - **Compromisso e audiência ficaram de fora.** Abrem em modal do Radix, que
   trava o resto da tela (foco, clique e leitores de tela), o painel
   inclusive. Com o modal aberto não há como digitar no painel, e ao fechar o
-  registro some. Caminho para a 4b: um botão "Perguntar ao Assistente" dentro
-  do modal, que fecha o modal e abre o painel com o registro.
+  registro some. A audiência entrou na 4b, pelo botão "Preparar com o
+  Assistente" da própria ficha; compromisso segue de fora.
 - **Verificação:**
   - tsc, lint e build;
   - `verify-panel-context.mjs` (scratchpad), 21 checagens sem modelo: ordem
@@ -667,6 +667,75 @@ portal:
 | Cliente | Panorama | Processos, pendências, financeiro e próximos compromissos |
 | Cliente | Rascunhar atualização para o cliente | Texto para copiar (WhatsApp, e-mail). Nada é enviado sozinho |
 | Dashboard | Briefing do dia | Agenda, prazos e publicações novas |
+
+**Como ficou a 4b (2026-10-27, branch `feat/ia-acoes-rapidas`, de
+`feat/ia-painel-global`):**
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Ações | `features/ia/context/quickActions.ts` | Pelo registro em foco (processo: Resumir, O que mudou desde…, Preparar audiência; publicação: Explicar e sugerir providência; cliente: Panorama, Rascunhar atualização) ou pela página (Dashboard: Briefing do dia). O pedido fixo aparece na conversa como se a pessoa tivesse digitado, com a tela junto. "O que mudou desde…" só preenche o campo, com o cursor no fim, para a pessoa pôr a data |
+| Botões | `ChatPanel.tsx`, acima do campo do painel | Desativados enquanto a resposta chega ou há ação a confirmar. Não mexem no que a pessoa está digitando nem nos anexos. Com ações na tela, as sugestões gerais saem do estado vazio. Vão para a conversa aberta no painel (o "+" começa outra) |
+| Audiência | `HearingDetailModal.tsx` → `askAssistant` no store | O modal trava o painel, então a ficha tem o botão "Preparar com o Assistente" (audiência em aberto, quem tem `ia:view`). Ele fecha a ficha, abre o painel e manda o pedido com a audiência e o processo como contexto, montado no clique. O chat envia quando fica livre, uma vez só |
+| `ver_audiencias` | `tools/read/hearings.ts` | Pelo processo ou pela audiência: tipo, situação, data, modalidade, local ou link, data conferida, o andamento de origem e o checklist (feito, pendente, não se aplica, o que o cliente traz). Checklist que ainda não nasceu é dito, não vira lista vazia |
+| `calcular_prazo` | `tools/read/publications.ts` | `calculatePrazo` de `src/lib/prazos` a partir da data de publicação GRAVADA: o modelo só escolhe os dias e a contagem. Corridos = direito material, sem a suspensão do recesso (a regra do motor). Avisa que feriados locais não entram |
+| Quem pergunta | `tools/read/team.ts` | `membros_do_escritorio` marca `voce: true`. Antes o modelo não sabia quem era "eu" — nem a regra "use o próprio usuário" do `criar_evento` tinha como funcionar |
+| Agenda por cliente | `tools/read/agenda.ts` | `eventos_no_periodo` aceita `cliente_id` (o panorama) |
+| Copiar | `ChatPanel.tsx` | Toda resposta tem "Copiar". O rascunho para o cliente vem entre duas linhas `***` (regra do `system`); com exatamente um par, aparecem "Copiar mensagem" (só o trecho) e "Copiar tudo". `***` e não `---`: no Markdown, `---` colado embaixo de texto vira título, e a última frase da mensagem aparecia em destaque |
+| Prompt | `prompts/system.ts` | Seções "Prazos" (a data nunca sai do modelo; dias do texto, e sem dias no texto ele diz o prazo usual com a base legal e pergunta antes de calcular), "Audiências" e "Mensagens para clientes" |
+
+- **Cache do histórico (correção da Fase 1):** a marca no fim do histórico,
+  posta a cada passo pelo `prepareStep`, ficava nas mensagens dos passos
+  seguintes. Num turno de 4 passos eram 5 marcas, acima do teto de 4, e o AI
+  SDK avisava que uma seria ignorada. `withHistoryBreakpoint` agora tira as
+  marcas anteriores; o cache já gravado continua valendo, porque cada marca
+  procura acerto até 20 posições para trás.
+- **Verificação:**
+  - tsc, lint e build;
+  - `verify-quick-actions.mjs` (scratchpad), sem modelo e só leitura do
+    banco, 17 checagens:
+    - o mapa de ações por tela;
+    - `calcular_prazo` igual ao motor (o início bate com o da tela; corridos
+      sem recesso; publicação desconhecida não dá data);
+    - `ver_audiencias` por audiência e por processo;
+    - só quem pergunta com `voce`;
+    - a agenda por cliente;
+  - com o modelo real (Opus 5.5, sem gravar nada), as quatro ações como o
+    painel as manda, cada uma numa conversa nova:
+    - **Publicação #115:** leu pelo id da tela e calculou os 5 dias do texto
+      pelo `calcular_prazo` (vencido em 03/09/2026). Não propôs tarefa,
+      porque o processo não diz que parte o escritório representa, e
+      perguntou.
+    - **Audiência Una de 12/11:** `ver_audiencias` pelo id, sem buscar o
+      processo. Apontou que a ficha não tem modalidade nem local e que a data
+      não foi conferida (por isso não há checklist), e que o endereço do fórum
+      diverge entre os documentos.
+    - **Briefing:** achou quem pergunta e buscou as tarefas pelo id dessa
+      pessoa, a agenda do dia e as publicações não lidas.
+    - **Rascunho para a Central Turbos:** a mensagem em texto simples entre
+      as linhas e, fora delas, os alertas para o advogado: custas sem
+      comprovante e prazos vencidos, e o nome diferente no cadastro.
+    - Quatro rodadas, cerca de R$ 7 a 8 ao todo (a saída de uma se perdeu,
+      então a soma é estimada). As duas últimas, depois das correções,
+      tiveram 24 e 22 checagens passando. Sem aviso de marca de cache em
+      turnos de 4 e 5 passos.
+  - no navegador, com página temporária (usuário, permissões, rota do chat e
+    a ficha da audiência simulados; painel, botões, store e o modal real da
+    audiência):
+    - os três botões do processo;
+    - o preencher com foco e cursor no fim;
+    - o Resumir saindo com a tela;
+    - os botões desativados durante a resposta;
+    - "Copiar mensagem" e "Copiar tudo" com o texto certo;
+    - o rascunho sem título falso;
+    - o modal fechando e o pedido da audiência saindo uma vez, com a
+      audiência e o processo.
+- **Não verificado:**
+  - as telas reais logadas;
+  - o briefing com compromissos e tarefas de verdade (hoje não havia nenhum
+    do usuário);
+  - "Panorama" com o modelo (a tool nova por cliente passou sem modelo);
+  - a tarefa do prazo proposta de fato: na publicação testada o modelo,
+    corretamente, perguntou antes.
 
 **4c. Mais ações e interação com a tela**
 

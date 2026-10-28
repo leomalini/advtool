@@ -40,9 +40,10 @@ export function createAgendaTools(supabase: ToolClient) {
         de: dateSchema,
         ate: dateSchema,
         processo_id: z.string().uuid().optional(),
+        cliente_id: z.string().uuid().optional(),
         limite: limitSchema,
       }),
-      execute: async ({ de, ate, processo_id, limite }) => {
+      execute: async ({ de, ate, processo_id, cliente_id, limite }) => {
         let query = supabase
           .from('events')
           .select(EVENT_SELECT)
@@ -54,6 +55,7 @@ export function createAgendaTools(supabase: ToolClient) {
           .order('start_at')
           .limit(limite ?? MAX_AGENDA)
         if (processo_id) query = query.eq('legal_process_id', processo_id)
+        if (cliente_id) query = query.eq('client_id', cliente_id)
 
         const { data, error } = await query
         if (error) return toolError('a agenda', error)

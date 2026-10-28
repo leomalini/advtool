@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   ArrowUpRight,
   Ban,
@@ -12,6 +13,7 @@ import {
   MapPin,
   RotateCcw,
   ScanText,
+  Sparkles,
   Users,
   Video,
   X,
@@ -51,6 +53,9 @@ import {
 import { HearingChecklist } from './HearingChecklist'
 import { HearingDetailsForm } from './HearingDetailsForm'
 import { HearingScheduleForm } from './HearingScheduleForm'
+import { PREPARE_HEARING_PROMPT } from '@/features/ia/context/quickActions'
+import { buildScreenContext } from '@/features/ia/context/screenContext'
+import { useAssistantPanelStore } from '@/features/ia/stores/assistantPanel.store'
 
 interface HearingDetailModalProps {
   hearingId: string | null
@@ -167,6 +172,38 @@ function HearingDetailBody({
   const [confirmCancel, setConfirmCancel] = useState(false)
 
   const canUpdate = can('agenda', 'update')
+  const pathname = usePathname()
+  const askAssistant = useAssistantPanelStore((state) => state.askAssistant)
+
+  // O modal trava o resto da tela, o painel inclusive: o botão fecha a ficha
+  // e manda o pedido com a audiência (e o processo) como contexto.
+  function prepareWithAssistant() {
+    const context = buildScreenContext(pathname, [
+      {
+        entities: [
+          {
+            kind: 'audiencia',
+            id: hearing.id,
+            label: [
+              hearingKindLabel(hearing),
+              hearing.event ? formatHearingDateTime(hearing.event.start_at) : 'sem data',
+            ].join(' · '),
+          },
+          ...(hearing.legal_process
+            ? [
+                {
+                  kind: 'processo' as const,
+                  id: hearing.legal_process.id,
+                  label: hearing.legal_process.cnj_number ?? '',
+                },
+              ]
+            : []),
+        ],
+      },
+    ])
+    askAssistant(PREPARE_HEARING_PROMPT, context)
+    onClose()
+  }
   // Sem data, informar a data CRIA o compromisso na Agenda.
   const canSchedule = canUpdate && (hearing.event !== null || can('agenda', 'create'))
 
@@ -227,14 +264,22 @@ function HearingDetailBody({
             </div>
           </div>
 
-          {hearing.meeting_url && open && hearing.modality !== 'presencial' && (
-            <Button asChild size="sm" variant="outline">
-              <a href={hearing.meeting_url} target="_blank" rel="noopener noreferrer">
-                <Video aria-hidden />
-                Entrar na sala
-              </a>
-            </Button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {open && can('ia', 'view') && (
+              <Button size="sm" variant="outline" onClick={prepareWithAssistant}>
+                <Sparkles aria-hidden />
+                Preparar com o Assistente
+              </Button>
+            )}
+            {hearing.meeting_url && open && hearing.modality !== 'presencial' && (
+              <Button asChild size="sm" variant="outline">
+                <a href={hearing.meeting_url} target="_blank" rel="noopener noreferrer">
+                  <Video aria-hidden />
+                  Entrar na sala
+                </a>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
