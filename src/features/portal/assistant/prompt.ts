@@ -1,3 +1,5 @@
+import type { SystemModelMessage } from 'ai'
+import { cachedInstructions } from '@/features/ia/promptCache'
 import { PROCESS_STATUS_LABELS, PROCESS_TYPE_LABELS } from '@/types/legalProcess.types'
 import type { ProcessStatus, ProcessType } from '@/types/legalProcess.types'
 import type { PortalProcess } from '@/types/clientPortal.types'
@@ -133,20 +135,32 @@ function processesSection(processes: PortalProcess[]): string {
   )
 }
 
-export function buildPortalAssistantPrompt(now: Date, processes: PortalProcess[]): string {
-  const formattedNow = new Intl.DateTimeFormat('pt-BR', {
+/**
+ * As instruções de um pedido do portal: a parte estável, com a marca de cache,
+ * e depois a data e os processos do cliente.
+ *
+ * A data vai só com o dia. Com a hora, o prefixo mudaria a cada minuto e o
+ * histórico da conversa nunca sairia do cache.
+ */
+export function buildPortalAssistantInstructions(
+  now: Date,
+  processes: PortalProcess[],
+): SystemModelMessage[] {
+  const today = new Intl.DateTimeFormat('pt-BR', {
     timeZone: OFFICE_TIME_ZONE,
     weekday: 'long',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   }).format(now)
 
-  return (
-    `${PORTAL_ASSISTANT_STABLE_PROMPT}\n\n` +
-    `## Agora\nData e hora atuais: ${formattedNow} (horário de Brasília).\n\n` +
-    `## Processos do cliente\n${processesSection(processes)}`
-  )
+  return [
+    cachedInstructions(PORTAL_ASSISTANT_STABLE_PROMPT),
+    {
+      role: 'system',
+      content:
+        `## Hoje\n${today} (horário de Brasília).\n\n` +
+        `## Processos do cliente\n${processesSection(processes)}`,
+    },
+  ]
 }

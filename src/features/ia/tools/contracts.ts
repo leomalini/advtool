@@ -368,7 +368,10 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           .describe('true quando o 1º arquivo é um contrato pronto a importar.'),
       }),
       execute: async ({ arquivos, modelo_id, importar_contrato }) => {
-        const model = createAssistantModel()
+        const model = createAssistantModel('contract_reader', {
+          userId: context.userId,
+          conversationId: context.conversationId,
+        })
         if (!model.ok) return { error: 'A IA não está configurada neste ambiente.' }
 
         const documents: (ReadableDocument & { origem: 'conversa' | 'documentos' })[] = []
@@ -488,7 +491,9 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
               'e pergunte antes de gerar ou cadastrar.',
           }
         } catch (error) {
-          if (isProviderQuotaError(error)) return { error: 'A cota diária da IA acabou.' }
+          if (isProviderQuotaError(error)) {
+            return { error: 'A IA atingiu o limite de pedidos por agora — a leitura não foi feita.' }
+          }
           if (isProviderCreditError(error)) {
             return { error: 'Os créditos da conta da IA acabaram — a leitura não foi feita.' }
           }
