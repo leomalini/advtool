@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { NotificationBell } from '@/features/notificacoes/components/NotificationBell'
+import { AssistantPanelButton } from '@/features/ia/components/AssistantPanelButton'
 import {
   CommandDialog,
   CommandInput,
@@ -104,6 +105,8 @@ export function Header() {
       </button>
 
       <div className="ml-auto flex items-center gap-2">
+        <AssistantPanelButton />
+
         {/* O sino carrega a assinatura do Realtime, e o Header está montado em
             toda rota do app — é o que faz a publicação recebida por webhook
             avisar quem está em qualquer tela. */}

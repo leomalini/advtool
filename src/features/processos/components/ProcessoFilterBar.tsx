@@ -16,6 +16,8 @@ import { CRM_LEGAL_AREAS } from '@/schemas/crmItem.schema'
 import type { CrmLegalArea } from '@/schemas/crmItem.schema'
 import { useProfiles } from '@/hooks/useProfiles'
 import { ProfileOption, ProfileOptionCompact } from '@/components/shared/ProfileOption'
+import { personFilterValue, screenFilters } from '@/features/ia/context/screenContext'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 import {
   hasActiveProcessoFilters,
   countActiveProcessoFilters,
@@ -48,6 +50,21 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
   const assignedProfile = filters.assignedTo
     ? profiles.find((p) => p.id === filters.assignedTo)
     : undefined
+
+  // Os filtros visíveis vão para o painel do Assistente com a pergunta.
+  useAssistantScreen({
+    filters: screenFilters([
+      ['Busca', filters.search.trim()],
+      ['Área', filters.legalArea && AREAS_JURIDICAS[filters.legalArea]?.label],
+      ['Responsável', personFilterValue(filters.assignedTo, assignedProfile?.full_name)],
+      [
+        'Etapa',
+        filters.columnId && workflow.colunas.find((c) => c.id === filters.columnId)?.nome,
+      ],
+      ['Prazo a partir de', filters.deadlineFrom],
+      ['Prazo até', filters.deadlineTo],
+    ]),
+  })
   const assignedLabel = !filters.assignedTo ? (
     'Todos responsáveis'
   ) : assignedProfile ? (

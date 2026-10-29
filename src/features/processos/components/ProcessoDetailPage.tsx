@@ -125,6 +125,7 @@ import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useOpenDocument } from '@/features/documentos/hooks/useDocumentMutations'
 import { formatFileSize, getFileExtension } from '@/types/document.types'
 import { tagAppearance } from '@/utils/tags'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 
 const PAGE_SIZE = 20
 
@@ -520,6 +521,29 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   // `item` pode ser null num processo órfão; o botão de nota fica desabilitado
   // nesse caso, então a mutação nunca dispara com id vazio.
   const addComment = useAddCrmItemComment(item?.id ?? '', clientName)
+
+  // O painel do Assistente: "resuma isto", "crie uma tarefa para este processo".
+  useAssistantScreen(
+    processo
+      ? {
+          entities: [
+            {
+              kind: 'processo',
+              id: processo.id,
+              label: [
+                processo.cnj_number ?? 'Sem número CNJ',
+                [processo.procedural_class, processo.subject].filter(Boolean).join(' / '),
+              ]
+                .filter(Boolean)
+                .join(' — '),
+            },
+            ...(item?.client
+              ? [{ kind: 'cliente' as const, id: item.client.id, label: clientName }]
+              : []),
+          ],
+        }
+      : null,
+  )
 
   // Mesmas queries que alimentam as abas — os contadores não podem divergir do
   // que a aba mostra ao ser aberta.

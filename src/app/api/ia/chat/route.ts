@@ -11,6 +11,7 @@ import {
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
+import { formatScreenContext, screenContextSchema } from '@/features/ia/context/screenContext'
 import { ensureConversation } from '@/features/ia/conversation'
 import { AI_ERROR_MESSAGES } from '@/features/ia/errorMessages'
 import { createAiFileDownload } from '@/features/ia/files/download'
@@ -135,6 +136,7 @@ export async function POST(request: Request) {
   // de montar o que o modelo recebe. Validar com um contexto vazio basta.
   const validated = await safeValidateUIMessages<AssistantUIMessage>({
     messages: parsed.data.messages,
+    dataSchemas: { context: screenContextSchema },
     tools: createAssistantTools(supabase, {
       historicalToolCallIds: new Set(),
       userId: guard.userId,
@@ -169,11 +171,17 @@ export async function POST(request: Request) {
   try {
     const prepared = await prepareMessagesForModel(messages, supabase)
     // Sem as mensagens vazias de turnos que falharam (ver hasVisibleContent).
-    modelMessages = await convertToModelMessages(prepared.filter(hasVisibleContent), {
+    modelMessages = await convertToModelMessages<AssistantUIMessage>(prepared.filter(hasVisibleContent), {
       tools,
       // Um turno interrompido (botão Parar) pode ter ficado com uma consulta
       // sem resultado no histórico; a API recusaria o pedido inteiro por isso.
       ignoreIncompleteToolCalls: true,
+      // A tela de onde a pergunta saiu (painel do Assistente) vira um bloco de
+      // texto no começo dela. Gravada com a mensagem, sai igual a cada turno.
+      convertDataPart: (part) =>
+        part.type === 'data-context'
+          ? { type: 'text', text: formatScreenContext(part.data) }
+          : undefined,
     })
   } catch (error) {
     if (error instanceof InvalidAttachmentError) {

@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils'
 import { TASK_PRIORITY_LABELS, type TaskPriority } from '@/types/task.types'
 import { useProfiles } from '@/hooks/useProfiles'
 import { ProfileOption, ProfileOptionCompact } from '@/components/shared/ProfileOption'
+import { personFilterValue, screenFilters } from '@/features/ia/context/screenContext'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 import {
   hasActiveTaskFilters,
   countActiveTaskFilters,
@@ -44,6 +46,16 @@ export function TarefaFilterBar({ filters, onChange, resultCount }: TarefaFilter
   const assignedProfile = filters.assignedTo
     ? profiles.find((p) => p.id === filters.assignedTo)
     : undefined
+
+  // Os filtros visíveis vão para o painel do Assistente com a pergunta.
+  useAssistantScreen({
+    filters: screenFilters([
+      ['Busca', filters.search.trim()],
+      ['Prioridade', filters.priority && TASK_PRIORITY_LABELS[filters.priority]],
+      ['Responsável', personFilterValue(filters.assignedTo, assignedProfile?.full_name)],
+      ['Situação', filters.overdueOnly && 'só atrasadas'],
+    ]),
+  })
   const assignedLabel = !filters.assignedTo ? (
     'Todos responsáveis'
   ) : assignedProfile ? (
