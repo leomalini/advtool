@@ -4,13 +4,25 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { FileWarning, Loader2, Newspaper, RefreshCw, Search } from 'lucide-react'
+import { FileWarning, Loader2, Newspaper, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
 import { usePublications, useSyncIntimacoes } from '../hooks/usePublications'
-import type { PublicationWithRelations } from '@/types/publication.types'
+import { useCollectAiBatches } from '@/features/ia/hooks/useCollectAiBatches'
+import {
+  TRIAGE_URGENCY_LABELS,
+  type PublicationWithRelations,
+  type TriageUrgency,
+} from '@/types/publication.types'
+
+/** O selo da triagem (fase 5): a cor diz a urgência. */
+const URGENCY_STYLES: Record<TriageUrgency, string> = {
+  alta: 'bg-destructive/12 text-destructive',
+  media: 'bg-warning/12 text-warning',
+  baixa: 'bg-muted text-muted-foreground',
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
@@ -75,6 +87,18 @@ function PublicacaoRow({
               Tratada
             </span>
           )}
+          {publicacao.triage && !publicacao.handled_at && (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                URGENCY_STYLES[publicacao.triage.urgency],
+              )}
+              title="Triagem por IA — confira o texto"
+            >
+              <Sparkles className="h-2.5 w-2.5" />
+              {TRIAGE_URGENCY_LABELS[publicacao.triage.urgency]} · {publicacao.triage.act_type}
+            </span>
+          )}
         </div>
 
         <p className={cn('mt-1 truncate text-sm', unread ? 'font-semibold' : 'font-medium')}>
@@ -109,6 +133,8 @@ export function PublicacoesContent() {
 
   const { data: publicacoes = [], isLoading } = usePublications(filters)
   const sync = useSyncIntimacoes()
+  // A triagem roda em lote: abrir a fila recolhe o que ficou pronto.
+  useCollectAiBatches()
 
   return (
     <div className="-m-6 flex h-full flex-col">

@@ -3,10 +3,9 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { syncProcessoFromBp, SYNC_BLOCKS } from '@/lib/buscaprocessos/sync'
 import { BpApiError } from '@/lib/buscaprocessos/client'
-import { refreshProcessSummary } from '@/features/processos/summary/refreshProcessSummary'
-import { ensurePortalAnswers } from '@/features/portal/answers/ensurePortalAnswers'
+import { enqueueProcessWork } from '@/features/ia/batch/arrival'
 
-/** Segundos. Inclui o `after` que refaz o resumo por IA depois de responder. */
+/** Segundos. Inclui o `after` que manda o resumo e o portal para o lote. */
 export const maxDuration = 120
 
 const syncSchema = z.object({
@@ -62,14 +61,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       force: parsed.data.force,
       assumeFresh: parsed.data.assume_fresh,
     })
-    // Só quando as movimentações foram consultadas agora. As duas funções
+    // Só quando as movimentações foram consultadas agora. Os trabalhos do lote
     // conferem se há novidade e se o processo já tem resumo/respostas antes
     // de gastar.
     if (result.synced.includes('movimentacoes')) {
       const legalProcessId = parsed.data.legal_process_id
       after(async () => {
-        await refreshProcessSummary(legalProcessId, 'sync')
-        await ensurePortalAnswers(legalProcessId, 'sync')
+        await enqueueProcessWork(legalProcessId)
       })
     }
     return NextResponse.json(result)

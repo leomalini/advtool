@@ -506,7 +506,11 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const syncProcess = useSyncProcesso()
   const { data: processSummary = null } = useProcessSummary(processoId)
   const generateSummary = useGenerateProcessSummary(processoId)
-  const { mutate: autoRefreshSummary, isPending: isAutoRefreshing } =
+  const {
+    mutate: autoRefreshSummary,
+    isPending: isAutoRefreshing,
+    data: autoRefreshOutcome,
+  } =
     useAutoRefreshProcessSummary(processoId)
   /** Processo cuja atualização automática já foi pedida nesta visita. */
   const autoRefreshRequestedFor = useRef<string | null>(null)
@@ -1096,6 +1100,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
             onGenerate={() => generateSummary.mutate()}
             isGenerating={generateSummary.isPending}
             isRefreshing={isAutoRefreshing}
+            refreshQueued={autoRefreshOutcome?.status === 'queued'}
             onOpenSource={openSummarySource}
           />
 

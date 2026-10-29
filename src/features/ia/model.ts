@@ -21,9 +21,11 @@ export type AssistantProvider = 'google' | 'anthropic'
  *   em `high`; subir só com medida que mostre ganho. O resumo foi validado lado
  *   a lado nesta configuração (R$ 0,18 a 0,44 por processo).
  * - `low` no portal: resposta curta, sobre um recorte pequeno.
+ * - `low` na triagem de publicações e no briefing diário (fase 5): leitura de
+ *   um texto curto, sem conversa.
  *
  * Rota nova precisa entrar também no `check` de `ai_usage.route` (migrations
- * 81 e 82).
+ * 81, 82 e 85).
  */
 export const AI_ROUTE_SETTINGS = {
   chat: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
@@ -31,6 +33,8 @@ export const AI_ROUTE_SETTINGS = {
   contract_reader: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
   drafting: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
   process_summary: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
+  triage: { anthropicModel: 'claude-opus-5-5', effort: 'low' },
+  briefing: { anthropicModel: 'claude-opus-5-5', effort: 'low' },
 } as const satisfies Record<string, { anthropicModel: string; effort: AnthropicEffort }>
 
 export type AiRoute = keyof typeof AI_ROUTE_SETTINGS
@@ -38,6 +42,18 @@ export type AiRoute = keyof typeof AI_ROUTE_SETTINGS
 export type AssistantModelResult =
   | { ok: true; provider: AssistantProvider; model: LanguageModel; providerOptions: ProviderOptions }
   | { ok: false; reason: string }
+
+/**
+ * O provedor da Anthropic, para as chamadas na hora e para o lote (fase 5).
+ *
+ * Chave pessoal ou de service account criada para VÁRIOS workspaces não diz à
+ * API onde o pedido roda: sem o cabeçalho, todo pedido volta 400. Chave criada
+ * dentro de um workspace dispensa — daí a variável ser opcional.
+ */
+export function createAnthropicProvider() {
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
+  return createAnthropic(workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : {})
+}
 
 /** A chave que cada provedor lê do ambiente. */
 const API_KEY_ENV: Record<AssistantProvider, string> = {
@@ -83,13 +99,7 @@ export function createAssistantModel(
     }
   }
 
-  // Chave pessoal ou de service account criada para VÁRIOS workspaces não diz
-  // à API onde o pedido roda: sem o cabeçalho, todo pedido volta 400. Chave
-  // criada dentro de um workspace dispensa — daí a variável ser opcional.
-  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
-  const anthropic = createAnthropic(
-    workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : {},
-  )
+  const anthropic = createAnthropicProvider()
   const settings = AI_ROUTE_SETTINGS[route]
 
   return {

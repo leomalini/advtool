@@ -32,6 +32,9 @@ interface ResumoIaCardProps {
    * aviso de novidades: na maior parte das vezes o servidor responde em
    * instantes que não vai refazer, e o card não deve piscar. */
   isRefreshing: boolean
+  /** A atualização ao abrir foi para o lote (fase 5): o resumo novo aparece
+   * quando o lote for recolhido. */
+  refreshQueued: boolean
   /** Leva ao item da linha do tempo que a referência cita. */
   onOpenSource: (source: SummarySource) => void
 }
@@ -95,6 +98,7 @@ export function ResumoIaCard({
   onGenerate,
   isGenerating,
   isRefreshing,
+  refreshQueued,
   onOpenSource,
 }: ResumoIaCardProps) {
   const [expanded, setExpanded] = useState(false)
@@ -179,7 +183,10 @@ export function ResumoIaCard({
                 {newSinceSummary === 1
                   ? '1 movimentação ou publicação chegou depois deste resumo.'
                   : `${newSinceSummary} movimentações ou publicações chegaram depois deste resumo.`}
-                {canGenerate && ' Use “Atualizar” para incluí-las.'}
+                {refreshQueued
+                  ? ' A atualização foi pedida em lote e aparece aqui quando ficar pronta.'
+                  : null}
+                {canGenerate && (refreshQueued ? ' Para agora, use “Atualizar”.' : ' Use “Atualizar” para incluí-las.')}
               </span>
             )}
           </p>

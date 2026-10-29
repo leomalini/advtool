@@ -1,4 +1,4 @@
-import { wrapLanguageModel, type LanguageModelMiddleware } from 'ai'
+import { wrapLanguageModel, type LanguageModelMiddleware, type LanguageModelUsage } from 'ai'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import type { AiRoute, AssistantProvider } from '../model'
 import { estimateCostUsd, type TokenCounts } from './pricing'
@@ -123,4 +123,51 @@ function usageMiddleware(context: RecordingContext): LanguageModelMiddleware {
  */
 export function withUsageRecording(model: WrappableModel, context: RecordingContext) {
   return wrapLanguageModel({ model, middleware: usageMiddleware(context) })
+}
+
+/**
+ * Um pedido de lote recolhido (fase 5), na mesma tabela, marcado `batch` e
+ * com o custo pela metade. O lote não passa pelo middleware: o resultado chega
+ * horas depois, por outro processo. Nunca lança, como `insertUsage`.
+ */
+export async function recordBatchUsage(record: {
+  route: AiRoute
+  model: string
+  usage: LanguageModelUsage
+  finishReason: string
+}): Promise<void> {
+  if (!hasServiceRoleKey()) {
+    console.error('[ia-uso] SUPABASE_SERVICE_ROLE_KEY ausente: consumo do lote não registrado.')
+    return
+  }
+  const cacheRead = record.usage.inputTokenDetails?.cacheReadTokens ?? 0
+  const cacheWrite = record.usage.inputTokenDetails?.cacheWriteTokens ?? 0
+  const tokens: TokenCounts = {
+    input:
+      record.usage.inputTokenDetails?.noCacheTokens ??
+      Math.max((record.usage.inputTokens ?? 0) - cacheRead - cacheWrite, 0),
+    cacheRead,
+    cacheWrite,
+    output: record.usage.outputTokens ?? 0,
+  }
+  try {
+    const { error } = await createAdminClient()
+      .from('ai_usage')
+      .insert({
+        route: record.route,
+        provider: 'anthropic',
+        model: record.model,
+        input_tokens: tokens.input,
+        cache_read_tokens: tokens.cacheRead,
+        cache_write_tokens: tokens.cacheWrite,
+        output_tokens: tokens.output,
+        reasoning_tokens: record.usage.outputTokenDetails?.reasoningTokens ?? null,
+        finish_reason: record.finishReason,
+        cost_usd: estimateCostUsd(record.model, tokens, { batch: true }),
+        batch: true,
+      })
+    if (error) console.error('[ia-uso] gravação do lote falhou:', error.code, error.message)
+  } catch (error) {
+    console.error('[ia-uso] gravação do lote falhou:', error)
+  }
 }

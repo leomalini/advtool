@@ -12,13 +12,14 @@ import {
 import { PORTAL_ANSWERS_SYSTEM_PROMPT } from './portalAnswersPrompt'
 import {
   portalAnswersSchema,
+  type PortalAnswers,
   type PortalAnswersRecord,
   type PortalQuestionKey,
 } from './portalAnswersSchema'
 
 /** Na chegada de movimentação, no máximo uma geração a cada 15 min por processo
  * — o que sobrar de uma rajada se refaz quando o cliente abrir. */
-const ARRIVAL_INTERVAL_MINUTES = 15
+export const ARRIVAL_INTERVAL_MINUTES = 15
 
 /** Reserva mais velha que isso foi abandonada (a função morreu no meio). */
 const CLAIM_TIMEOUT_MINUTES = 5
@@ -80,6 +81,55 @@ async function claim(
     .select('legal_process_id')
   if (error) throw error
   return (data ?? []).length > 0
+}
+
+/**
+ * Grava respostas novas — na hora (`ensurePortalAnswers`) ou do lote (fase 5).
+ * A correção do escritório, se havia, passa para `superseded`: falava dos dados
+ * antigos. O que o escritório ocultou continua oculto.
+ */
+export async function savePortalAnswers(
+  admin: SupabaseClient,
+  legalProcessId: string,
+  current: PortalAnswersRecord | null,
+  generated: { answers: PortalAnswers; hash: string; modelId: string },
+): Promise<PortalAnswersRecord> {
+  const now = new Date().toISOString()
+  const superseded = { ...(current?.superseded ?? {}) }
+  for (const [key, correction] of Object.entries(current?.corrections ?? {})) {
+    if (correction) superseded[key as PortalQuestionKey] = { ...correction, superseded_at: now }
+  }
+
+  const { data, error } = await admin
+    .from('client_portal_answers')
+    .update({
+      answers: generated.answers,
+      corrections: {},
+      superseded,
+      source_hash: generated.hash,
+      model: generated.modelId,
+      generated_at: now,
+      refreshing_since: null,
+    })
+    .eq('legal_process_id', legalProcessId)
+    .select(RECORD_COLUMNS)
+    .single()
+  if (error) throw error
+  return data as unknown as PortalAnswersRecord
+}
+
+/** As respostas gravadas de um processo, ou `null`. */
+export async function getPortalAnswersRecord(
+  admin: SupabaseClient,
+  legalProcessId: string,
+): Promise<PortalAnswersRecord | null> {
+  const { data, error } = await admin
+    .from('client_portal_answers')
+    .select(RECORD_COLUMNS)
+    .eq('legal_process_id', legalProcessId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as unknown as PortalAnswersRecord | null) ?? null
 }
 
 /**
@@ -161,52 +211,18 @@ export async function ensurePortalAnswers(
       maxRetries: 1,
     })
 
-    const now = new Date().toISOString()
-    const superseded = { ...(current?.superseded ?? {}) }
-    for (const [key, correction] of Object.entries(current?.corrections ?? {})) {
-      if (correction) superseded[key as PortalQuestionKey] = { ...correction, superseded_at: now }
-    }
-
-    const { data: saved, error: saveError } = await admin
-      .from('client_portal_answers')
-      .update({
-        answers: output,
-        corrections: {},
-        superseded,
-        source_hash: hash,
-        model: response.modelId,
-        generated_at: now,
-        refreshing_since: null,
-      })
-      .eq('legal_process_id', legalProcessId)
-      .select(RECORD_COLUMNS)
-      .single()
-    if (saveError) throw saveError
+    const saved = await savePortalAnswers(admin, legalProcessId, current, {
+      answers: output,
+      hash,
+      modelId: response.modelId,
+    })
     claimed = false
 
     console.info(`[portal-respostas] ${legalProcessId} gerado (${trigger}).`)
-    return { status: 'ready', record: saved as unknown as PortalAnswersRecord }
+    return { status: 'ready', record: saved }
   } catch (error) {
     console.error(`[portal-respostas] ${legalProcessId} (${trigger}) falhou:`, error)
     if (claimed) await releaseClaim(admin, legalProcessId)
     return { status: 'unavailable' }
   }
-}
-
-/**
- * Depois de uma entrega do webhook ou de um sync: os processos das
- * movimentações recém-gravadas, um por vez, pelo caminho da chegada.
- */
-export async function refreshPortalAnswersForMovements(movementIds: string[]): Promise<void> {
-  if (movementIds.length === 0 || !hasServiceRoleKey()) return
-  const { data, error } = await createAdminClient()
-    .from('legal_process_movements')
-    .select('legal_process_id')
-    .in('id', movementIds)
-  if (error) {
-    console.error('[portal-respostas] processos da entrega:', error.code, error.message)
-    return
-  }
-  const processIds = new Set((data ?? []).map((row) => row.legal_process_id as string).filter(Boolean))
-  for (const id of processIds) await ensurePortalAnswers(id, 'webhook')
 }

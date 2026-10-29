@@ -30,8 +30,15 @@ export interface TokenCounts {
   output: number
 }
 
+/** A Batch API cobra metade de tudo (entrada, saída e cache), fase 5. */
+const BATCH_DISCOUNT = 0.5
+
 /** Custo estimado de uma chamada, em US$ com 6 casas — ou `null` sem preço. */
-export function estimateCostUsd(model: string, tokens: TokenCounts): number | null {
+export function estimateCostUsd(
+  model: string,
+  tokens: TokenCounts,
+  options: { batch?: boolean } = {},
+): number | null {
   const price = PRICES_USD_PER_MTOK[model]
   if (!price) return null
 
@@ -41,5 +48,6 @@ export function estimateCostUsd(model: string, tokens: TokenCounts): number | nu
     tokens.cacheWrite * price.cacheWrite +
     tokens.output * price.output
 
-  return Number((microDollars / 1_000_000).toFixed(6))
+  const factor = options.batch ? BATCH_DISCOUNT : 1
+  return Number(((microDollars * factor) / 1_000_000).toFixed(6))
 }
