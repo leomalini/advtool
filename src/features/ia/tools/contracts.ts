@@ -278,7 +278,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           supabase
             .from('financial_entries')
             .select(
-              'description, type, amount, status, settlement_kind, due_date, ' +
+              'id, description, type, amount, status, settlement_kind, due_date, ' +
                 'condition_description, paid_at',
             )
             .eq('contract_id', id)
@@ -290,6 +290,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
         if (documents.error) return toolError('os arquivos', documents.error)
         type EntryRow = Pick<
           FinancialEntry,
+          | 'id'
           | 'description'
           | 'type'
           | 'amount'
@@ -327,6 +328,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           lancamentos: entries.error
             ? null
             : ((entries.data ?? []) as unknown as EntryRow[]).map((entry) => ({
+                id: entry.id,
                 descricao: entry.description,
                 tipo: entry.type,
                 valor: Number(entry.amount),
@@ -368,7 +370,10 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           .describe('true quando o 1º arquivo é um contrato pronto a importar.'),
       }),
       execute: async ({ arquivos, modelo_id, importar_contrato }) => {
-        const model = createAssistantModel()
+        const model = createAssistantModel('contract_reader', {
+          userId: context.userId,
+          conversationId: context.conversationId,
+        })
         if (!model.ok) return { error: 'A IA não está configurada neste ambiente.' }
 
         const documents: (ReadableDocument & { origem: 'conversa' | 'documentos' })[] = []
@@ -488,7 +493,9 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
               'e pergunte antes de gerar ou cadastrar.',
           }
         } catch (error) {
-          if (isProviderQuotaError(error)) return { error: 'A cota diária da IA acabou.' }
+          if (isProviderQuotaError(error)) {
+            return { error: 'A IA atingiu o limite de pedidos por agora — a leitura não foi feita.' }
+          }
           if (isProviderCreditError(error)) {
             return { error: 'Os créditos da conta da IA acabaram — a leitura não foi feita.' }
           }

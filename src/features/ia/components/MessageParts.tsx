@@ -1,10 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { getToolName, isToolUIPart } from 'ai'
-import { Loader2, Search } from 'lucide-react'
+import { ArrowUpRight, Loader2, MapPin, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { screenContextSummary } from '../context/screenContext'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES, type ActionOutput, type ActionToolName } from '../tools/actions'
+import type { OpenScreenInput } from '../tools/interface'
 import type { PendingAction } from '../hooks/useExecuteAction'
 import { aiFileHref, parseAiFileUrl } from '../files/constants'
 import { ActionConfirmCard } from './ActionConfirmCard'
@@ -20,8 +23,11 @@ const READ_TOOL_LABELS: Record<string, string> = {
   eventos_no_periodo: 'Consultando a agenda',
   listar_tarefas: 'Consultando tarefas',
   tipos_de_evento: 'Lendo tipos de compromisso',
+  ver_audiencias: 'Lendo as audiências',
+  tipos_de_audiencia: 'Lendo os tipos de audiência',
   listar_publicacoes: 'Consultando publicações',
   ler_publicacao: 'Lendo a publicação',
+  calcular_prazo: 'Calculando o prazo',
   listar_lancamentos: 'Consultando o financeiro',
   membros_do_escritorio: 'Consultando a equipe',
   listar_documentos: 'Consultando documentos',
@@ -102,6 +108,21 @@ export function MessageParts({
           )
         }
 
+        if (part.type === 'data-context') {
+          // A tela de onde a pergunta saiu (painel lateral). Fica no histórico
+          // para dizer a que "isto" a pergunta se referia.
+          return (
+            <p
+              key={`context-${index}`}
+              className="flex items-center gap-1 text-[11px] opacity-75"
+              title="Tela de onde a pergunta foi feita"
+            >
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{screenContextSummary(part.data)}</span>
+            </p>
+          )
+        }
+
         if (part.type === 'file') {
           const id = parseAiFileUrl(part.url)
           return (
@@ -117,6 +138,29 @@ export function MessageParts({
 
         if (!isToolUIPart(part)) return null
         const name = getToolName(part)
+
+        if (name === 'abrir_tela') {
+          // `getToolName` não estreita o union de parts; o nome já garantiu o
+          // formato (ver `tools/interface.ts`).
+          const input = part.input as OpenScreenInput | undefined
+          if (part.state !== 'output-available') {
+            return <ToolChip key={part.toolCallId} label="Abrindo a tela" busy={streaming} />
+          }
+          const output = part.output as { navegou: boolean; link: string }
+          if (!output.link) {
+            return <ToolChip key={part.toolCallId} label="Tela não encontrada" />
+          }
+          return (
+            <Link
+              key={part.toolCallId}
+              href={output.link}
+              className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <ArrowUpRight className="h-3 w-3" />
+              {output.navegou ? 'Abriu' : 'Abrir'}: {input?.rotulo ?? output.link}
+            </Link>
+          )
+        }
 
         if (isActionTool(name)) {
           // O card só aparece com o input completo; enquanto o modelo ainda

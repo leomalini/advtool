@@ -4,7 +4,12 @@ import { Check, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DOCUMENT_CATEGORY_LABELS, type DocumentCategory } from '@/types/document.types'
 import { CONTRACT_KIND_LABELS } from '@/types/contract.types'
-import { formatCurrency } from '@/types/financialEntry.types'
+import {
+  FINANCIAL_CATEGORY_LABELS,
+  FINANCIAL_TYPE_LABELS,
+  formatCurrency,
+} from '@/types/financialEntry.types'
+import { HEARING_MODALITY_LABELS } from '@/types/hearing.types'
 import { personFieldValues } from '@/features/documentos/templates/partyFields'
 import {
   personFromToolData,
@@ -12,6 +17,8 @@ import {
 } from '@/features/contratos/utils/partyToolInput'
 import type { ActionOutput } from '../tools/actions'
 import type { PendingAction } from '../hooks/useExecuteAction'
+import { PaymentLinkActionCard } from './PaymentLinkActionCard'
+import { SignatureActionCard } from './SignatureActionCard'
 
 const ACTION_TITLES: Record<PendingAction['tool'], string> = {
   criar_tarefa: 'Criar tarefa',
@@ -23,6 +30,21 @@ const ACTION_TITLES: Record<PendingAction['tool'], string> = {
   cadastrar_cliente: 'Cadastrar cliente',
   completar_cliente: 'Completar o cadastro do cliente',
   registrar_contrato: 'Registrar contrato',
+  concluir_tarefa: 'Concluir tarefa',
+  reatribuir_tarefa: 'Trocar o responsável da tarefa',
+  remarcar_evento: 'Remarcar compromisso',
+  criar_audiencia: 'Criar audiência',
+  registrar_lancamento: 'Registrar lançamento',
+  vincular_publicacao: 'Vincular publicação ao processo',
+  tratar_publicacao: 'Marcar publicação como tratada',
+  enviar_para_assinatura: 'Enviar para assinatura',
+  gerar_link_pagamento: 'Gerar link de pagamento',
+}
+
+/** "12/11/2026 às 14:20" a partir de data e hora do input. */
+function whenLabel(date: string | undefined, time: string | undefined): string | undefined {
+  if (!date) return undefined
+  return time ? `${formatValue('data', date)} às ${time}` : `${formatValue('data', date)}, dia inteiro`
 }
 
 /** Os dados de uma pessoa, linha a linha — para conferir antes de gravar. */
@@ -87,9 +109,73 @@ function specificRows(action: PendingAction): [string, string][] | null {
       ]
       return rows.filter((row): row is [string, string] => !!row[1])
     }
+    case 'concluir_tarefa':
+      return [['Tarefa', action.input.tarefa_titulo]]
+    case 'reatribuir_tarefa':
+      return [
+        ['Tarefa', action.input.tarefa_titulo],
+        ['Novo responsável', action.input.responsavel_nome],
+        ['Alcance', 'só esta ocorrência, se a tarefa se repete'],
+      ]
+    case 'remarcar_evento': {
+      const { input } = action
+      const end =
+        input.data_fim || input.hora_fim
+          ? whenLabel(input.data_fim ?? input.data, input.hora_fim)
+          : 'mantém a duração'
+      return rows([
+        ['Compromisso', input.evento_titulo],
+        ['Era', input.quando_era],
+        ['Passa para', whenLabel(input.data, input.hora)],
+        ['Término', end],
+        ['Alcance', 'só esta ocorrência, se o compromisso se repete'],
+      ])
+    }
+    case 'criar_audiencia': {
+      const { input } = action
+      return rows([
+        ['Processo', input.processo_cnj],
+        ['Tipo', input.tipo_nome],
+        ['Data', whenLabel(input.data, input.hora) ?? 'sem data (fica em "Sem data")'],
+        ['Modalidade', input.modalidade ? HEARING_MODALITY_LABELS[input.modalidade] : undefined],
+      ])
+    }
+    case 'registrar_lancamento': {
+      const { input } = action
+      return rows([
+        ['Tipo', FINANCIAL_TYPE_LABELS[input.tipo]],
+        ['Categoria', FINANCIAL_CATEGORY_LABELS[input.categoria]],
+        ['Descrição', input.descricao],
+        ['Valor', formatCurrency(input.valor)],
+        ['Situação', input.situacao === 'pago' ? 'Pago' : 'Pendente'],
+        ['Vencimento', input.vencimento ? formatValue('data', input.vencimento) : undefined],
+        ['Condição', input.vencimento ? undefined : input.condicao],
+        ['Pago em', input.pago_em ? formatValue('data', input.pago_em) : undefined],
+        ['Cliente', input.cliente_nome],
+        ['Processo', input.processo_cnj],
+      ])
+    }
+    case 'vincular_publicacao': {
+      const { input } = action
+      const otherCnj =
+        input.publicacao_cnj && input.processo_cnj && input.publicacao_cnj !== input.processo_cnj
+      return rows([
+        ['Publicação', input.publicacao_rotulo],
+        ['CNJ da publicação', input.publicacao_cnj],
+        ['Processo', input.processo_cnj],
+        ['Atenção', otherCnj ? 'o CNJ da publicação é diferente do processo' : undefined],
+      ])
+    }
+    case 'tratar_publicacao':
+      return [['Publicação', action.input.publicacao_rotulo]]
     default:
       return null
   }
+}
+
+/** Só as linhas com valor. */
+function rows(entries: [string, string | undefined][]): [string, string][] {
+  return entries.filter((row): row is [string, string] => !!row[1])
 }
 
 /** Campos do input que valem a pena mostrar, com rótulo humano. Ids ficam de
@@ -142,6 +228,31 @@ interface ActionConfirmCardProps {
  * clique em Confirmar — é a confirmação que dispara o service do módulo.
  */
 export function ActionConfirmCard({ action, state, output, onConfirm, onCancel }: ActionConfirmCardProps) {
+  // As que saem do escritório têm card próprio, com prévia do banco e
+  // confirmação em dois passos.
+  if (action.tool === 'enviar_para_assinatura') {
+    return (
+      <SignatureActionCard
+        input={action.input}
+        state={state}
+        output={output}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    )
+  }
+  if (action.tool === 'gerar_link_pagamento') {
+    return (
+      <PaymentLinkActionCard
+        input={action.input}
+        state={state}
+        output={output}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    )
+  }
+
   const rows: [string, string][] =
     specificRows(action) ??
     Object.entries(action.input as Record<string, unknown>)

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { syncIntimacoes } from '@/lib/buscaprocessos/syncIntimacoes'
 import { BpApiError } from '@/lib/buscaprocessos/client'
+import { enqueueUntriagedPublications } from '@/features/ia/batch/arrival'
 
 const syncSchema = z.object({
   /** Janela inicial. Omitida, a API devolve a janela corrente. */
@@ -41,6 +42,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const result = await syncIntimacoes(supabase, { desde: parsed.data.desde })
+    // Depois de responder: as publicações recém-trazidas entram na triagem em
+    // lote (fase 5) — as que ainda não têm, dos últimos dias.
+    after(async () => {
+      await enqueueUntriagedPublications({ sinceDays: 7, limit: 50 })
+    })
     return NextResponse.json(result)
   } catch (err) {
     if (err instanceof BpApiError) {

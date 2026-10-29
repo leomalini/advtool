@@ -13,6 +13,8 @@ import {
 import { ClienteCombobox } from '@/features/clientes/components/ClienteCombobox'
 import { ProcessoCombobox } from '@/features/processos/components/ProcessoCombobox'
 import { FINANCIAL_TYPE_LABELS, type FinancialEntryType } from '@/types/financialEntry.types'
+import { screenFilters } from '@/features/ia/context/screenContext'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 import {
   hasActiveFinancialFilters,
   countActiveFinancialFilters,
@@ -47,6 +49,21 @@ export function FinanceiroFilterBar({
   resultCount,
 }: FinanceiroFilterBarProps) {
   const active = hasActiveFinancialFilters(filters)
+
+  // Os filtros visíveis vão para o painel do Assistente com a pergunta. Cliente
+  // e processo vêm dos combos só com o id, que é o que as tools usam.
+  useAssistantScreen({
+    filters: screenFilters([
+      ['Busca', filters.search.trim()],
+      ['Tipo', filters.type && FINANCIAL_TYPE_LABELS[filters.type]],
+      ['Situação', filters.situation && FINANCIAL_SITUATION_FILTER_LABELS[filters.situation]],
+      ['Cliente', filters.clientId && `id: ${filters.clientId}`],
+      ['Processo', filters.legalProcessId && `id: ${filters.legalProcessId}`],
+      ['Período a partir de', filters.periodFrom],
+      ['Período até', filters.periodTo],
+      ['Data', filters.undatedOnly && 'só lançamentos sem data'],
+    ]),
+  })
 
   function set<K extends keyof FinancialFilters>(key: K, value: FinancialFilters[K]) {
     onChange({ ...filters, [key]: value })

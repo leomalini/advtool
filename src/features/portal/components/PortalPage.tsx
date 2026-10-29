@@ -9,10 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PortalLinkInvalidError } from '../services/portal.service'
 import { isNeedsDocument, usePortalData } from '../hooks/usePortal'
-import { PortalAssistant } from './PortalAssistant'
 import { PortalDocumentGate } from './PortalDocumentGate'
 import { PortalProcessCard } from './PortalProcessCard'
 import { PortalOpenPayments, PortalPaidPayments } from './PortalPayments'
+import { PortalQuestionsChat } from './PortalQuestionsChat'
 import type { PortalProcess } from '@/types/clientPortal.types'
 
 /** A partir de quantos processos a busca aparece. Abaixo disso a lista inteira
@@ -63,7 +63,7 @@ export function PortalPage({ token }: { token: string }) {
       className={cn(
         'mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10',
         // Espaço para o botão fixo do chat não cobrir o rodapé no celular.
-        data.assistant_enabled && 'pb-28'
+        data.answers_enabled && 'pb-28'
       )}
     >
       <header className="flex flex-col gap-1">
@@ -104,8 +104,12 @@ export function PortalPage({ token }: { token: string }) {
         </p>
       </footer>
 
-      {data.assistant_enabled && (
-        <PortalAssistant token={token} processCount={data.processes.length} />
+      {data.answers_enabled && (
+        <PortalQuestionsChat
+          token={token}
+          processes={data.processes}
+          officeContact={data.office_contact}
+        />
       )}
     </div>
   )

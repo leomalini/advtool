@@ -1,9 +1,12 @@
-import type { InferUITools, UIDataTypes, UIMessage } from 'ai'
+import type { InferUITools, UIMessage } from 'ai'
+import type { ScreenContext } from '../context/screenContext'
 import { actionTools } from './actions'
+import { interfaceTools } from './interface'
 import { createAgendaTools } from './read/agenda'
 import { createClientTools } from './read/clients'
 import { createFileTools, type FileToolsContext } from './read/files'
 import { createFinancialTools } from './read/financial'
+import { createHearingTools } from './read/hearings'
 import { createProcessTools } from './read/processes'
 import { createPublicationTools } from './read/publications'
 import { createTeamTools } from './read/team'
@@ -27,20 +30,29 @@ export function createAssistantTools(supabase: ToolClient, context: AssistantToo
     ...createClientTools(supabase),
     ...createProcessTools(supabase),
     ...createAgendaTools(supabase),
+    ...createHearingTools(supabase),
     ...createPublicationTools(supabase),
     ...createFinancialTools(supabase),
-    ...createTeamTools(supabase),
+    ...createTeamTools(supabase, context.userId),
     ...createFileTools(supabase, context),
     ...createTemplateTools(supabase, context),
     ...createContractTools(supabase, context),
     ...createDocxTools(supabase, context),
     ...createPdfTools(supabase, context),
     ...actionTools,
+    ...interfaceTools,
   }
 }
 
 export type AssistantTools = ReturnType<typeof createAssistantTools>
 
+/** Partes de dados do chat. `context` é a tela de onde a pergunta saiu, pelo
+ * painel do Assistente (ver `context/screenContext.ts`). Alias, não interface:
+ * só o alias satisfaz o `Record<string, unknown>` que o `UIMessage` exige. */
+export type AssistantDataTypes = {
+  context: ScreenContext
+}
+
 /** Mensagem tipada do chat: `parts` conhece cada tool pelo nome. É o que a
  * tela renderiza e o que vai para `ai_messages.parts`. */
-export type AssistantUIMessage = UIMessage<never, UIDataTypes, InferUITools<AssistantTools>>
+export type AssistantUIMessage = UIMessage<never, AssistantDataTypes, InferUITools<AssistantTools>>

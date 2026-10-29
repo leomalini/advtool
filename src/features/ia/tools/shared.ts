@@ -43,6 +43,16 @@ export function officeDayEnd(day: string): string {
   return `${day}T23:59:59.999${OFFICE_UTC_OFFSET}`
 }
 
+/** Hoje (yyyy-MM-dd) no fuso do escritório, como a data do `system`. */
+export function officeToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+}
+
 /**
  * Condição `ilike` para dentro de um `.or()` do PostgREST, com o termo que o
  * MODELO escreveu. Vírgula, parênteses e ponto têm significado na sintaxe do

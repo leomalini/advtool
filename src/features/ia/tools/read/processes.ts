@@ -2,7 +2,22 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { PROCESS_STATUS_LABELS, PROCESS_TYPE_LABELS } from '@/types/legalProcess.types'
 import type { ProcessStatus, ProcessType } from '@/types/legalProcess.types'
+import type {
+  ProcessSummary,
+  ProcessSummaryRecord,
+} from '@/features/processos/summary/summarySchema'
 import { clientLabel, ilikeFilter, limitSchema, toolError, type ToolClient } from '../shared'
+
+/** O resumo estruturado em texto corrido, para o modelo ler junto com a capa. */
+function summaryText(summary: ProcessSummary): string {
+  const attention = summary.pontos_de_atencao.map((point) => `- ${point.texto}`)
+  return [
+    `Fase: ${summary.fase_atual.texto}`,
+    `Último ato: ${summary.ultimo_ato.data} — ${summary.ultimo_ato.descricao}`,
+    ...summary.resumo.map((paragraph) => paragraph.texto),
+    ...(attention.length ? ['Pontos de atenção:', ...attention] : []),
+  ].join('\n\n')
+}
 
 const LIST_SELECT =
   'id, cnj_number, court, court_division, comarca, plaintiff, defendant, status, process_type, ' +
@@ -141,8 +156,8 @@ export function createProcessTools(supabase: ToolClient) {
 
     detalhar_processo: tool({
       description:
-        'Detalhes de um processo pelo id: capa, partes, resumo gerado pela BuscaProcessos (quando ' +
-        'existe) e as últimas movimentações/publicações.',
+        'Detalhes de um processo pelo id: capa, partes, o resumo por IA da página do processo ' +
+        '(quando existe) e as últimas movimentações/publicações.',
       inputSchema: z.object({
         processo_id: z.string().uuid(),
         movimentacoes: z.number().int().min(0).max(30).optional()
@@ -165,6 +180,15 @@ export function createProcessTools(supabase: ToolClient) {
           .limit(movimentacoes ?? 10)
         if (movesError) return toolError('as movimentações', movesError)
 
+        // O resumo é complemento: sem ele (ou sem a migration 82), os detalhes
+        // saem com o resumo antigo da BuscaProcessos em vez de falhar.
+        const { data: summaryRow } = await supabase
+          .from('legal_process_summaries')
+          .select('summary, generated_at')
+          .eq('legal_process_id', processo_id)
+          .maybeSingle()
+        const claudeSummary = summaryRow as Pick<ProcessSummaryRecord, 'summary' | 'generated_at'> | null
+
         const row = data as unknown as ListRow & {
           ai_summary: string | null
           ai_summary_updated_at: string | null
@@ -173,8 +197,17 @@ export function createProcessTools(supabase: ToolClient) {
         return {
           ...summarize(row),
           advogado_contrario: row.opposing_counsel,
-          resumo_ia: row.ai_summary,
-          resumo_ia_em: row.ai_summary_updated_at,
+          ...(claudeSummary
+            ? {
+                resumo_ia: summaryText(claudeSummary.summary),
+                resumo_ia_em: claudeSummary.generated_at,
+                resumo_ia_origem: 'Claude, com fontes na página do processo',
+              }
+            : {
+                resumo_ia: row.ai_summary,
+                resumo_ia_em: row.ai_summary_updated_at,
+                resumo_ia_origem: row.ai_summary ? 'BuscaProcessos (antigo)' : null,
+              }),
           movimentacoes: (moves ?? []).map((m) => ({
             id: m.id,
             data: m.movement_date,

@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import { enqueueArrivalWork } from '@/features/ia/batch/arrival'
 import { verifyWebhookAuth } from '@/lib/buscaprocessos/signature'
 import { handleBpWebhook } from '@/lib/buscaprocessos/webhook'
 import {
@@ -11,6 +12,10 @@ import { alertOnRejectionStreak } from '@/lib/buscaprocessos/webhookAlerts'
 import type { BpWebhookPayload } from '@/lib/buscaprocessos/types'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Segundos. A resposta sai em instantes; o tempo é do `after` que refaz o
+ * resumo do processo (10 a 25 s por processo) depois de responder. */
+export const maxDuration = 120
 
 /**
  * Recebimento dos webhooks da BuscaProcessos.
@@ -114,6 +119,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       replayOf,
     })
     if (replayOf) await markReplayed(supabase, replayOf)
+
+    // Depois de responder, em lote (fase 5): a triagem das publicações novas,
+    // o resumo por IA dos processos que receberam algo, se já tinham resumo
+    // (2b), e as respostas do portal, se já tinham (3). A BuscaProcessos não
+    // espera.
+    const inserted = result.destinations.filter(
+      (destination) => destination.action === 'inserted' && destination.id,
+    )
+    if (inserted.length > 0) {
+      const movementIds = inserted
+        .filter((destination) => destination.table === 'legal_process_movements')
+        .map((destination) => destination.id as string)
+      const publicationIds = inserted
+        .filter((destination) => destination.table === 'publications')
+        .map((destination) => destination.id as string)
+      after(async () => {
+        await enqueueArrivalWork({ movementIds, publicationIds })
+      })
+    }
 
     return NextResponse.json({
       received: true,

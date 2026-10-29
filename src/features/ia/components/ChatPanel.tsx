@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useChat } from '@ai-sdk/react'
 import {
   DefaultChatTransport,
@@ -8,13 +9,28 @@ import {
   isToolUIPart,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
-import { Loader2, Paperclip, SendHorizonal, Sparkles, Square } from 'lucide-react'
+import {
+  Check,
+  Copy,
+  Loader2,
+  MapPin,
+  Paperclip,
+  SendHorizonal,
+  Sparkles,
+  Square,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import type { QuickAction } from '../context/quickActions'
+import { screenContextSummary, type ScreenContext } from '../context/screenContext'
+import type { AssistantRequest } from '../stores/assistantPanel.store'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES } from '../tools/actions'
+import { screenHref } from '../tools/interface'
+import { AI_ERROR_MESSAGES } from '../errorMessages'
 import { AI_FILE_ACCEPT } from '../files/constants'
 import { useChatAttachments } from '../hooks/useChatAttachments'
 import { useExecuteAction, type PendingAction } from '../hooks/useExecuteAction'
@@ -43,19 +59,119 @@ function hasPendingAction(messages: AssistantUIMessage[]): boolean {
   )
 }
 
+/** O texto de uma resposta, como o modelo escreveu — é o que se cola no
+ * WhatsApp ou no e-mail. Chips de consulta e cards não entram. */
+function messageText(message: AssistantUIMessage): string {
+  return message.parts
+    .flatMap((part) => (part.type === 'text' && part.text.trim() ? [part.text.trim()] : []))
+    .join('\n\n')
+}
+
+/**
+ * O rascunho de mensagem para um cliente vem entre duas linhas `***` (regra do
+ * `system`, "Mensagens para clientes"), com as observações para o advogado do
+ * lado de fora. Com exatamente um par, o trecho do meio é o que se cola.
+ *
+ * `***`, e não `---`: no Markdown, uma linha `---` colada embaixo de texto faz
+ * dele um título, e a última frase da mensagem apareceria em destaque. E as
+ * respostas comuns usam `---` entre seções; `***` fica só para o rascunho.
+ */
+function draftBetweenRules(text: string): string | null {
+  const parts = text.split(/^[ \t]*\*\*\*[ \t]*$/m)
+  if (parts.length !== 3) return null
+  return parts[1].trim() || null
+}
+
+/** Copiar uma resposta: o rascunho de mensagem para o cliente sai daqui. Nada
+ * é enviado pelo app. */
+function CopyTextButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error('[ia] copy failed:', err)
+      toast.error('Não foi possível copiar.')
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? 'Copiado' : label}
+    </button>
+  )
+}
+
+const KNOWN_ERROR_MESSAGES: readonly string[] = Object.values(AI_ERROR_MESSAGES)
+
+/**
+ * O que dizer quando o turno falha.
+ *
+ * Falha no meio da resposta chega com uma das mensagens de `AI_ERROR_MESSAGES`
+ * (a rota escolhe pela causa: chave, créditos, limite, recusa). Recusa da rota
+ * antes do modelo (teto do mês, provedor não configurado) chega com o corpo
+ * JSON como mensagem do erro. Qualquer outra coisa — rede, erro do navegador —
+ * vira a genérica.
+ */
+function chatErrorMessage(error: Error): string {
+  if (KNOWN_ERROR_MESSAGES.includes(error.message)) return error.message
+
+  try {
+    const body: unknown = JSON.parse(error.message)
+    if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
+      return body.error
+    }
+  } catch {
+    // Não é JSON: a falha foi fora da rota.
+  }
+  return AI_ERROR_MESSAGES.generic
+}
+
 interface ChatPanelProps {
   conversationId: string
   initialMessages: AssistantUIMessage[]
   /** Fim de cada turno — a conversa já está gravada quando isto dispara. */
   onTurnEnd: () => void
+  /** A tela por trás do painel lateral. Vai junto com cada pergunta, como a
+   * tela estava no momento do envio. O /ia não manda. */
+  screenContext?: ScreenContext
+  /** `panel`: o painel lateral, estreito. */
+  variant?: 'page' | 'panel'
+  /** Ações rápidas da tela por trás do painel (ver `quickActions.ts`). */
+  quickActions?: readonly QuickAction[]
+  /** Pedido feito fora do painel; sai assim que o chat estiver livre. */
+  request?: AssistantRequest | null
+  onRequestSent?: (id: string) => void
 }
 
-export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPanelProps) {
+export function ChatPanel({
+  conversationId,
+  initialMessages,
+  onTurnEnd,
+  screenContext,
+  variant = 'page',
+  quickActions = [],
+  request = null,
+  onRequestSent,
+}: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [runningCallId, setRunningCallId] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  /** Último pedido de fora já enviado. O StrictMode roda o efeito de novo
+   * antes de o store limpar o pedido; sem isto ele sairia duas vezes. */
+  const sentRequestRef = useRef<string | null>(null)
+  const router = useRouter()
   const executeAction = useExecuteAction()
   const attachments = useChatAttachments(conversationId)
 
@@ -76,6 +192,20 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
       // Depois que TODAS as ações do turno receberam resposta (confirmada ou
       // cancelada), o histórico volta ao servidor para o modelo concluir.
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+      // Tools de interface rodam aqui (ver `tools/interface.ts`). No painel a
+      // tela por trás muda; no /ia, sair da página cortaria a conversa — vira
+      // link no chat.
+      onToolCall: ({ toolCall }) => {
+        if (toolCall.dynamic || toolCall.toolName !== 'abrir_tela') return
+        const href = screenHref(toolCall.input)
+        const navigate = variant === 'panel' && href !== null
+        if (navigate) router.push(href)
+        void addToolOutput({
+          tool: 'abrir_tela',
+          toolCallId: toolCall.toolCallId,
+          output: { navegou: navigate, link: href ?? '' },
+        })
+      },
       onFinish: () => onTurnEnd(),
       onError: (err) => console.error('[ia] chat error:', err),
     })
@@ -98,8 +228,56 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
     if (inputLocked || attachments.isUploading || (!trimmed && files.length === 0)) return
     setInput('')
     attachments.clear()
-    void sendMessage({ text: trimmed, files: files.length > 0 ? files : undefined })
+    if (!screenContext) {
+      void sendMessage({ text: trimmed, files: files.length > 0 ? files : undefined })
+      return
+    }
+    // As mesmas partes que o `{ text, files }` monta, com a tela na frente.
+    void sendMessage({
+      parts: [
+        { type: 'data-context', data: screenContext },
+        ...files,
+        { type: 'text', text: trimmed },
+      ],
+    })
   }
+
+  /** Pergunta pronta (ação rápida ou pedido de fora): só o texto, sem mexer no
+   * que a pessoa está digitando nem nos anexos dela. */
+  function sendPrompt(text: string, context: ScreenContext | undefined) {
+    if (inputLocked) return
+    void sendMessage(
+      context
+        ? { parts: [{ type: 'data-context', data: context }, { type: 'text', text }] }
+        : { text },
+    )
+  }
+
+  function runQuickAction(action: QuickAction) {
+    if (action.mode === 'send') {
+      sendPrompt(action.prompt, screenContext)
+      return
+    }
+    setInput(action.prompt)
+    // O cursor no fim, para a pessoa completar ("desde 01/06").
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(action.prompt.length, action.prompt.length)
+    })
+  }
+
+  const sendRequest = useEffectEvent((pending: AssistantRequest) => {
+    if (sentRequestRef.current === pending.id) return
+    sentRequestRef.current = pending.id
+    onRequestSent?.(pending.id)
+    sendPrompt(pending.prompt, pending.context)
+  })
+
+  useEffect(() => {
+    if (request && !inputLocked) sendRequest(request)
+  }, [request, inputLocked])
 
   function addFiles(list: FileList | null) {
     if (!list || list.length === 0 || inputLocked) return
@@ -174,14 +352,22 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
             </div>
             <div>
               <h3 className="text-lg font-semibold">Assistente do escritório</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                Pergunte sobre clientes, processos, agenda, tarefas, publicações e financeiro,
-                peça para criar uma tarefa ou compromisso — ou anexe um PDF, imagem, Word ou
-                planilha para a IA ler.
-              </p>
+              {variant === 'panel' ? (
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Pergunte sobre o que está na tela — “resuma isto”, “crie uma tarefa para este
+                  processo” — ou sobre qualquer parte do escritório.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Pergunte sobre clientes, processos, agenda, tarefas, publicações e financeiro,
+                  peça para criar uma tarefa ou compromisso — ou anexe um PDF, imagem, Word ou
+                  planilha para a IA ler.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-              {SUGGESTIONS.map((suggestion) => (
+              {/* Com ações da tela logo abaixo, as sugestões gerais sobram. */}
+              {(quickActions.length > 0 ? [] : SUGGESTIONS).map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
@@ -195,29 +381,44 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
           </div>
         )}
 
-        {visibleMessages.map((message) => (
-          <div
-            key={message.id}
-            className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}
-          >
+        {visibleMessages.map((message) => {
+          const streaming = busy && message.id === lastMessageId
+          const copyText = message.role === 'assistant' && !streaming ? messageText(message) : ''
+          const draft = copyText ? draftBetweenRules(copyText) : null
+          return (
             <div
+              key={message.id}
               className={cn(
-                'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
-                message.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-muted rounded-bl-sm',
+                'flex flex-col gap-1',
+                message.role === 'user' ? 'items-end' : 'items-start',
               )}
             >
-              <MessageParts
-                message={message}
-                streaming={busy && message.id === lastMessageId}
-                runningCallId={runningCallId}
-                onConfirmAction={handleConfirm}
-                onCancelAction={handleCancel}
-              />
+              <div
+                className={cn(
+                  'rounded-2xl px-4 py-2.5 text-sm',
+                  variant === 'panel' ? 'max-w-[90%]' : 'max-w-[80%]',
+                  message.role === 'user'
+                    ? 'bg-primary text-primary-foreground rounded-br-sm'
+                    : 'bg-muted rounded-bl-sm',
+                )}
+              >
+                <MessageParts
+                  message={message}
+                  streaming={streaming}
+                  runningCallId={runningCallId}
+                  onConfirmAction={handleConfirm}
+                  onCancelAction={handleCancel}
+                />
+              </div>
+              {copyText && (
+                <div className="flex gap-1">
+                  {draft && <CopyTextButton text={draft} label="Copiar mensagem" />}
+                  <CopyTextButton text={copyText} label={draft ? 'Copiar tudo' : 'Copiar'} />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {thinking && (
           <div className="flex justify-start">
@@ -228,9 +429,7 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
         )}
 
         {error && (
-          <p className="text-sm text-destructive text-center">
-            O assistente falhou ao responder. Tente de novo.
-          </p>
+          <p className="text-sm text-destructive text-center">{chatErrorMessage(error)}</p>
         )}
         <div ref={bottomRef} />
       </div>
@@ -248,6 +447,34 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
           submit(input)
         }}
       >
+        {screenContext && (
+          <p
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="A tela vai junto com a pergunta"
+          >
+            <MapPin className="h-3 w-3 shrink-0" />
+            <span className="truncate">{screenContextSummary(screenContext)}</span>
+          </p>
+        )}
+
+        {quickActions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {quickActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={inputLocked}
+                onClick={() => runQuickAction(action)}
+                title={action.prompt}
+                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Zap className="h-3 w-3 text-primary" />
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {attachments.attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.attachments.map((attachment) => (
@@ -286,6 +513,7 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
             <Paperclip className="h-4 w-4" />
           </Button>
           <Textarea
+            ref={textareaRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
@@ -294,7 +522,11 @@ export function ChatPanel({ conversationId, initialMessages, onTurnEnd }: ChatPa
                 submit(input)
               }
             }}
-            placeholder="Pergunte algo ou anexe um arquivo… (Enter envia, Shift+Enter quebra linha)"
+            placeholder={
+              variant === 'panel'
+                ? 'Pergunte algo… (Enter envia)'
+                : 'Pergunte algo ou anexe um arquivo… (Enter envia, Shift+Enter quebra linha)'
+            }
             rows={1}
             className="min-h-[40px] max-h-40 resize-none"
             disabled={inputLocked}

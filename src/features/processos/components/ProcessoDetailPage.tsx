@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
@@ -52,7 +52,12 @@ import { NONE_VALUE } from '@/utils/select'
 import { InfoStripItem, ActionCard } from '@/components/shared/DetailStrip'
 import { ResumoIaCard } from './ResumoIaCard'
 import { DocumentosPublicosTab } from './DocumentosPublicosTab'
-import { PublicacaoTimelineCard, DocumentoTimelineCard } from './TimelineCards'
+import {
+  PublicacaoTimelineCard,
+  DocumentoTimelineCard,
+  TIMELINE_FOCUS_CLASS,
+  timelineEntryAnchor,
+} from './TimelineCards'
 import { formatDocument } from '@/utils/format'
 import { useLegalProcess } from '../hooks/useLegalProcesses'
 import {
@@ -63,6 +68,13 @@ import {
   useSyncProcesso,
   useSetProcessMonitoring,
 } from '../hooks/useLegalProcessMutations'
+import {
+  useAutoRefreshProcessSummary,
+  useGenerateProcessSummary,
+  useProcessSummary,
+} from '../hooks/useProcessSummary'
+import type { SummarySource } from '../summary/summarySchema'
+import { PortalAnswersReview } from '@/features/portal/components/PortalAnswersReview'
 import { findClientByDocument } from '@/features/clientes/services/clientes.service'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { CrmTag } from '@/schemas/crmItem.schema'
@@ -113,6 +125,7 @@ import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useOpenDocument } from '@/features/documentos/hooks/useDocumentMutations'
 import { formatFileSize, getFileExtension } from '@/types/document.types'
 import { tagAppearance } from '@/utils/tags'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 
 const PAGE_SIZE = 20
 
@@ -465,6 +478,8 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const [tab, setTab] = useState<Tab>('tudo')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
+  /** Item da linha do tempo que uma referência do resumo por IA mandou abrir. */
+  const [focusedEntryId, setFocusedEntryId] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
@@ -489,6 +504,16 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
 
   const updateProcess = useUpdateLegalProcess(processoId, item?.id ?? '')
   const syncProcess = useSyncProcesso()
+  const { data: processSummary = null } = useProcessSummary(processoId)
+  const generateSummary = useGenerateProcessSummary(processoId)
+  const {
+    mutate: autoRefreshSummary,
+    isPending: isAutoRefreshing,
+    data: autoRefreshOutcome,
+  } =
+    useAutoRefreshProcessSummary(processoId)
+  /** Processo cuja atualização automática já foi pedida nesta visita. */
+  const autoRefreshRequestedFor = useRef<string | null>(null)
   const setMonitoring = useSetProcessMonitoring(processoId)
   const markMovement = useMarkMovement()
   const setMovementVisibility = useSetMovementClientVisibility()
@@ -500,6 +525,29 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   // `item` pode ser null num processo órfão; o botão de nota fica desabilitado
   // nesse caso, então a mutação nunca dispara com id vazio.
   const addComment = useAddCrmItemComment(item?.id ?? '', clientName)
+
+  // O painel do Assistente: "resuma isto", "crie uma tarefa para este processo".
+  useAssistantScreen(
+    processo
+      ? {
+          entities: [
+            {
+              kind: 'processo',
+              id: processo.id,
+              label: [
+                processo.cnj_number ?? 'Sem número CNJ',
+                [processo.procedural_class, processo.subject].filter(Boolean).join(' / '),
+              ]
+                .filter(Boolean)
+                .join(' — '),
+            },
+            ...(item?.client
+              ? [{ kind: 'cliente' as const, id: item.client.id, label: clientName }]
+              : []),
+          ],
+        }
+      : null,
+  )
 
   // Mesmas queries que alimentam as abas — os contadores não podem divergir do
   // que a aba mostra ao ser aberta.
@@ -641,6 +689,53 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const pageItems = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+
+  /** Movimentações e publicações gravadas depois do resumo — o aviso de que
+   * ele envelheceu e vale atualizar. */
+  const newSinceSummary = useMemo(() => {
+    if (!processSummary || !processo) return 0
+    const since = new Date(processSummary.generated_at).getTime()
+    return [...processo.movements, ...processo.publications].filter(
+      (entry) => new Date(entry.created_at).getTime() > since,
+    ).length
+  }, [processSummary, processo])
+
+  // Resumo com novidades depois dele: pede a atualização automática uma vez
+  // por visita (fase 2b). O servidor decide se refaz — no máximo a cada 15 min.
+  useEffect(() => {
+    if (newSinceSummary === 0 || autoRefreshRequestedFor.current === processoId) return
+    autoRefreshRequestedFor.current = processoId
+    autoRefreshSummary()
+  }, [newSinceSummary, processoId, autoRefreshSummary])
+
+  /** Referência do resumo → item da linha do tempo: tira filtro e busca, vai à
+   * página do item e o destaca. */
+  function openSummarySource(source: SummarySource) {
+    const index = timelineEntries.findIndex(
+      (entry) =>
+        (entry.type === 'movement' && entry.movement.id === source.id) ||
+        (entry.type === 'publication' && entry.publication.id === source.id),
+    )
+    if (index < 0) {
+      toast.info('Este item não está mais na linha do tempo do processo.')
+      return
+    }
+    setTab('tudo')
+    setSearch('')
+    setPage(Math.floor(index / PAGE_SIZE))
+    setFocusedEntryId(source.id)
+  }
+
+  // Depois que a página certa da linha do tempo renderiza, rola até o item e
+  // tira o destaque alguns segundos depois.
+  useEffect(() => {
+    if (!focusedEntryId) return
+    document
+      .getElementById(timelineEntryAnchor(focusedEntryId))
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const timer = window.setTimeout(() => setFocusedEntryId(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [focusedEntryId])
 
   function resetPaging<T>(setter: (value: T) => void) {
     return (value: T) => {
@@ -997,15 +1092,27 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
 
           {/* ── Resumo por IA ── */}
           <ResumoIaCard
-            summary={processo.ai_summary}
-            updatedAt={processo.ai_summary_updated_at}
-            hasCnj={Boolean(processo.cnj_number)}
-            onSync={() =>
-              processo.cnj_number &&
-              syncProcess.mutate({ legalProcessId: processo.id, cnj: processo.cnj_number })
-            }
-            isSyncing={syncProcess.isPending}
+            summary={processSummary}
+            legacySummary={processo.ai_summary}
+            legacyUpdatedAt={processo.ai_summary_updated_at}
+            newSinceSummary={newSinceSummary}
+            canGenerate={can('processos', 'update')}
+            onGenerate={() => generateSummary.mutate()}
+            isGenerating={generateSummary.isPending}
+            isRefreshing={isAutoRefreshing}
+            refreshQueued={autoRefreshOutcome?.status === 'queued'}
+            onOpenSource={openSummarySource}
           />
+
+          {/* ── Portal do cliente: as respostas das perguntas fixas (D6) ──
+              Só com cliente: o portal é do cliente, e processo sem ele não
+              aparece em link nenhum. */}
+          {item?.client_id && (
+            <PortalAnswersReview
+              legalProcessId={processo.id}
+              canEdit={can('processos', 'update')}
+            />
+          )}
 
           {/* ── Cards de ação ── */}
           <div className="flex gap-4">
@@ -1176,6 +1283,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                       <PublicacaoTimelineCard
                         key={entry.publication.id}
                         publicacao={entry.publication}
+                        focused={focusedEntryId === entry.publication.id}
                       />
                     )
                   }
@@ -1207,9 +1315,11 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   return (
                     <div
                       key={movement.id}
+                      id={timelineEntryAnchor(movement.id)}
                       className={cn(
                         'flex gap-4 p-4 border-l-2',
-                        unread ? 'border-l-warning bg-warning/[0.04]' : 'border-l-transparent'
+                        unread ? 'border-l-warning bg-warning/[0.04]' : 'border-l-transparent',
+                        focusedEntryId === movement.id && TIMELINE_FOCUS_CLASS
                       )}
                     >
                       <div className="flex w-[92px] shrink-0 flex-col">

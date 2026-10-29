@@ -57,7 +57,7 @@ export function useUnreadPublicationCount(options: { enabled?: boolean } = {}) {
   })
 }
 
-function useInvalidatePublications() {
+export function useInvalidatePublications() {
   const queryClient = useQueryClient()
   return () => queryClient.invalidateQueries({ queryKey: publicationKeys.all })
 }

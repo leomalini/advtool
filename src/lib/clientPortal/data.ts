@@ -157,20 +157,20 @@ async function getMovementSummaries(
 }
 
 /**
- * A timeline de um processo.
+ * O processo é do cliente do token?
  *
- * ⚠️ `clientId` NÃO é decoração. O id do processo chega pela URL, e sem este
- * filtro qualquer titular de link válido leria a timeline de qualquer processo
- * do escritório trocando o id na barra de endereços. O vínculo é reconferido
- * aqui, contra o cliente do token, a cada chamada.
+ * ⚠️ O id do processo chega pela URL. Sem esta conferência, qualquer titular
+ * de link válido leria qualquer processo do escritório trocando o id na barra
+ * de endereços. Toda rota do portal que recebe um id de processo passa por
+ * aqui, a cada chamada.
  */
-export async function getPortalProcessTimeline(
+export async function isPortalProcessOfClient(
   clientId: string,
   processId: string
-): Promise<PortalProcessTimeline | null> {
+): Promise<boolean> {
   const admin = createAdminClient()
 
-  const { data: owned, error: ownershipError } = await admin
+  const { data: owned, error } = await admin
     .from('legal_processes')
     .select('id, crm_items:crm_items!crm_items_legal_process_id_fkey!inner(id)')
     .eq('id', processId)
@@ -178,12 +178,24 @@ export async function getPortalProcessTimeline(
     .eq('crm_items.workflow_id', 'wf-processos')
     .maybeSingle()
 
-  if (ownershipError) {
-    console.error('[portal] verificação de vínculo falhou:', ownershipError.message)
+  if (error) {
+    console.error('[portal] verificação de vínculo falhou:', error.message)
     throw new Error('Não foi possível carregar o andamento.')
   }
-  if (!owned) return null
+  return Boolean(owned)
+}
 
+/**
+ * A timeline de um processo. `clientId` NÃO é decoração: ver
+ * `isPortalProcessOfClient`.
+ */
+export async function getPortalProcessTimeline(
+  clientId: string,
+  processId: string
+): Promise<PortalProcessTimeline | null> {
+  if (!(await isPortalProcessOfClient(clientId, processId))) return null
+
+  const admin = createAdminClient()
   const { data, error } = await admin
     .from('legal_process_movements')
     .select('id, movement_date, title, description')

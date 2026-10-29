@@ -26,6 +26,9 @@ import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { PublicacaoAtividades } from './PublicacaoAtividades'
+import { PublicationTriageCard } from './PublicationTriageCard'
+import { useCollectAiBatches } from '@/features/ia/hooks/useCollectAiBatches'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 import {
   usePublication,
   usePublicationQueue,
@@ -169,6 +172,36 @@ export function PublicacaoDetailPage({ publicacaoId }: { publicacaoId: string })
   const [onlyUnreadQueue, setOnlyUnreadQueue] = useState(true)
 
   const { data: publicacao, isLoading } = usePublication(publicacaoId)
+  // A triagem roda em lote: abrir a publicação recolhe o que ficou pronto.
+  useCollectAiBatches()
+  useAssistantScreen(
+    publicacao
+      ? {
+          entities: [
+            {
+              kind: 'publicacao',
+              id: publicacao.id,
+              label: [
+                `#${publicacao.sequence_number}`,
+                publicacao.publication_type ?? publicacao.title,
+                formatDate(publicacao.publication_date),
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            },
+            ...(publicacao.legal_process
+              ? [
+                  {
+                    kind: 'processo' as const,
+                    id: publicacao.legal_process.id,
+                    label: publicacao.legal_process.cnj_number ?? '',
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
+  )
   const { data: queue = [] } = usePublicationQueue(onlyUnreadQueue)
   const { data: unreadCount = 0 } = useUnreadPublicationCount()
 
@@ -422,6 +455,13 @@ export function PublicacaoDetailPage({ publicacaoId }: { publicacaoId: string })
                 />
               </div>
             </div>
+
+            {/* ── Triagem por IA (fase 5) ── */}
+            {publicacao.triage && (
+              <div className="border-b px-5 pt-5 pb-5">
+                <PublicationTriageCard publicacao={publicacao} />
+              </div>
+            )}
 
             {/* ── Texto integral ── */}
             <div className="p-5">

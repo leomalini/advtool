@@ -58,6 +58,7 @@ import { FinancialEntriesTab } from '@/features/financeiro/components/FinancialE
 import { useTasksForEntity } from '@/features/tarefas/hooks/useTasks'
 import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
 import { TaskForm } from '@/features/tarefas/components/TaskForm'
+import { useAssistantScreen } from '@/features/ia/hooks/useAssistantScreen'
 
 type Tab =
   | 'cadastro'
@@ -349,6 +350,12 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   const router = useRouter()
   const { data: cliente, isLoading, error } = useCliente(clienteId)
   const { can } = usePermissions()
+
+  useAssistantScreen(
+    cliente
+      ? { entities: [{ kind: 'cliente', id: cliente.id, label: getClientDisplayName(cliente) }] }
+      : null,
+  )
 
   const [tab, setTab] = useState<Tab>('cadastro')
   const [editOpen, setEditOpen] = useState(false)
