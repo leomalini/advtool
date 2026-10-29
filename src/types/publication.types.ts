@@ -71,6 +71,38 @@ export interface PublicationWithRelations extends Publication {
       position: number
     }[]
   } | null
+  /** A triagem por IA (fase 5; migration 85), quando já foi feita. */
+  triage: PublicationTriage | null
+}
+
+export type TriageUrgency = 'alta' | 'media' | 'baixa'
+
+export const TRIAGE_URGENCY_LABELS: Record<TriageUrgency, string> = {
+  alta: 'Urgente',
+  media: 'Atenção',
+  baixa: 'Rotina',
+}
+
+/** Uma linha de `publication_triage` (migration 85). */
+export interface PublicationTriage {
+  publication_id: string
+  act_type: string
+  urgency: TriageUrgency
+  needs_action: boolean
+  summary: string
+  /** A providência como título de tarefa; nula quando não pede nada. */
+  suggested_task: string | null
+  /** Prazo que o texto dá; a data sai do motor de prazos. */
+  deadline_days: number | null
+  deadline_counting: 'uteis' | 'corridos' | null
+  probable_process_id: string | null
+  probable_reason: string | null
+  model: string | null
+  triaged_at: string
+  suggestion_status: 'open' | 'task_created' | 'dismissed'
+  task_id: string | null
+  /** O processo provável, para o link e o "Vincular". */
+  probable_process?: { id: string; cnj_number: string | null } | null
 }
 
 export interface PublicationFilters {

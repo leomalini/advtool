@@ -8,10 +8,6 @@ import {
   refreshProcessSummaryFromApi,
 } from '../services/processSummary.service'
 
-/** Quando outra atualização já está em curso (o sync, o webhook), o resumo
- * novo sai em segundos: relê depois disso. */
-const BUSY_RETRY_MS = 30_000
-
 export const processSummaryKeys = {
   detail: (legalProcessId: string) => ['process-summary', legalProcessId] as const,
 }
@@ -39,9 +35,9 @@ export function useGenerateProcessSummary(legalProcessId: string) {
 }
 
 /**
- * Atualização automática ao abrir um processo com novidades (fase 2b). Sem
- * aviso: o card mostra o resumo novo quando chega, ou continua com o aviso de
- * novidades se o servidor não refez (cedo demais, teto, falha).
+ * Atualização automática ao abrir um processo com novidades (fase 2b; em lote
+ * desde a fase 5). Sem toast: o card mostra o resumo novo quando o lote já o
+ * tinha pronto, ou diz que a atualização foi pedida (`data.status === 'queued'`).
  */
 export function useAutoRefreshProcessSummary(legalProcessId: string) {
   const queryClient = useQueryClient()
@@ -50,11 +46,7 @@ export function useAutoRefreshProcessSummary(legalProcessId: string) {
   return useMutation({
     mutationFn: () => refreshProcessSummaryFromApi(legalProcessId),
     onSuccess: (outcome) => {
-      if (outcome.status === 'refreshed') {
-        queryClient.setQueryData(key, outcome.record)
-      } else if (outcome.status === 'skipped' && outcome.reason === 'busy') {
-        window.setTimeout(() => queryClient.invalidateQueries({ queryKey: key }), BUSY_RETRY_MS)
-      }
+      if (outcome.status === 'refreshed') queryClient.setQueryData(key, outcome.record)
     },
   })
 }

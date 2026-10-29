@@ -822,6 +822,60 @@ um.
   porque o gratuito limita cron.
 - Resumos e respostas do portal entram na mesma fila de lote.
 
+**Decisões do usuário (2026-10-27):** briefing pelo **cron da Vercel**
+(`vercel.json`, todo dia às 7h de Brasília); triagem, resumos e respostas do
+portal **em lote** (Batch API, metade do preço). Volume medido para a decisão:
+42 publicações em 30 dias, mediana de 1,2 mil caracteres (triagem na hora
+estimada em R$ 5 a 9 por mês).
+
+**Como ficou (2026-10-28, branch `feat/ia-segundo-plano`, de
+`feat/ia-acoes-tela`; migration 85):**
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Tabelas | migration 85 | `ai_batch_items` (o que foi ao lote: tipo, registro, referência do lote, impressão digital, contexto, situação; um pendente por tipo e registro; só a service_role), `publication_triage` (lê com `publicacoes:view`, marca a sugestão com `publicacoes:update`), `notifications.recipient_id` (aviso de uma pessoa só, com as policies refeitas), `ai_usage.batch` e as rotas `triage` e `briefing` |
+| Lote | `features/ia/batch/` | `enqueue` manda os pedidos (`experimental_startBatch` do AI SDK) e grava as linhas; `collect` consulta, recolhe, valida e grava cada resultado pelo trabalho dele, registra o consumo com o desconto de lote e dá baixa (`applied`, `stale`, `failed`) |
+| Saída estruturada no lote | `batch/jobs.ts` | O lote do AI SDK não aceita formato de resposta. Cada trabalho tem uma tool só de definição, com `strict: true`, e a instrução de responder por ela (`toolChoice: 'auto'`: forçar é 400 no Opus 5.5). A coleta valida a chamada contra o esquema antes de gravar |
+| Trabalhos | `publicacoes/triage/`, `processos/summary/summaryBatchJob.ts`, `portal/answers/portalAnswersBatchJob.ts` | Triagem: uma por publicação, com os processos candidatos achados pelo nome do destinatário (o provável só vale se for um deles). Resumo: as condições da 2b; vale até a hora do pedido, e não passa por cima de um resumo mais novo. Portal: as condições da 3; resultado de recorte que mudou é descartado. A gravação do portal virou `savePortalAnswers`, usada na hora e no lote |
+| Gatilhos | webhook da BuscaProcessos, sync de processo, sync de intimações | Mandam para o lote depois de responder (antes geravam na hora). A chegada também recolhe o que ficou pronto, no máximo a cada 5 min |
+| Ao abrir | `/api/ia/lotes/coletar` (Publicações, publicação), `/resumo/atualizar` (processo) | Recolhem o que ficou pronto, no máximo uma consulta por minuto. No processo, se o resumo dele estava no lote, ele aparece; senão a atualização vai para o lote e o card avisa. O "Atualizar" da tela e o portal com o cliente esperando continuam na hora |
+| Cron | `vercel.json`, `/api/cron/diario` | Às 10h UTC (7h de Brasília; no Hobby o horário varia dentro da hora). Recolhe os lotes, manda para a triagem as publicações dos últimos 7 dias que ficaram sem, e manda o briefing. Exige `CRON_SECRET` (sem ele, recusa tudo) |
+| Briefing | `features/ia/briefing/dailyBriefing.ts` | Por pessoa ativa com algo no dia (compromissos dela, tarefas dela que vencem hoje ou atrasadas, publicações não lidas e urgentes se pode ver publicações): até 280 caracteres no sino, só para ela, link para o Dashboard. Não repete no mesmo dia |
+| Interface | `PublicacoesContent.tsx`, `PublicationTriageCard.tsx` | Selo na lista (urgência e tipo do ato). No detalhe, o resumo, o prazo do texto com o vencimento pelo motor de prazos, o processo provável com "Vincular" e a sugestão com "Criar tarefa" (vencimento do motor, prioridade pela urgência, ligada à publicação e ao processo) e "Descartar" |
+
+- **Verificação:**
+  - tsc, lint e build;
+  - um lote real na Anthropic (`verify-batch.mjs`, nada gravado), com os
+    pedidos montados pelo mesmo `toBatchRequest` do envio:
+    - resumo e portal voltaram pela tool, válidos pelo esquema, com as
+      citações do resumo apontando para as fontes do pedido; 2 min 46 s,
+      US$ 0,034 a preço de lote;
+    - a triagem foi recusada no primeiro envio: `z.number().int()` do zod 4
+      põe `minimum`/`maximum` no esquema, e o `strict` da Anthropic não
+      aceita. Virou `z.number()`, arredondado e conferido na gravação;
+    - triagem refeita: as duas voltaram pela tool e válidas, em 1 min 22 s,
+      US$ 0,047 as duas (R$ 0,10 a 0,16 cada a preço de lote; 5,8 mil e
+      10,8 mil tokens de entrada).
+      - A #115 saiu como decisão monocrática urgente, com 5 dias úteis do
+        texto e a ressalva de que só pede providência se o escritório
+        representa um dos requeridos.
+      - A #186, uma sentença, saiu urgente e sem prazo, porque o texto não
+        fixa prazo de recurso — o modelo não deduziu um.
+      - Nenhuma das duas tinha candidato a processo provável.
+  - rotas sem autorização: o cron sem cabeçalho e com segredo errado, e a
+    coleta sem login, devolvem 401;
+  - no navegador, com página temporária (Supabase simulado; card e hooks
+    reais): o prazo de 5 dias úteis de 27/10 vence em 04/11 (Finados
+    pulado); "Criar tarefa" gravou a tarefa com esse vencimento, prioridade
+    alta, publicação e processo, o feed e a sugestão como atendida;
+    "Vincular" gravou o processo na publicação.
+- **Não verificado:**
+  - nada contra o banco real: a migration 85 não está aplicada, e sem ela a
+    lista de Publicações (que lê a triagem) não abre;
+  - a coleta gravando de verdade, o cron na Vercel e o briefing (que lê
+    `publication_triage`);
+  - o selo na lista com dados reais.
+
 ## Riscos e cuidados
 
 - **Dados de clientes passam a ir para a Anthropic.** A API comercial não usa

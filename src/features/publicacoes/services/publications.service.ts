@@ -12,15 +12,22 @@ const PUBLICATION_SELECT = `
   legal_process:legal_processes(
     id, cnj_number, court, plaintiff, defendant,
     parties:legal_process_parties(id, name, polo, party_type, position)
+  ),
+  triage:publication_triage(
+    *,
+    probable_process:legal_processes!publication_triage_probable_process_id_fkey(id, cnj_number)
   )
 `
 
-/** Defensivo como em processos: consumidores iteram sem checar. */
+/** Defensivo como em processos: consumidores iteram sem checar. A triagem é
+ * um-para-um (a chave é a publicação), mas o embed pode vir como lista. */
 function normalize(row: Record<string, unknown>): PublicationWithRelations {
+  const triage = Array.isArray(row.triage) ? (row.triage[0] ?? null) : (row.triage ?? null)
   return {
     ...(row as unknown as PublicationWithRelations),
     parties: (row.parties as PublicationWithRelations['parties']) ?? [],
     legal_process: (row.legal_process as PublicationWithRelations['legal_process']) ?? null,
+    triage: triage as PublicationWithRelations['triage'],
   }
 }
 
@@ -144,6 +151,18 @@ export async function updatePublicationFields(
   patch: { publication_type?: string | null; subject?: string | null },
 ): Promise<void> {
   const { error } = await supabase.from('publications').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+/** A sugestão de tarefa da triagem (fase 5): virou tarefa ou foi descartada. */
+export async function updateTriageSuggestion(
+  publicationId: string,
+  patch: { suggestion_status: 'task_created' | 'dismissed'; task_id?: string },
+): Promise<void> {
+  const { error } = await supabase
+    .from('publication_triage')
+    .update(patch)
+    .eq('publication_id', publicationId)
   if (error) throw error
 }
 
