@@ -515,6 +515,86 @@ nenhuma inexistente.
   nenhum campo onde o cliente tente contornar as instruções; e o escritório
   vê exatamente o que o cliente lê.
 
+**Como ficou (2026-10-27, branch `feat/portal-perguntas-fixas`, empilhada na
+Fase 2).**
+
+- **Base:** a correção de datas do portal foi trazida por cherry-pick
+  (`5f8da4d`, igual a `1602826` de `fix/portal-movement-day`), para as duas
+  branches não conflitarem.
+- **Gatilho:** o mesmo da 2b — na chegada e quando o cliente escolhe o
+  processo no chat.
+- **Em forma de chat, não dentro do processo** (pedido do usuário depois da
+  primeira versão, que punha as perguntas no card aberto): um botão fixo
+  "Tirar dúvidas" abre a conversa, o cliente escolhe o processo e depois a
+  pergunta, tudo por botões, sem campo de texto. Com um processo só, a escolha
+  do processo é pulada. A conversa vale até recarregar a página e não é
+  gravada.
+
+Três decisões de desenho, tomadas sem perguntar:
+
+- **Impressão digital acima do intervalo.** Ao escolher o processo, refaz sempre que o
+  recorte visível mudou, sem esperar 15 minutos: resposta defasada nunca é
+  mostrada, porque pode falar de movimentação que o escritório ocultou. Na
+  chegada vale o intervalo de 15 minutos, e só para processos que já têm
+  respostas.
+- **Sem a data de hoje no pedido.** A resposta só muda quando os dados
+  mudam, não a cada dia. A pergunta de datas informa a data como aparece,
+  sem dizer se já passou.
+- **Correção substituída.** Quando a resposta é refeita, a correção do
+  escritório sai do ar e vira aviso na revisão; o que foi ocultado continua
+  oculto.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Tabela | migration 84 | `client_portal_answers`: uma linha por processo, com `answers`, `corrections`, `hidden`, `superseded`, `source_hash`, modelo, data e a reserva `refreshing_since`. RLS: lê `processos:view`, revisa `processos:update`; só a service_role cria |
+| Módulo | `features/portal/answers/` | Perguntas e esquema; prompt (as regras do antigo chat, para quatro respostas sem conversa); leitura do recorte visível (`hidden_from_client = false`, as colunas do portal) e impressão digital; `ensurePortalAnswers` (reserva, teto, rota `portal` do `ai_usage`, Opus 5.5 `low`) |
+| Portal | `POST /api/portal/[token]/processos/[id]/respostas`, `PortalQuestionsChat.tsx` | Botão fixo "Tirar dúvidas" → painel de chat: escolher o processo busca as quatro respostas de uma vez; escolher a pergunta mostra a resposta, sem nova chamada; "Escolher outro processo" volta à lista. No rodapé, "Falar com o escritório" com o telefone e o e-mail de Configurações e o aviso de IA. Enquanto outra geração roda, "Preparando…" e nova pergunta a cada 4 s. O vínculo processo × cliente do token é reconferido (`isPortalProcessOfClient`) |
+| Escritório | `GET/POST/PATCH /api/processos/[id]/portal-respostas`, `PortalAnswersReview.tsx` | Na página do processo com cliente, um painel recolhido: as respostas como o cliente vê, aviso de desatualizadas, "Preparar/Atualizar agora", e por pergunta corrigir, voltar ao texto da IA, ocultar ou mostrar e dispensar o aviso de correção substituída. Cada ação é validada com zod e gravada pela sessão |
+| Na chegada | webhook e sync | No mesmo `after()` do resumo |
+| Saiu | — | O chat livre: rota `/api/portal/[token]/assistente`, `PortalAssistant.tsx`, `portal/assistant/*` e `lib/clientPortal/chat.ts`. `client_portal_chat_messages` fica como histórico |
+
+Verificado:
+
+- tsc, lint e build.
+- Com dados reais e uma geração no processo 5022806 (10 s, R$ 0,14), 17 de 17
+  checagens:
+  - o recorte não leva id interno, a impressão é estável e muda ao ocultar ou
+    editar movimentação;
+  - as quatro respostas saíram sem contato inventado, sem "não há", sem
+    Markdown, e a de datas citou a audiência de 12/11/2026;
+  - a correção substitui o texto da IA e a pergunta oculta some.
+- O chat, no navegador em tela de celular (página temporária com dados
+  fictícios e a rota simulada; o hook e o serviço são os reais): escolher o
+  processo, "Preparando…" com nova pergunta até ficar pronto (3 chamadas),
+  pergunta respondida sem nova chamada, trocar de processo, fechar e reabrir
+  mantendo a conversa, processo único sem a escolha e sem busca antes de
+  abrir, e falha com "Não consegui preparar".
+- **Uso real (2026-10-27, migration 84 aplicada pelo usuário):** o cliente
+  escolheu 4 processos no chat; 4 linhas em `client_portal_answers`, todas com
+  a impressão digital igual ao que o portal mostra, reserva liberada e 4
+  chamadas `portal` no `ai_usage` (uma por processo; nenhuma do escritório).
+  Cada geração: ~2,4 mil tokens de entrada, 720–800 de saída, sem raciocínio
+  (`low`), US$ 0,024–0,026 (≈ R$ 0,14); as 4, R$ 0,55. As respostas seguiram
+  as regras (sem contato, sem "não há", sem Markdown; datas como "nas
+  movimentações publicadas não aparece"), mas copiaram a estrutura do prompt:
+  "Em uma frase:", "Na minha explicação:", "(texto do tribunal)", e uma falou
+  em "leitura nossa", como se fosse o escritório.
+- **Prompt v2** (pedido do usuário): as instruções que viravam rótulo foram
+  reescritas (o título vai entre aspas e as aspas já separam o texto do
+  tribunal da explicação), com regra de não anunciar o formato, de falar do
+  escritório na terceira pessoa e de não especular sobre o conteúdo de atos
+  que o título não descreve. A versão entra na impressão digital, então as
+  respostas da v1 são refeitas quando o cliente escolhe o processo. Geração
+  real, sem gravar, nos dois processos com problema: 17 de 17 checagens, sem
+  rótulos nem primeira pessoa, título citado entre aspas, 9 s e R$ 0,15 cada.
+
+**Não verificado:**
+
+- A exclusão de movimentação oculta com caso real: hoje não há nenhuma no
+  banco.
+- A revisão gravada: depois do teste do usuário não ficou correção, pergunta
+  oculta nem aviso em nenhuma linha.
+
 ### Fase 4 — Assistente em toda a aplicação (3 PRs)
 
 **4a. Painel global com contexto**

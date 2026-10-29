@@ -7,8 +7,26 @@ import {
   touchPortalLink,
 } from '@/lib/clientPortal/access'
 import { getPortalPayments, getPortalProcesses } from '@/lib/clientPortal/data'
-import { isPortalAssistantEnabled } from '@/features/portal/assistant/model'
-import type { PortalPayload } from '@/types/clientPortal.types'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isPortalAnswersEnabled } from '@/features/portal/answers/ensurePortalAnswers'
+import type { PortalOfficeContact, PortalPayload } from '@/types/clientPortal.types'
+
+/**
+ * O contato que o escritório cadastrou em Configurações, ou `null` sem telefone
+ * nem e-mail. Falha vira `null`: o contato é complemento, não derruba a página.
+ */
+async function getOfficeContact(): Promise<PortalOfficeContact | null> {
+  const { data, error } = await createAdminClient()
+    .from('office_settings')
+    .select('name, phone, email')
+    .maybeSingle()
+  if (error) {
+    console.error('[portal] contato do escritório falhou:', error.message)
+    return null
+  }
+  const contact = data as PortalOfficeContact | null
+  return contact && (contact.phone?.trim() || contact.email?.trim()) ? contact : null
+}
 
 /**
  * GET /api/portal/<token> — a lista de processos e as cobranças por link, para
@@ -48,19 +66,21 @@ export async function GET(
   const { link, client } = guard
 
   try {
-    const [processes, payments] = await Promise.all([
+    const [processes, payments, officeContact] = await Promise.all([
       getPortalProcesses(client.id),
       // Pagamento que não carrega vira aviso na página, não 500: o cliente
       // veio ver os processos, e eles continuam ali.
       getPortalPayments(client.id).catch(() => null),
+      getOfficeContact(),
     ])
     const payload: PortalPayload = {
       client_name: clientDisplayName(client),
       processes,
       payments,
       generated_at: new Date().toISOString(),
-      // Sem processo, o chat não teria sobre o que responder.
-      assistant_enabled: processes.length > 0 && isPortalAssistantEnabled(),
+      // Sem processo, as perguntas não teriam sobre o que responder.
+      answers_enabled: processes.length > 0 && isPortalAnswersEnabled(),
+      office_contact: officeContact,
     }
 
     await touchPortalLink(link)

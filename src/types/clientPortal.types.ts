@@ -132,36 +132,18 @@ export interface PortalPayload {
    * continuam aparecendo — uma falha nos pagamentos não derruba o portal. */
   payments: PortalPayment[] | null
   generated_at: string
-  /** Mostra o chat de dúvidas: o assistente está ligado no servidor e há
-   * processo sobre o que perguntar. */
-  assistant_enabled: boolean
+  /** Mostra o chat das perguntas fixas: a IA do portal está ligada no servidor
+   * (`PORTAL_ASSISTANT_ENABLED`) e há processo sobre o que responder. */
+  answers_enabled: boolean
+  /** Como falar com o escritório, do cadastro dele (`office_settings`). `null`
+   * sem telefone nem e-mail cadastrados — a página nunca inventa contato. */
+  office_contact: PortalOfficeContact | null
 }
 
-/** Tamanho máximo de uma pergunta ao assistente do portal — o campo da página
- * e a rota usam o mesmo teto. */
-export const PORTAL_ASSISTANT_MAX_QUESTION_CHARS = 1000
-
-/**
- * Mensagens de falha NO MEIO da resposta, quando o stream já começou e a rota
- * não pode mais responder com status e JSON. Chegam ao chat como texto puro —
- * a página mostra só estas, e troca qualquer outra (erro de rede, em inglês,
- * do navegador) pela genérica.
- */
-export const PORTAL_ASSISTANT_STREAM_ERRORS = {
-  generic: 'Não consegui responder agora. Tente de novo em instantes.',
-  providerQuota: 'O assistente atingiu o limite de uso por agora. Tente de novo mais tarde.',
-} as const
-
-/**
- * Corpo de `POST /api/portal/<token>/assistente`.
- *
- * Só o texto da pergunta nova: o histórico que o modelo recebe vem do banco
- * (ver `lib/clientPortal/chat.ts`), nunca do navegador.
- */
-export interface PortalAssistantRequest {
-  /** Id da conversa, gerado pelo chat da página a cada abertura. */
-  conversationId: string
-  text: string
+export interface PortalOfficeContact {
+  name: string | null
+  phone: string | null
+  email: string | null
 }
 
 /** 401 do portal. `needs_document` separa "digite seu CPF" de "este link não
