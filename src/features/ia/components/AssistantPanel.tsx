@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { usePermissions } from '@/hooks/usePermissions'
+import { quickActionsFor } from '../context/quickActions'
 import { buildScreenContext } from '../context/screenContext'
 import { conversationKeys, useConversationMessages } from '../hooks/useConversations'
 import { useAssistantPanelStore } from '../stores/assistantPanel.store'
@@ -165,6 +166,8 @@ function PanelChat({ pathname }: { pathname: string }) {
   const conversation = useAssistantPanelStore((state) => state.conversation)
   const screens = useAssistantPanelStore((state) => state.screens)
   const markConversationSaved = useAssistantPanelStore((state) => state.markConversationSaved)
+  const request = useAssistantPanelStore((state) => state.request)
+  const clearRequest = useAssistantPanelStore((state) => state.clearRequest)
 
   // Decidido ao montar: conversa já gravada vem do banco; a que nasceu aqui
   // segue só em memória, mesmo depois do primeiro turno (buscar de novo faria
@@ -176,6 +179,7 @@ function PanelChat({ pathname }: { pathname: string }) {
     () => buildScreenContext(pathname, screens.map((screen) => screen.registration)),
     [pathname, screens],
   )
+  const quickActions = useMemo(() => quickActionsFor(screenContext), [screenContext])
 
   // A conversa passou a existir (ou mudou de posição na lista do /ia).
   const handleTurnEnd = useCallback(() => {
@@ -199,6 +203,9 @@ function PanelChat({ pathname }: { pathname: string }) {
         onTurnEnd={handleTurnEnd}
         screenContext={screenContext}
         variant="panel"
+        quickActions={quickActions}
+        request={request}
+        onRequestSent={clearRequest}
       />
     </div>
   )

@@ -202,7 +202,11 @@ export interface ChecklistProgress {
   total: number
 }
 
-export function checklistProgress(hearing: Pick<HearingWithContext, 'checklist'>): ChecklistProgress {
+/** Só o que as contas abaixo leem de cada item — o Assistente as usa com um
+ * recorte menor da ficha. */
+type ChecklistState = { checklist: Pick<HearingChecklistItem, 'done_at' | 'skipped_at'>[] }
+
+export function checklistProgress(hearing: ChecklistState): ChecklistProgress {
   const total = hearing.checklist.length
   const resolved = hearing.checklist.filter((item) => item.done_at || item.skipped_at).length
   return { resolved, total }
@@ -210,7 +214,9 @@ export function checklistProgress(hearing: Pick<HearingWithContext, 'checklist'>
 
 /** Pronta para a audiência: o checklist nasceu e está todo resolvido, ou
  * alguém a marcou como pronta mesmo assim. */
-export function isHearingReady(hearing: Pick<HearingWithContext, 'checklist' | 'checklist_generated_at' | 'ready_override_at'>): boolean {
+export function isHearingReady(
+  hearing: ChecklistState & Pick<HearingWithContext, 'checklist_generated_at' | 'ready_override_at'>,
+): boolean {
   if (hearing.ready_override_at) return true
   if (!hearing.checklist_generated_at) return false
   const { resolved, total } = checklistProgress(hearing)

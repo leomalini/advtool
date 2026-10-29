@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import {
   DefaultChatTransport,
@@ -8,12 +8,24 @@ import {
   isToolUIPart,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
-import { Loader2, MapPin, Paperclip, SendHorizonal, Sparkles, Square } from 'lucide-react'
+import {
+  Check,
+  Copy,
+  Loader2,
+  MapPin,
+  Paperclip,
+  SendHorizonal,
+  Sparkles,
+  Square,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import type { QuickAction } from '../context/quickActions'
 import { screenContextSummary, type ScreenContext } from '../context/screenContext'
+import type { AssistantRequest } from '../stores/assistantPanel.store'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES } from '../tools/actions'
 import { AI_ERROR_MESSAGES } from '../errorMessages'
@@ -42,6 +54,57 @@ function hasPendingAction(messages: AssistantUIMessage[]): boolean {
       isToolUIPart(part) &&
       (ACTION_TOOL_NAMES as string[]).includes(getToolName(part)) &&
       part.state === 'input-available',
+  )
+}
+
+/** O texto de uma resposta, como o modelo escreveu — é o que se cola no
+ * WhatsApp ou no e-mail. Chips de consulta e cards não entram. */
+function messageText(message: AssistantUIMessage): string {
+  return message.parts
+    .flatMap((part) => (part.type === 'text' && part.text.trim() ? [part.text.trim()] : []))
+    .join('\n\n')
+}
+
+/**
+ * O rascunho de mensagem para um cliente vem entre duas linhas `***` (regra do
+ * `system`, "Mensagens para clientes"), com as observações para o advogado do
+ * lado de fora. Com exatamente um par, o trecho do meio é o que se cola.
+ *
+ * `***`, e não `---`: no Markdown, uma linha `---` colada embaixo de texto faz
+ * dele um título, e a última frase da mensagem apareceria em destaque. E as
+ * respostas comuns usam `---` entre seções; `***` fica só para o rascunho.
+ */
+function draftBetweenRules(text: string): string | null {
+  const parts = text.split(/^[ \t]*\*\*\*[ \t]*$/m)
+  if (parts.length !== 3) return null
+  return parts[1].trim() || null
+}
+
+/** Copiar uma resposta: o rascunho de mensagem para o cliente sai daqui. Nada
+ * é enviado pelo app. */
+function CopyTextButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error('[ia] copy failed:', err)
+      toast.error('Não foi possível copiar.')
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? 'Copiado' : label}
+    </button>
   )
 }
 
@@ -80,6 +143,11 @@ interface ChatPanelProps {
   screenContext?: ScreenContext
   /** `panel`: o painel lateral, estreito. */
   variant?: 'page' | 'panel'
+  /** Ações rápidas da tela por trás do painel (ver `quickActions.ts`). */
+  quickActions?: readonly QuickAction[]
+  /** Pedido feito fora do painel; sai assim que o chat estiver livre. */
+  request?: AssistantRequest | null
+  onRequestSent?: (id: string) => void
 }
 
 export function ChatPanel({
@@ -88,12 +156,19 @@ export function ChatPanel({
   onTurnEnd,
   screenContext,
   variant = 'page',
+  quickActions = [],
+  request = null,
+  onRequestSent,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [runningCallId, setRunningCallId] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  /** Último pedido de fora já enviado. O StrictMode roda o efeito de novo
+   * antes de o store limpar o pedido; sem isto ele sairia duas vezes. */
+  const sentRequestRef = useRef<string | null>(null)
   const executeAction = useExecuteAction()
   const attachments = useChatAttachments(conversationId)
 
@@ -149,6 +224,43 @@ export function ChatPanel({
       ],
     })
   }
+
+  /** Pergunta pronta (ação rápida ou pedido de fora): só o texto, sem mexer no
+   * que a pessoa está digitando nem nos anexos dela. */
+  function sendPrompt(text: string, context: ScreenContext | undefined) {
+    if (inputLocked) return
+    void sendMessage(
+      context
+        ? { parts: [{ type: 'data-context', data: context }, { type: 'text', text }] }
+        : { text },
+    )
+  }
+
+  function runQuickAction(action: QuickAction) {
+    if (action.mode === 'send') {
+      sendPrompt(action.prompt, screenContext)
+      return
+    }
+    setInput(action.prompt)
+    // O cursor no fim, para a pessoa completar ("desde 01/06").
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(action.prompt.length, action.prompt.length)
+    })
+  }
+
+  const sendRequest = useEffectEvent((pending: AssistantRequest) => {
+    if (sentRequestRef.current === pending.id) return
+    sentRequestRef.current = pending.id
+    onRequestSent?.(pending.id)
+    sendPrompt(pending.prompt, pending.context)
+  })
+
+  useEffect(() => {
+    if (request && !inputLocked) sendRequest(request)
+  }, [request, inputLocked])
 
   function addFiles(list: FileList | null) {
     if (!list || list.length === 0 || inputLocked) return
@@ -237,7 +349,8 @@ export function ChatPanel({
               )}
             </div>
             <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-              {SUGGESTIONS.map((suggestion) => (
+              {/* Com ações da tela logo abaixo, as sugestões gerais sobram. */}
+              {(quickActions.length > 0 ? [] : SUGGESTIONS).map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
@@ -251,30 +364,44 @@ export function ChatPanel({
           </div>
         )}
 
-        {visibleMessages.map((message) => (
-          <div
-            key={message.id}
-            className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}
-          >
+        {visibleMessages.map((message) => {
+          const streaming = busy && message.id === lastMessageId
+          const copyText = message.role === 'assistant' && !streaming ? messageText(message) : ''
+          const draft = copyText ? draftBetweenRules(copyText) : null
+          return (
             <div
+              key={message.id}
               className={cn(
-                'rounded-2xl px-4 py-2.5 text-sm',
-                variant === 'panel' ? 'max-w-[90%]' : 'max-w-[80%]',
-                message.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-muted rounded-bl-sm',
+                'flex flex-col gap-1',
+                message.role === 'user' ? 'items-end' : 'items-start',
               )}
             >
-              <MessageParts
-                message={message}
-                streaming={busy && message.id === lastMessageId}
-                runningCallId={runningCallId}
-                onConfirmAction={handleConfirm}
-                onCancelAction={handleCancel}
-              />
+              <div
+                className={cn(
+                  'rounded-2xl px-4 py-2.5 text-sm',
+                  variant === 'panel' ? 'max-w-[90%]' : 'max-w-[80%]',
+                  message.role === 'user'
+                    ? 'bg-primary text-primary-foreground rounded-br-sm'
+                    : 'bg-muted rounded-bl-sm',
+                )}
+              >
+                <MessageParts
+                  message={message}
+                  streaming={streaming}
+                  runningCallId={runningCallId}
+                  onConfirmAction={handleConfirm}
+                  onCancelAction={handleCancel}
+                />
+              </div>
+              {copyText && (
+                <div className="flex gap-1">
+                  {draft && <CopyTextButton text={draft} label="Copiar mensagem" />}
+                  <CopyTextButton text={copyText} label={draft ? 'Copiar tudo' : 'Copiar'} />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {thinking && (
           <div className="flex justify-start">
@@ -311,6 +438,24 @@ export function ChatPanel({
             <MapPin className="h-3 w-3 shrink-0" />
             <span className="truncate">{screenContextSummary(screenContext)}</span>
           </p>
+        )}
+
+        {quickActions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {quickActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={inputLocked}
+                onClick={() => runQuickAction(action)}
+                title={action.prompt}
+                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Zap className="h-3 w-3 text-primary" />
+                {action.label}
+              </button>
+            ))}
+          </div>
         )}
 
         {attachments.attachments.length > 0 && (
@@ -351,6 +496,7 @@ export function ChatPanel({
             <Paperclip className="h-4 w-4" />
           </Button>
           <Textarea
+            ref={textareaRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {

@@ -1,6 +1,14 @@
 import { tool } from 'ai'
 import { z } from 'zod'
-import { dateSchema, ilikeFilter, limitSchema, toolError, type ToolClient } from '../shared'
+import { calculatePrazo } from '@/lib/prazos'
+import {
+  dateSchema,
+  ilikeFilter,
+  limitSchema,
+  officeToday,
+  toolError,
+  type ToolClient,
+} from '../shared'
 
 const SELECT =
   'id, sequence_number, publication_date, court, diario_name, title, subject, excerpt, ' +
@@ -111,6 +119,50 @@ export function createPublicationTools(supabase: ToolClient) {
           processo_id: row.legal_process_id,
           inicio_do_prazo: row.deadline_start_at,
           conteudo: row.content_text,
+        }
+      },
+    }),
+
+    calcular_prazo: tool({
+      description:
+        'Vencimento do prazo de uma publicação pelo motor de prazos do AdvTool: parte da data ' +
+        'de publicação gravada, começa no dia útil seguinte e conta os dias (úteis ou corridos) ' +
+        'com fins de semana, feriados nacionais e o recesso de 20/12 a 20/01. É a ÚNICA fonte ' +
+        'de data de prazo — nunca calcule você.',
+      inputSchema: z.object({
+        publicacao_id: z.string().uuid(),
+        dias: z.number().int().min(1).max(365).describe('Prazo em dias, como o ato determina.'),
+        contagem: z
+          .enum(['uteis', 'corridos'])
+          .describe(
+            'Prazo processual: úteis (CPC art. 219). Direito material: corridos, sem a ' +
+              'suspensão do recesso.',
+          ),
+      }),
+      execute: async ({ publicacao_id, dias, contagem }) => {
+        const { data, error } = await supabase
+          .from('publications')
+          .select('id, publication_date')
+          .eq('id', publicacao_id)
+          .maybeSingle()
+        if (error) return toolError('a publicação', error)
+        if (!data) return { error: 'Publicação não encontrada ou sem acesso.' }
+
+        // Prazo de direito material não se suspende no recesso.
+        const result = calculatePrazo(data.publication_date as string, dias, officeToday(), contagem, {
+          ignoreRecess: contagem === 'corridos',
+        })
+        return {
+          publicacao: data.publication_date,
+          dias,
+          contagem,
+          inicio: result.start,
+          vencimento: result.end,
+          dias_restantes: result.remainingDays,
+          vencido: result.expired,
+          aviso:
+            'Feriados locais (estaduais, municipais e do tribunal) não entram na conta: confira ' +
+            'antes de usar.',
         }
       },
     }),
