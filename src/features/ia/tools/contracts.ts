@@ -278,7 +278,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           supabase
             .from('financial_entries')
             .select(
-              'description, type, amount, status, settlement_kind, due_date, ' +
+              'id, description, type, amount, status, settlement_kind, due_date, ' +
                 'condition_description, paid_at',
             )
             .eq('contract_id', id)
@@ -290,6 +290,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
         if (documents.error) return toolError('os arquivos', documents.error)
         type EntryRow = Pick<
           FinancialEntry,
+          | 'id'
           | 'description'
           | 'type'
           | 'amount'
@@ -327,6 +328,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           lancamentos: entries.error
             ? null
             : ((entries.data ?? []) as unknown as EntryRow[]).map((entry) => ({
+                id: entry.id,
                 descricao: entry.description,
                 tipo: entry.type,
                 valor: Number(entry.amount),

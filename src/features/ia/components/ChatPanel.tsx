@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useChat } from '@ai-sdk/react'
 import {
   DefaultChatTransport,
@@ -28,6 +29,7 @@ import { screenContextSummary, type ScreenContext } from '../context/screenConte
 import type { AssistantRequest } from '../stores/assistantPanel.store'
 import type { AssistantUIMessage } from '../tools'
 import { ACTION_TOOL_NAMES } from '../tools/actions'
+import { screenHref } from '../tools/interface'
 import { AI_ERROR_MESSAGES } from '../errorMessages'
 import { AI_FILE_ACCEPT } from '../files/constants'
 import { useChatAttachments } from '../hooks/useChatAttachments'
@@ -169,6 +171,7 @@ export function ChatPanel({
   /** Último pedido de fora já enviado. O StrictMode roda o efeito de novo
    * antes de o store limpar o pedido; sem isto ele sairia duas vezes. */
   const sentRequestRef = useRef<string | null>(null)
+  const router = useRouter()
   const executeAction = useExecuteAction()
   const attachments = useChatAttachments(conversationId)
 
@@ -189,6 +192,20 @@ export function ChatPanel({
       // Depois que TODAS as ações do turno receberam resposta (confirmada ou
       // cancelada), o histórico volta ao servidor para o modelo concluir.
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+      // Tools de interface rodam aqui (ver `tools/interface.ts`). No painel a
+      // tela por trás muda; no /ia, sair da página cortaria a conversa — vira
+      // link no chat.
+      onToolCall: ({ toolCall }) => {
+        if (toolCall.dynamic || toolCall.toolName !== 'abrir_tela') return
+        const href = screenHref(toolCall.input)
+        const navigate = variant === 'panel' && href !== null
+        if (navigate) router.push(href)
+        void addToolOutput({
+          tool: 'abrir_tela',
+          toolCallId: toolCall.toolCallId,
+          output: { navegou: navigate, link: href ?? '' },
+        })
+      },
       onFinish: () => onTurnEnd(),
       onError: (err) => console.error('[ia] chat error:', err),
     })

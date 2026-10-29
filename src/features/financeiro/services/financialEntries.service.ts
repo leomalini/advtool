@@ -47,6 +47,18 @@ function nullifyEmpty<T extends Record<string, unknown>>(input: T): T {
  * (nulls first) seria depender de algo que ninguém lê no código. */
 const DUE_DATE_ORDER = { ascending: false, nullsFirst: true } as const
 
+/** Um lançamento pelo id, com cliente e processo. */
+export async function getFinancialEntryById(id: string): Promise<FinancialEntryWithRelations | null> {
+  const { data, error } = await supabase
+    .from('financial_entries')
+    .select(ENTRY_SELECT)
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data as unknown as FinancialEntryWithRelations | null) ?? null
+}
+
 export async function getFinancialEntries(): Promise<FinancialEntryWithRelations[]> {
   const { data, error } = await supabase
     .from('financial_entries')

@@ -755,6 +755,63 @@ portal:
 - Depois de cada ação confirmada, a tela por trás atualiza, pela invalidação
   do React Query que os services já fazem.
 
+**Decisões do usuário (2026-10-27):** D4Sign e InfinitePay **entram, com card
+reforçado**. Fica **card + `abrir_tela`**, sem `abrir_formulario`: as ações
+novas já gravam por card, e abrir os diálogos de fora pediria mexer em cada
+um.
+
+**Como ficou a 4c (2026-10-27, branch `feat/ia-acoes-tela`, de
+`feat/ia-acoes-rapidas`):**
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Ações com card | `tools/actions.ts` (`screenActionTools`), `actions/screenActions.ts` | `concluir_tarefa`, `reatribuir_tarefa`, `remarcar_evento`, `criar_audiencia`, `registrar_lancamento`, `vincular_publicacao`, `tratar_publicacao`. Cada executor chama o service da tela; o `useExecuteAction` invalida o cache do módulo só quando gravou |
+| Remarcar | `rescheduleEvent` | O mesmo caminho do arraste da Agenda (`toEventMovePatch` + `updateEvent`, só esta ocorrência), mantendo a duração. Vencimento de contrato é recusado (muda pelo contrato). Audiência acompanha pelo gatilho `sync_event_hearing` (migration 76), que registra a troca de data e a dá como conferida |
+| Criar audiência | `createHearingAction` | `createHearing` + `schedule_hearing`, com a duração do tipo; tipo vem da tool nova `tipos_de_audiencia` |
+| Lançamento | `registerFinancialEntry` | Passa pelo `financialEntrySchema` do formulário (vencimento ou condição) |
+| Vincular publicação | `linkPublicationToProcess` (novo, em `publications.service`) | Uma publicação a um processo escolhido, inclusive de outro CNJ; o card avisa quando o CNJ é diferente |
+| Assinatura (reforçado) | `actions/signaturePlan.ts`, `SignatureActionCard.tsx` | A IA escolhe SÓ o arquivo (e o contrato). Quem assina vem do cadastro, como no diálogo: as partes do contrato ou o cliente do documento, e o cofre do tipo (`resolveSafe`). Para isso a montagem da lista saiu do `SendForSignatureDialog` para `assinaturas/utils/signerDrafts.ts`, usado pelos dois. Autenticação por e-mail, sem ordem. O card mostra a lista lida do banco e bloqueia quando falta cofre, e-mail ou o arquivo não pode ir |
+| Cobrança (reforçado) | `PaymentLinkActionCard.tsx` | `createPaymentLink` pela rota de sempre. O card lê o lançamento do banco (não os rótulos do modelo) e bloqueia despesa, lançamento não pendente e link já ativo; gerado, mostra o link para copiar. Nada vai ao cliente |
+| Dois passos | `ReinforcedActionFooter.tsx` | "Confirmar" só arma; o aviso diz o que acontece fora do escritório; é o segundo botão ("Enviar agora", "Gerar link") que executa |
+| `abrir_tela` | `tools/interface.ts`, `ChatPanel` (`onToolCall`) | Registro pelo id ou módulo; no Financeiro, a situação vai na URL (o que a página já lê). Roda no navegador: no painel a tela muda; no /ia vira link no chat, porque sair da página cortaria a conversa. O resultado volta ao modelo e o chat reenvia sozinho |
+| Prompt | `prompts/system.ts` | A lista das ações; "Ações que saem do escritório": assinatura e cobrança só quando o usuário pedir, nunca por iniciativa nem como passo de outro pedido |
+| Outros | `ver_contrato`, services | Lançamentos do contrato com id (para a cobrança); `getEventById`, `getDocumentRecord`, `getFinancialEntryById`; os helpers de invalidação de audiência, cobrança e publicação foram exportados |
+
+- **Verificação:**
+  - tsc, lint e build;
+  - `verify-screen-actions.mjs` (scratchpad), com o modelo real (Opus 5.5,
+    nada gravado: as tools de ação não executam no servidor):
+    - 4 checagens das rotas sem modelo e 12 com o modelo, todas passando
+      (o cenário 6 foi refeito em dois turnos, ver abaixo), em 12
+      conversas, R$ 3,57;
+    - cada ação veio com os ids certos a partir da fala e da tela: tarefa,
+      Carla, a audiência Una de 12/11 para 19/11 14:20, conciliação em 20/11
+      10h presencial, honorários de R$ 1.500 do cliente, a procuração do
+      cliente para assinatura, o link da "Conta X" e o Financeiro nos
+      vencidos;
+    - ao vincular a publicação #186 a um processo de outro caso, o modelo
+      apontou a diferença e só propôs depois da confirmação;
+    - "Explicar" uma publicação não propôs envio, cobrança nem marcar como
+      tratada;
+  - no navegador, com páginas temporárias (Supabase simulado em memória, que
+    registra cada escrita; rotas de assinatura e cobrança simuladas; cards,
+    executores e `ChatPanel` reais):
+    - as sete ações simples gravaram o esperado, inclusive o feed;
+    - o compromisso foi de 12/11 17:20Z para 19/11 17:20Z mantendo 1 h;
+    - a audiência teve o `schedule_hearing` de 13:00Z a 13:30Z;
+    - assinatura: o primeiro clique não chama nada e "Voltar" desarma; o
+      envio mandou à rota o signatário do cadastro (razão social, CNPJ,
+      e-mail, cofre Procurações, autenticação por e-mail);
+    - cliente sem e-mail e despesa bloqueiam o card, que só oferece Cancelar;
+    - cobrança: o link volta com "Copiar link";
+    - `abrir_tela`: no /ia vira link e o chat reenvia; no painel navega (sem
+      sessão, o servidor mandou para o login com o filtro).
+- **Não verificado:**
+  - nada disso com sessão e banco reais: nenhuma ação foi confirmada contra o
+    banco, a D4Sign ou a InfinitePay;
+  - envio de contrato com partes (não há arquivo de contrato no banco);
+  - recorrência real (tarefa e compromisso em série).
+
 ### Fase 5 — Em segundo plano
 
 - **Triagem de publicações na chegada:** tipo do ato, urgência, processo

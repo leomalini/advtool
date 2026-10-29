@@ -1,6 +1,7 @@
 import type { InferUITools, UIMessage } from 'ai'
 import type { ScreenContext } from '../context/screenContext'
 import { actionTools } from './actions'
+import { interfaceTools } from './interface'
 import { createAgendaTools } from './read/agenda'
 import { createClientTools } from './read/clients'
 import { createFileTools, type FileToolsContext } from './read/files'
@@ -39,6 +40,7 @@ export function createAssistantTools(supabase: ToolClient, context: AssistantToo
     ...createDocxTools(supabase, context),
     ...createPdfTools(supabase, context),
     ...actionTools,
+    ...interfaceTools,
   }
 }
 
