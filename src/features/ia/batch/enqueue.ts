@@ -78,7 +78,7 @@ export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
     if (error) throw error
     const waiting = new Set((pending ?? []).map((row) => `${row.kind}:${row.entity_id}`))
 
-    const requests: TextBatchRequest[] = []
+    const requests = new Map<string, TextBatchRequest>()
     const rows: Record<string, unknown>[] = []
     for (const item of unique) {
       if (waiting.has(`${item.kind}:${item.entityId}`)) continue
@@ -89,7 +89,7 @@ export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
         // O id do pedido é o da linha: liga resultado e registro, e cabe no
         // formato da Anthropic (letras, dígitos, hífen; até 64).
         const id = crypto.randomUUID()
-        requests.push(toBatchRequest(id, job, prepared.userText))
+        requests.set(id, toBatchRequest(id, job, prepared.userText))
         rows.push({
           id,
           kind: item.kind,
@@ -103,24 +103,47 @@ export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
       }
     }
     const skipped = unique.filter((w) => waiting.has(`${w.kind}:${w.entityId}`)).length
-    if (requests.length === 0) return { sent: 0, waiting: skipped }
+    if (rows.length === 0) return { sent: 0, waiting: skipped }
 
-    const batch = await startBatch({ provider: createAnthropicProvider(), requests })
+    // Reserva antes de enviar (migration 86): preparar leva segundos, e outro
+    // envio pode ter começado no meio. O índice único de pendentes decide quem
+    // fica com cada trabalho; só o reservado vai para a Anthropic.
+    const { data: reservedRows, error: reserveError } = await admin.rpc('reserve_ai_batch_items', {
+      items: rows,
+    })
+    if (reserveError) throw reserveError
+    const reserved = ((reservedRows ?? []) as { id: string }[]).map((row) => row.id)
+    const lost = rows.length - reserved.length
+    if (reserved.length === 0) return { sent: 0, waiting: skipped + lost }
+
+    let batch: Awaited<ReturnType<typeof startBatch>>
+    try {
+      batch = await startBatch({
+        provider: createAnthropicProvider(),
+        requests: reserved.flatMap((id) => requests.get(id) ?? []),
+      })
+    } catch (sendError) {
+      // Nada saiu: solta a reserva para o próximo gatilho pedir de novo.
+      const { error: releaseError } = await admin.from('ai_batch_items').delete().in('id', reserved)
+      if (releaseError) console.error('[ia-lote] reserva não liberada:', releaseError.code, releaseError.message)
+      throw sendError
+    }
     for (const warning of batch.warnings ?? []) console.warn('[ia-lote] aviso do lote:', warning)
 
     const reference = { version: batch.version, id: batch.id, provider: batch.provider }
-    const { error: insertError } = await admin
+    const { error: updateError } = await admin
       .from('ai_batch_items')
-      .insert(rows.map((row) => ({ ...row, batch_id: batch.id, batch_ref: reference })))
-    // O lote já saiu: sem as linhas, os resultados dele são ignorados na
-    // coleta e o próximo gatilho pede de novo.
-    if (insertError) {
-      console.error('[ia-lote] registro do lote falhou:', insertError.code, insertError.message)
+      .update({ batch_id: batch.id, batch_ref: reference })
+      .in('id', reserved)
+    // O lote já saiu: sem o lote na linha, a coleta não o acha, dá baixa na
+    // reserva depois de 10 min e o próximo gatilho pede de novo.
+    if (updateError) {
+      console.error(`[ia-lote] lote ${batch.id} sem registro:`, updateError.code, updateError.message)
       return { sent: 0, waiting: 0 }
     }
 
-    console.info(`[ia-lote] ${requests.length} pedido(s) no lote ${batch.id}.`)
-    return { sent: requests.length, waiting: skipped }
+    console.info(`[ia-lote] ${reserved.length} pedido(s) no lote ${batch.id}.`)
+    return { sent: reserved.length, waiting: skipped + lost }
   } catch (error) {
     console.error('[ia-lote] envio falhou:', error)
     return { sent: 0, waiting: 0 }

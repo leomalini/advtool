@@ -876,6 +876,22 @@ estimada em R$ 5 a 9 por mês).
     `publication_triage`);
   - o selo na lista com dados reais.
 
+**Correção (2026-10-29, migration 86): reservar antes de mandar o lote.** No
+primeiro teste real, dois envios das mesmas 45 publicações se cruzaram (o
+"Buscar publicações" e um envio manual) e saíram dois lotes iguais. O envio
+conferia os pendentes, preparava os pedidos (uns 30 s para 45), mandava o lote
+e só então gravava as linhas; o segundo bateu no índice único ao gravar e o
+lote dele ficou sem registro — pago e nunca recolhido.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Reserva | migration 86, `reserve_ai_batch_items` | `batch_id` e `batch_ref` passam a aceitar nulo: pendente sem lote é reserva. A função grava os itens com `on conflict … do nothing` no índice único de pendentes e devolve só os gravados. Só a service_role executa |
+| Envio | `batch/enqueue.ts` | Depois de preparar, reserva; só o reservado vai para a Anthropic. Quem perdeu a corrida não manda nada. Se o envio falha, a reserva é apagada; se sai, a linha recebe o lote |
+| Coleta | `batch/collect.ts` | Pula a reserva em andamento. Sem lote há mais de 10 min (o envio morreu no meio), dá baixa como falha, e o próximo gatilho pede de novo |
+
+Sem a migration 86, o envio falha na reserva e nada vai para o lote (fica
+no log `[ia-lote]`): aplicar antes de subir este código.
+
 ## Riscos e cuidados
 
 - **Dados de clientes passam a ir para a Anthropic.** A API comercial não usa

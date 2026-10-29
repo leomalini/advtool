@@ -10,12 +10,16 @@ import { recordBatchUsage } from '../usage/recordUsage'
 import { BATCH_JOBS, BATCH_TOOLS } from './jobs'
 import type { BatchKind } from './types'
 
+/** Reserva sem lote há mais que isso: o envio morreu no meio (migration 86). */
+const ABANDONED_RESERVATION_MS = 10 * 60_000
+
 interface PendingRow {
   id: string
   kind: BatchKind
   entity_id: string
-  batch_id: string
-  batch_ref: BatchReference
+  /** Nulos enquanto a reserva espera o envio do lote. */
+  batch_id: string | null
+  batch_ref: BatchReference | null
   input_hash: string
   context: unknown
   created_at: string
@@ -67,14 +71,25 @@ export async function collectBatches(
     return summary
   }
 
-  const byBatch = new Map<string, PendingRow[]>()
+  const now = Date.now()
+  const byBatch = new Map<string, { reference: BatchReference; rows: PendingRow[] }>()
   for (const row of (data ?? []) as PendingRow[]) {
-    byBatch.set(row.batch_id, [...(byBatch.get(row.batch_id) ?? []), row])
+    if (!row.batch_id || !row.batch_ref) {
+      // Reserva: o envio está em andamento, ou morreu antes de gravar o lote.
+      // Abandonada, sai do caminho para o próximo gatilho pedir de novo.
+      if (now - Date.parse(row.created_at) > ABANDONED_RESERVATION_MS) {
+        await finish(admin, row.id, 'failed', 'reserva sem lote: o envio não terminou')
+        summary.failed++
+      }
+      continue
+    }
+    const group = byBatch.get(row.batch_id) ?? { reference: row.batch_ref, rows: [] }
+    group.rows.push(row)
+    byBatch.set(row.batch_id, group)
   }
 
   const provider = createAnthropicProvider()
-  const now = Date.now()
-  for (const [batchId, rows] of byBatch) {
+  for (const [batchId, { reference: batch, rows }] of byBatch) {
     const lastCheck = Math.max(...rows.map((row) => (row.checked_at ? Date.parse(row.checked_at) : 0)))
     if (options.minIntervalMs && now - lastCheck < options.minIntervalMs) {
       summary.waiting++
@@ -88,7 +103,6 @@ export async function collectBatches(
         .eq('batch_id', batchId)
         .eq('status', 'pending')
 
-      const batch = rows[0].batch_ref
       const status = await getBatchStatus({ provider, batch })
       if (status.status === 'pending') {
         summary.waiting++
