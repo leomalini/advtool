@@ -19,9 +19,16 @@ import { oabKey, parseOabText } from '@/lib/oab'
  *    ao lado dela. Com partes dos dois polos, cadastrar seria escolher no
  *    escuro, e o erro típico é transformar a parte contrária em cliente.
  *
- * O que já existe é reaproveitado: o mesmo CPF/CNPJ, ou o mesmo nome quando a
- * origem não informa documento. Pessoa já cadastrada (migration 78) vira
- * cliente. Nome repetido em dois cadastros é ambíguo e fica de fora.
+ * A OAB só aponta QUAL parte é a cliente; o cadastro é pelo CPF/CNPJ. Sem
+ * documento não há cadastro nem vínculo — decisão do escritório: nome sozinho
+ * não identifica ninguém, e cliente criado só com nome vira duplicata quando o
+ * documento aparecer. Como o diário não traz documento, a publicação órfã não
+ * cadastra nada: o documento chega com a capa, quando o processo for cadastrado.
+ * Já a publicação de processo cadastrado empresta o documento da parte de mesmo
+ * nome na capa.
+ *
+ * O mesmo CPF/CNPJ já cadastrado é reaproveitado, e a pessoa (migration 78)
+ * vira cliente.
  *
  * Tudo aqui é best-effort para quem chama: perder o cadastro automático não
  * pode desfazer a publicação ou a movimentação que o disparou.
@@ -191,8 +198,17 @@ export async function registerOfficeClientFromDiario(
   const picked = pickDiarioClient(input.parties, officeOabs)
   if ('reason' in picked) return { ...EMPTY, reason: picked.reason }
 
+  if (!input.legalProcessId) {
+    return {
+      ...EMPTY,
+      reason:
+        `Publicação órfã: o diário não traz CPF/CNPJ de ${picked.name}. ` +
+        'O cliente é cadastrado quando o processo for cadastrado.',
+    }
+  }
+
   // A parte do processo com o mesmo nome é a mesma pessoa: é nela que o vínculo
-  // fica, e o documento dela (quando a capa trouxe) evita casar só por nome.
+  // fica, e é dela (da capa) que vem o documento que o diário não traz.
   const party = processParties.find(
     (candidate) => normalizeName(candidate.name) === normalizeName(picked.name),
   )
@@ -260,10 +276,16 @@ async function registerCandidates(
 ): Promise<OfficeClientsResult> {
   const dryRun = options.dryRun ?? false
   const result: OfficeClientsResult = { ...EMPTY, clients: [] }
+  const withoutDocument: string[] = []
 
   for (const candidate of candidates) {
-    const client = await ensureClient(supabase, candidate, options)
-    if (!client) continue
+    const digits = documentDigits(candidate.document)
+    if (!digits) {
+      withoutDocument.push(candidate.name)
+      continue
+    }
+
+    const client = await ensureClient(supabase, candidate, digits, options)
     result.clients.push(client)
 
     if (dryRun || !client.id || !candidate.partyId) continue
@@ -286,8 +308,8 @@ async function registerCandidates(
     result.adoptedByProcess = await adoptOnProcess(supabase, legalProcessId, owner.id)
   }
 
-  if (result.clients.length === 0) {
-    result.reason = 'Cadastro ambíguo: mais de uma pessoa com o mesmo nome.'
+  if (withoutDocument.length > 0) {
+    result.reason = `Sem CPF/CNPJ na capa do processo: ${withoutDocument.join(', ')}.`
   }
 
   if (!dryRun) await notify(supabase, result.clients, options)
@@ -296,25 +318,20 @@ async function registerCandidates(
 }
 
 /**
- * O cadastro da pessoa: encontra pelo documento, depois pelo nome; converte
- * pessoa em cliente; ou cria. Null quando o nome casa com mais de um cadastro.
+ * O cadastro da pessoa pelo CPF/CNPJ: reaproveita o que existe, converte
+ * pessoa em cliente, ou cria. O documento é único (migration 59), então não há
+ * dois cadastros para escolher.
  */
 async function ensureClient(
   supabase: SupabaseClient,
   candidate: Candidate,
+  digits: string,
   options: OfficeClientsOptions,
-): Promise<OfficeClientRef | null> {
+): Promise<OfficeClientRef> {
   const dryRun = options.dryRun ?? false
   const base = { name: candidate.name, lawyer: candidate.lawyer }
-  const digits = documentDigits(candidate.document)
 
-  const matches = digits
-    ? await findByDocument(supabase, digits)
-    : await findByName(supabase, candidate.name)
-
-  if (matches.length > 1) return null
-
-  const existing = matches[0]
+  const [existing] = await findByDocument(supabase, digits)
   if (existing) {
     if (existing.is_client) return { ...base, id: existing.id, action: 'existing' }
     if (!dryRun) {
@@ -329,7 +346,7 @@ async function ensureClient(
 
   if (dryRun) return { ...base, id: null, action: 'created' }
 
-  const company = isCompany(candidate.name, digits)
+  const company = digits.length === 14
   const where = options.cnj ? ` no processo ${options.cnj}` : ''
   const lawyerName = candidate.lawyer.name ? `${candidate.lawyer.name} ` : ''
 
@@ -339,8 +356,8 @@ async function ensureClient(
       type: company ? 'company' : 'individual',
       name: company ? null : candidate.name,
       company_name: company ? candidate.name : null,
-      cpf: !company && digits ? candidate.document : null,
-      cnpj: company && digits ? candidate.document : null,
+      cpf: company ? null : candidate.document,
+      cnpj: company ? candidate.document : null,
       // Sem sessão não há quem cadastrou: assina o advogado que representa a
       // parte, que também é o responsável natural pelo cliente.
       created_by: candidate.lawyer.profileId,
@@ -355,7 +372,7 @@ async function ensureClient(
   if (error) {
     // Outra ingestão cadastrou o mesmo documento no intervalo (índice único da
     // migration 59): o cadastro dela serve.
-    if (error.code === '23505' && digits) {
+    if (error.code === '23505') {
       const [raced] = await findByDocument(supabase, digits)
       if (raced) return { ...base, id: raced.id, action: 'existing' }
     }
@@ -380,41 +397,6 @@ async function findByDocument(supabase: SupabaseClient, digits: string): Promise
 
   if (error) throw new Error(`Busca do cliente por documento falhou: ${error.message}`)
   return (data ?? []) as ClientMatch[]
-}
-
-/**
- * Pelo nome, nas duas colunas em que ele pode estar.
- *
- * O `ilike` é só a pré-seleção, e precisa ser largo: o diário escreve
- * "JOAO DA SILVA" e o cadastro tem "João da Silva". Por isso o padrão troca
- * vogal, cedilha e letra acentuada por `_` e espaço por `%`. A igualdade que
- * decide é a de `normalizeName`, feita aqui.
- */
-async function findByName(supabase: SupabaseClient, name: string): Promise<ClientMatch[]> {
-  const target = normalizeName(name)
-  const pattern = target
-    .replace(/[\\%_]/g, (char) => `\\${char}`)
-    .replace(/[AEIOUC]|[^\x00-\x7F]/g, '_')
-    .replace(/ /g, '%')
-  const found = new Map<string, ClientMatch>()
-
-  for (const column of ['name', 'company_name'] as const) {
-    const { data, error } = await supabase
-      .from('clients')
-      .select(`id, is_client, ${column}`)
-      .ilike(column, pattern)
-      .limit(50)
-
-    if (error) throw new Error(`Busca do cliente por nome falhou: ${error.message}`)
-
-    for (const row of (data ?? []) as unknown as (ClientMatch & Record<string, string | null>)[]) {
-      if (normalizeName(row[column] ?? '') === target) {
-        found.set(row.id, { id: row.id, is_client: row.is_client })
-      }
-    }
-  }
-
-  return [...found.values()]
 }
 
 /**
@@ -504,16 +486,6 @@ function officeLawyerOf(keys: string[] | null, officeOabs: OfficeOabs): OfficeLa
 function documentDigits(document: string | null): string | null {
   const digits = (document ?? '').replace(/\D/g, '')
   return digits.length === 11 || digits.length === 14 ? digits : null
-}
-
-/** Sem documento, a pessoa jurídica se denuncia pelo nome. "SA" solto fica de
- * fora: é também o sobrenome Sá escrito sem acento. */
-const COMPANY_NAME =
-  /(\bS\.A\.?|\bS\/A\b|\b(LTDA|EIRELI|EPP|BANCO|CIA|COMPANHIA|CONDOM[IÍ]NIO|ASSOCIA[CÇ][AÃ]O|COOPERATIVA|FUNDA[CÇ][AÃ]O|INSTITUTO|SINDICATO|MUNIC[IÍ]PIO|PREFEITURA|ESTADO D[EO]|UNI[AÃ]O FEDERAL|INSS|FAZENDA|SEGURADORA|SEGUROS)\b)/i
-
-function isCompany(name: string, digits: string | null): boolean {
-  if (digits) return digits.length === 14
-  return COMPANY_NAME.test(name)
 }
 
 /** Caixa, acento e espaço repetido não distinguem duas pessoas. */
