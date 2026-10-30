@@ -182,6 +182,9 @@ export interface LegalProcessParty {
    * nosso (a parte contrária, por exemplo). */
   client_id: string | null
   client: PartyClient | null
+  /** OABs dos advogados desta parte, como 'UF:NÚMERO' (migration 88). Vazia
+   * em parte digitada à mão ou gravada antes da coluna existir. */
+  lawyer_oabs: string[]
   created_at: string
 }
 
@@ -197,6 +200,9 @@ export interface LegalProcessPartyInput {
   /** Preservado no replace: reescrever as partes pelo formulário não pode
    * desfazer um vínculo com cliente feito na tela de detalhes. */
   client_id?: string | null
+  /** Vem da capa e viaja junto pelo formulário pelo mesmo motivo de
+   * `client_id`: salvar a edição não pode apagar quem representa a parte. */
+  lawyer_oabs?: string[]
 }
 
 /** Documento disponível no tribunal — catálogo, não arquivo nosso. Baixar o

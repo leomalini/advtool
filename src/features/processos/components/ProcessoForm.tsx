@@ -326,7 +326,8 @@ export function ProcessoForm({
           case_value: editingProcess.case_value ?? undefined,
           filing_date: editingProcess.filing_date ?? undefined,
           // `client_id` viaja de volta para que salvar o formulário não
-          // desfaça um vínculo feito no popover da tela de detalhes.
+          // desfaça um vínculo feito no popover da tela de detalhes; as OABs,
+          // para não apagar quem representa cada parte.
           parties: (editingProcess.parties ?? []).map((p) => ({
             name: p.name,
             document: p.document,
@@ -334,6 +335,7 @@ export function ProcessoForm({
             party_type: p.party_type,
             position: p.position,
             client_id: p.client_id,
+            lawyer_oabs: p.lawyer_oabs ?? [],
           })),
         })
       } else {

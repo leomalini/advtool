@@ -1,6 +1,13 @@
 import type { SyncBlock, SyncResult } from '@/lib/buscaprocessos/sync'
+import type { OfficeClientsResult } from '@/lib/clientes/officeClients'
 
 export type { SyncBlock, SyncResult }
+
+export interface SyncResponse extends SyncResult {
+  /** Cliente cadastrado ou vinculado pela capa que acabou de chegar. Null
+   * quando a capa não veio nesta chamada ou o cadastro automático falhou. */
+  officeClients: OfficeClientsResult | null
+}
 
 interface SyncArgs {
   legalProcessId: string
@@ -23,7 +30,7 @@ export async function syncProcessoFromApi({
   blocks,
   force,
   assumeFresh,
-}: SyncArgs): Promise<SyncResult> {
+}: SyncArgs): Promise<SyncResponse> {
   const res = await fetch('/api/buscaprocessos/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -39,5 +46,5 @@ export async function syncProcessoFromApi({
   const json = await res.json()
   if (!res.ok) throw new Error(json.error ?? 'Falha ao sincronizar o processo.')
 
-  return json as SyncResult
+  return json as SyncResponse
 }
