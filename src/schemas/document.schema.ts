@@ -6,11 +6,16 @@ export const documentCategorySchema = z.enum([
   'contrato',
   'procuracao',
   'decisao',
+  'identificacao',
+  'certidao',
+  'comprovante_residencia',
   'comprovante',
   'nota_fiscal',
   'boleto',
   'outros',
 ])
+
+export const documentOriginSchema = z.enum(['upload', 'modelo', 'assinatura', 'ia'])
 
 /** Campo opcional vindo de um controle de formulário: '' é o valor de um
  * select intocado, e Postgres rejeita isso em coluna uuid. */
@@ -22,11 +27,14 @@ export const documentUploadSchema = z.object({
   crm_item_id: optionalUuid,
   legal_process_id: optionalUuid,
   event_id: optionalUuid,
+  task_id: optionalUuid,
   /** Exclusivo: anexo de lançamento não leva os outros vínculos (migration 63). */
   financial_entry_id: optionalUuid,
   /** Exclusivo, como o de lançamento, e sempre com o papel (migration 69). */
   contract_id: optionalUuid,
   contract_file_role: contractFileRoleSchema.optional().nullable(),
+  /** Sem ela, 'upload' — o default da coluna (migration 87). */
+  origin: documentOriginSchema.optional(),
 })
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>

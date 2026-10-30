@@ -44,39 +44,46 @@ interface DocumentsTabProps {
   crmItemIds?: string[]
   clientId?: string | null
   eventId?: string | null
+  taskId?: string | null
   financialEntryId?: string | null
   /** Onde novos arquivos são gravados. */
   lockedLegalProcessId?: string | null
   lockedCrmItemId?: string | null
   lockedClientId?: string | null
   lockedEventId?: string | null
+  lockedTaskId?: string | null
   /** Exclusivo: com ele, os outros `locked*` não vão junto (migration 63). */
   lockedFinancialEntryId?: string | null
   /** Opções do seletor de categoria. Por padrão, todas. */
   categories?: readonly DocumentCategory[]
   defaultCategory?: DocumentCategory
   itemLabel?: string
+  /** "nesta tarefa", não "neste tarefa". */
+  itemFeminine?: boolean
   /** Dentro de outro modal (detalhe do evento): área de envio de uma linha e
    * estado vazio discreto, em vez do layout de aba inteira. */
   compact?: boolean
 }
 
-/** Aba Documentos — compartilhada entre CasoModal, a página do processo e
- * a página do cliente, para os três ficarem idênticos. */
+/** Aba Documentos — compartilhada entre CasoModal, a página do processo, a
+ * do cliente e os detalhes de evento e tarefa, para ficarem idênticos. */
 export function DocumentsTab({
   legalProcessId,
   crmItemIds,
   clientId,
   eventId,
+  taskId,
   financialEntryId,
   lockedLegalProcessId,
   lockedCrmItemId,
   lockedClientId,
   lockedEventId,
+  lockedTaskId,
   lockedFinancialEntryId,
   categories = ALL_CATEGORIES,
   defaultCategory = 'outros',
   itemLabel = 'item',
+  itemFeminine = false,
   compact = false,
 }: DocumentsTabProps) {
   const { data: documents = [], isLoading, isError } = useDocumentsForEntity({
@@ -84,6 +91,7 @@ export function DocumentsTab({
     crmItemIds,
     clientId,
     eventId,
+    taskId,
     financialEntryId,
   })
   const uploadDocument = useUploadDocument()
@@ -121,6 +129,7 @@ export function DocumentsTab({
           crm_item_id: lockedCrmItemId ?? '',
           client_id: lockedClientId ?? '',
           event_id: lockedEventId ?? '',
+          task_id: lockedTaskId ?? '',
           financial_entry_id: lockedFinancialEntryId ?? '',
         },
         file,
@@ -250,12 +259,17 @@ export function DocumentsTab({
 
       {documents.length === 0 ? (
         compact ? (
-          <p className="text-xs text-muted-foreground">Nenhum documento neste {itemLabel}.</p>
+          <p className="text-xs text-muted-foreground">
+            Nenhum documento {itemFeminine ? 'nesta' : 'neste'} {itemLabel}.
+          </p>
         ) : (
         <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
           <FileText className="w-7 h-7" />
           <p className="text-sm">Nenhum documento</p>
-          <p className="text-xs">Petições, contratos e procurações deste {itemLabel} ficam aqui</p>
+          <p className="text-xs">
+            Petições, contratos e procurações {itemFeminine ? 'desta' : 'deste'} {itemLabel} ficam
+            aqui
+          </p>
         </div>
         )
       ) : (
@@ -277,7 +291,12 @@ export function DocumentsTab({
 
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">{doc.file_name}</p>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                  <div
+                    className={cn(
+                      'flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5',
+                      'text-xs text-muted-foreground whitespace-nowrap'
+                    )}
+                  >
                     <span>{DOCUMENT_CATEGORY_LABELS[doc.category]}</span>
                     <span>·</span>
                     <span>{formatFileSize(doc.file_size)}</span>

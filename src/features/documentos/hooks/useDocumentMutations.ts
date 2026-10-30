@@ -2,12 +2,18 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { uploadDocument, deleteDocument, getDocumentUrl } from '../services/documents.service'
+import {
+  uploadDocument,
+  deleteDocument,
+  getDocumentUrl,
+  updateDocumentCategory,
+} from '../services/documents.service'
 import { documentKeys } from './useDocuments'
 import { financialEntryKeys } from '@/features/financeiro/hooks/useFinancialEntries'
 import { contractKeys } from '@/features/contratos/hooks/useContracts'
 import { useAuth } from '@/hooks/useAuth'
 import type { DocumentUploadInput } from '@/schemas/document.schema'
+import type { DocumentCategory } from '@/types/document.types'
 import { signatureGuardMessage } from '@/types/signature.types'
 
 /** Toda superfície que mostra documento — mesma forma dos demais invalidadores. */
@@ -54,6 +60,21 @@ export function useDeleteDocument() {
     },
     // Em assinatura na D4Sign, o banco recusa (migration 79) e diz o que fazer.
     onError: (error) => toast.error(signatureGuardMessage(error) ?? 'Erro ao remover documento.'),
+  })
+}
+
+export function useUpdateDocumentCategory() {
+  const invalidate = useInvalidateDocumentSurfaces()
+
+  return useMutation({
+    mutationFn: ({ id, category }: { id: string; category: DocumentCategory }) =>
+      updateDocumentCategory(id, category),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Categoria alterada.')
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Erro ao alterar a categoria.'),
   })
 }
 

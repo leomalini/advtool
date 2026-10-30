@@ -7,6 +7,9 @@ export type DocumentCategory =
   | 'contrato'
   | 'procuracao'
   | 'decisao'
+  | 'identificacao'
+  | 'certidao'
+  | 'comprovante_residencia'
   | 'comprovante'
   | 'nota_fiscal'
   | 'boleto'
@@ -18,6 +21,9 @@ export const DOCUMENT_CATEGORY_LABELS: Record<DocumentCategory, string> = {
   contrato: 'Contrato',
   procuracao: 'Procuração',
   decisao: 'Decisão',
+  identificacao: 'Documento de identificação',
+  certidao: 'Certidão',
+  comprovante_residencia: 'Comprovante de residência',
   comprovante: 'Comprovante',
   nota_fiscal: 'Nota fiscal',
   boleto: 'Boleto / guia',
@@ -34,12 +40,24 @@ export const FINANCIAL_DOCUMENT_CATEGORIES = [
   'outros',
 ] as const satisfies readonly DocumentCategory[]
 
+/** Como o arquivo entrou (migration 87). Documento anterior a ela não tem. */
+export type DocumentOrigin = 'upload' | 'modelo' | 'assinatura' | 'ia'
+
+export const DOCUMENT_ORIGIN_LABELS: Record<DocumentOrigin, string> = {
+  upload: 'Enviado',
+  modelo: 'Gerado por modelo',
+  assinatura: 'Cópia assinada (D4Sign)',
+  ia: 'Salvo pelo Assistente',
+}
+
 export interface DocumentRecord {
   id: string
   client_id: string | null
   crm_item_id: string | null
   legal_process_id: string | null
   event_id: string | null
+  /** Anexo da tarefa (migration 87) — com os vínculos dela ao lado. */
+  task_id: string | null
   /** Lançamento dono do anexo. Exclusivo: com ele preenchido, os demais
    * vínculos ficam vazios (migration 63). */
   financial_entry_id: string | null
@@ -51,6 +69,8 @@ export interface DocumentRecord {
   contract_party_id: string | null
   /** O que o leitor disse que o documento é: `cnh`, `matricula`… */
   source_kind: string | null
+  /** Null: enviado antes de a origem ser registrada. */
+  origin: DocumentOrigin | null
   category: DocumentCategory
   file_name: string
   /** Caminho no bucket 'attachments' — nunca uma URL pública: o bucket é
@@ -95,6 +115,8 @@ export interface DocumentWithRelations extends DocumentRecord {
     client: ClientSummary | null
     legal_process: LegalProcessSummary | null
   } | null
+  task?: { id: string; title: string } | null
+  event?: { id: string; title: string } | null
   uploader?: Pick<Profile, 'id' | 'full_name'> | null
 }
 
@@ -120,15 +142,13 @@ export interface DocumentOwner {
  */
 export function documentPermission(
   owner: DocumentOwner,
-  operation: 'upload' | 'delete'
+  operation: 'upload' | 'update' | 'delete'
 ): { resource: Resource; action: Action } {
-  if (owner.financial_entry_id) {
-    return { resource: 'financeiro', action: operation === 'upload' ? 'update' : 'delete' }
-  }
-  if (owner.contract_id) {
-    return { resource: 'contratos', action: operation === 'upload' ? 'update' : 'delete' }
-  }
-  return { resource: 'documentos', action: operation === 'upload' ? 'create' : 'delete' }
+  // Para o lançamento e o contrato, anexar e editar o arquivo são editar o dono.
+  const ownerAction: Action = operation === 'delete' ? 'delete' : 'update'
+  if (owner.financial_entry_id) return { resource: 'financeiro', action: ownerAction }
+  if (owner.contract_id) return { resource: 'contratos', action: ownerAction }
+  return { resource: 'documentos', action: operation === 'upload' ? 'create' : operation }
 }
 
 /** Extensão em maiúsculas, para o badge da lista. */

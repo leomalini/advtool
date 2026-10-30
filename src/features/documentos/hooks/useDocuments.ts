@@ -12,6 +12,7 @@ export const documentKeys = {
     crmItemIds: string[],
     clientId: string | null,
     eventId: string | null,
+    taskId: string | null,
     financialEntryId: string | null,
     contractId: string | null
   ) =>
@@ -22,6 +23,7 @@ export const documentKeys = {
       crmItemIds.join(','),
       clientId ?? '-',
       eventId ?? '-',
+      taskId ?? '-',
       financialEntryId ?? '-',
       contractId ?? '-',
     ] as const,
@@ -34,19 +36,21 @@ export function useDocuments() {
   })
 }
 
-/** Documentos de um caso, processo, cliente, evento, lançamento ou contrato —
- * para a aba dos modais. */
+/** Documentos de um caso, processo, cliente, evento, tarefa, lançamento ou
+ * contrato — para a aba dos modais. */
 export function useDocumentsForEntity(params: {
   legalProcessId?: string | null
   crmItemIds?: string[]
   clientId?: string | null
   eventId?: string | null
+  taskId?: string | null
   financialEntryId?: string | null
   contractId?: string | null
 }) {
   const legalProcessId = params.legalProcessId ?? null
   const clientId = params.clientId ?? null
   const eventId = params.eventId ?? null
+  const taskId = params.taskId ?? null
   const financialEntryId = params.financialEntryId ?? null
   const contractId = params.contractId ?? null
   // Ordenado para a chave ser estável (ver useEventsForEntity).
@@ -58,6 +62,7 @@ export function useDocumentsForEntity(params: {
       crmItemIds,
       clientId,
       eventId,
+      taskId,
       financialEntryId,
       contractId
     ),
@@ -67,6 +72,7 @@ export function useDocumentsForEntity(params: {
         crmItemIds,
         clientId,
         eventId,
+        taskId,
         financialEntryId,
         contractId,
       }),
@@ -75,6 +81,7 @@ export function useDocumentsForEntity(params: {
       crmItemIds.length > 0 ||
       !!clientId ||
       !!eventId ||
+      !!taskId ||
       !!financialEntryId ||
       !!contractId,
   })

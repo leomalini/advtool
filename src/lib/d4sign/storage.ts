@@ -18,6 +18,7 @@ export type OriginalDocument = Pick<
   | 'crm_item_id'
   | 'legal_process_id'
   | 'event_id'
+  | 'task_id'
   | 'contract_id'
 > & { movement_id: string | null }
 
@@ -30,7 +31,7 @@ export async function loadOriginalDocument(
     .from('documents')
     .select(
       'id, file_name, file_path, file_type, category, client_id, crm_item_id, ' +
-        'legal_process_id, event_id, movement_id, contract_id',
+        'legal_process_id, event_id, task_id, movement_id, contract_id',
     )
     .eq('id', documentId)
     .maybeSingle()
@@ -72,6 +73,7 @@ function placement(request: SignatureRequest, original: OriginalDocument | null)
         contract_id: request.contract_id,
         contract_file_role: 'assinado',
         category: 'contrato',
+        origin: 'assinatura',
       },
     }
   }
@@ -81,6 +83,7 @@ function placement(request: SignatureRequest, original: OriginalDocument | null)
     crm_item_id: original?.crm_item_id ?? null,
     legal_process_id: original?.legal_process_id ?? null,
     event_id: original?.event_id ?? null,
+    task_id: original?.task_id ?? null,
     movement_id: original?.movement_id ?? null,
   }
   const folder: [string, string | null][] = [
@@ -88,11 +91,12 @@ function placement(request: SignatureRequest, original: OriginalDocument | null)
     ['casos', owners.crm_item_id],
     ['clientes', owners.client_id],
     ['eventos', owners.event_id],
+    ['tarefas', owners.task_id],
   ]
   const [scope, id] = folder.find(([, value]) => !!value) ?? ['avulsos', 'sem-vinculo']
   return {
     folder: `${scope}/${id}`,
-    columns: { ...owners, category: original?.category ?? 'outros' },
+    columns: { ...owners, category: original?.category ?? 'outros', origin: 'assinatura' },
   }
 }
 

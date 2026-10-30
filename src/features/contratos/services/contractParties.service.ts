@@ -6,6 +6,7 @@ import type {
   PartyFieldSources,
   PartyPersonData,
 } from '@/types/contract.types'
+import type { DocumentCategory } from '@/types/document.types'
 
 const supabase = createClient()
 
@@ -103,6 +104,20 @@ export async function saveContractTemplateValues(
   if (error) throw error
 }
 
+/** A categoria que o tipo reconhecido pelo leitor indica — a mesma tabela da
+ * migration 87. */
+const SOURCE_KIND_CATEGORY: Partial<Record<string, DocumentCategory>> = {
+  cnh: 'identificacao',
+  rg: 'identificacao',
+  cpf: 'identificacao',
+  certidao_nascimento: 'certidao',
+  certidao_casamento: 'certidao',
+  comprovante_residencia: 'comprovante_residencia',
+  procuracao: 'procuracao',
+  nota_fiscal: 'nota_fiscal',
+  contrato: 'contrato',
+}
+
 /** Liga um documento lido à parte de quem ele é, com o tipo reconhecido. */
 export async function linkDocumentToParty(
   documentId: string,
@@ -113,4 +128,14 @@ export async function linkDocumentToParty(
     .update({ contract_party_id: link.partyId, source_kind: link.sourceKind })
     .eq('id', documentId)
   if (error) throw error
+
+  // Só o que ainda está em "Outros": quem já escolheu a categoria à mão manda.
+  const category = link.sourceKind ? SOURCE_KIND_CATEGORY[link.sourceKind] : undefined
+  if (!category) return
+  const { error: categoryError } = await supabase
+    .from('documents')
+    .update({ category })
+    .eq('id', documentId)
+    .eq('category', 'outros')
+  if (categoryError) throw categoryError
 }
