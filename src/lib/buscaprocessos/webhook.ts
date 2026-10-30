@@ -10,6 +10,12 @@ import {
   diarioToPublicationRow,
 } from './mapPublicacao'
 import { ingestPublications } from '@/lib/publicacoes/ingest'
+import {
+  linkOfficeClientsOnProcess,
+  registerOfficeClientFromDiario,
+  type OfficeClientRef,
+  type OfficeClientsResult,
+} from '@/lib/clientes/officeClients'
 import type {
   BpIntimacao,
   BpMovimentacao,
@@ -49,7 +55,7 @@ export type WebhookStatus =
   | 'error'
 
 export interface WebhookDestination {
-  table: 'publications' | 'legal_process_movements'
+  table: 'publications' | 'legal_process_movements' | 'clients'
   /** Null quando `dryRun`: a linha não chegou a existir. */
   id: string | null
   action: 'inserted' | 'duplicate' | 'existing_source' | 'invalid'
@@ -202,7 +208,20 @@ async function ingestAsPublication(
     ? ingest.outcomes[0]?.reason
     : 'Publicação órfã: processo não cadastrado.'
 
-  return { ...base, status, destinations, reason }
+  const result: WebhookHandleResult = { ...base, status, destinations, reason }
+
+  // Só na publicação nova: reprocessar uma duplicata recriaria o cliente que
+  // alguém apagou de propósito. Só o diário traz envolvidos (`parties`).
+  if (ingest.outcomes[0]?.action !== 'inserted' || !row.parties?.length) return result
+
+  const parties = row.parties
+  return withOfficeClients(result, () =>
+    registerOfficeClientFromDiario(
+      supabase,
+      { parties, legalProcessId },
+      { dryRun, source: 'webhook', cnj: row.cnj_number },
+    ),
+  )
 }
 
 // ── movimentacao_nova → timeline do processo ──────────────────────────────────
@@ -251,7 +270,20 @@ async function handleMovimentacao(
     return { ...base, status: 'unmatched', reason: `Processo ${cnj} não está cadastrado.` }
   }
 
-  return saveMovimentacao(supabase, base, movimentacao, { cnj, legalProcessId }, dryRun)
+  const saved = await saveMovimentacao(
+    supabase,
+    base,
+    movimentacao,
+    { cnj, legalProcessId },
+    dryRun,
+  )
+  if (saved.status !== 'processed') return saved
+
+  // A movimentação não traz partes; quem diz qual delas é nossa cliente é a
+  // capa já gravada no processo.
+  return withOfficeClients(saved, () =>
+    linkOfficeClientsOnProcess(supabase, legalProcessId, { dryRun, source: 'webhook', cnj }),
+  )
 }
 
 async function saveMovimentacao(
@@ -364,6 +396,49 @@ async function notifyMovimentacao(
   })
 
   if (error) console.error('[buscaprocessos/webhook] aviso não gravado:', error.message)
+}
+
+// ── Cliente representado pelo escritório ──────────────────────────────────────
+
+/**
+ * Acrescenta ao resultado o cliente cadastrado ou vinculado por
+ * `src/lib/clientes/officeClients.ts`.
+ *
+ * Best-effort: a publicação ou a movimentação já está gravada, e perdê-la por
+ * causa do cadastro do cliente seria trocar o essencial pelo acessório. O
+ * status do evento continua sendo o do ato — é ele que a fila de reprocesso lê.
+ */
+async function withOfficeClients(
+  result: WebhookHandleResult,
+  run: () => Promise<OfficeClientsResult>,
+): Promise<WebhookHandleResult> {
+  try {
+    const office = await run()
+    if (office.clients.length === 0) return result
+    return {
+      ...result,
+      destinations: [...result.destinations, ...office.clients.map(clientDestination)],
+    }
+  } catch (err) {
+    console.error('[buscaprocessos/webhook] cadastro automático do cliente:', err)
+    return result
+  }
+}
+
+function clientDestination(client: OfficeClientRef): WebhookDestination {
+  const detail: Record<OfficeClientRef['action'], string> = {
+    created: `Cliente cadastrado: ${client.name} (${client.lawyer.label}).`,
+    converted: `Pessoa passou a ser cliente: ${client.name} (${client.lawyer.label}).`,
+    existing: `Cliente já cadastrado: ${client.name}.`,
+  }
+
+  return {
+    table: 'clients',
+    id: client.id,
+    action: client.action === 'created' ? 'inserted' : 'existing_source',
+    link: client.id ? `/clientes/${client.id}` : null,
+    detail: detail[client.action],
+  }
 }
 
 // ── Auxiliares ────────────────────────────────────────────────────────────────

@@ -19,6 +19,9 @@ export type NotificationKind =
   | 'assinatura_concluida'
   | 'assinatura_cancelada'
   | 'assinatura_email_falhou'
+  // Parte representada por uma OAB do escritório, cadastrada (ou convertida de
+  // pessoa) sozinha ao chegar publicação ou movimentação (migration 88).
+  | 'cliente_cadastrado_auto'
   | (string & {})
 
 export interface Notification {

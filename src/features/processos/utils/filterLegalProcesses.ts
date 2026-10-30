@@ -2,6 +2,33 @@ import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import type { CrmLegalArea } from '@/schemas/crmItem.schema'
 
+/**
+ * Como o processo é acompanhado, pelo seletor de frequência do detalhe:
+ *
+ *  · 'manual' — alguém escolheu uma frequência (Diária, Semanal, Mensal): há um
+ *    monitoramento do processo na BuscaProcessos, cobrado por mês.
+ *  · 'oab' — "Não monitorado" no seletor: o processo só é coberto pelo
+ *    monitoramento das OABs do escritório, que traz as publicações em que elas
+ *    aparecem.
+ *
+ * Todo processo cai em exatamente um dos dois, então marcar ambos equivale a
+ * não filtrar.
+ */
+export type MonitoringSource = 'oab' | 'manual'
+
+export const MONITORING_SOURCES: readonly MonitoringSource[] = ['oab', 'manual']
+
+export const MONITORING_SOURCE_LABELS: Record<MonitoringSource, string> = {
+  oab: 'Pela OAB',
+  manual: 'Manual',
+}
+
+export function monitoringSourceOf(
+  processo: Pick<LegalProcessWithRelations, 'monitoring_frequency'>
+): MonitoringSource {
+  return processo.monitoring_frequency ? 'manual' : 'oab'
+}
+
 export interface ProcessoFilters {
   search: string
   legalArea: CrmLegalArea | null
@@ -10,6 +37,8 @@ export interface ProcessoFilters {
   /** Prazo (next_deadline) range, ISO date strings (yyyy-mm-dd), inclusive. */
   deadlineFrom: string | null
   deadlineTo: string | null
+  /** Vazio = qualquer um. Ver `MonitoringSource`. */
+  monitoring: MonitoringSource[]
 }
 
 export const emptyProcessoFilters: ProcessoFilters = {
@@ -19,6 +48,7 @@ export const emptyProcessoFilters: ProcessoFilters = {
   columnId: null,
   deadlineFrom: null,
   deadlineTo: null,
+  monitoring: [],
 }
 
 export function hasActiveProcessoFilters(f: ProcessoFilters): boolean {
@@ -28,7 +58,8 @@ export function hasActiveProcessoFilters(f: ProcessoFilters): boolean {
     f.assignedTo !== null ||
     f.columnId !== null ||
     f.deadlineFrom !== null ||
-    f.deadlineTo !== null
+    f.deadlineTo !== null ||
+    f.monitoring.length > 0
   )
 }
 
@@ -39,10 +70,11 @@ export function countActiveProcessoFilters(f: ProcessoFilters): number {
   if (f.assignedTo !== null) n++
   if (f.columnId !== null) n++
   if (f.deadlineFrom !== null || f.deadlineTo !== null) n++
+  if (f.monitoring.length > 0) n++
   return n
 }
 
-/** Applies the Processos filters (texto + área + responsável + etapa + prazo) a uma lista de processos. */
+/** Applies the Processos filters (texto + área + responsável + etapa + prazo + monitoramento) a uma lista de processos. */
 export function filterLegalProcesses(
   processos: LegalProcessWithRelations[],
   f: ProcessoFilters
@@ -53,6 +85,8 @@ export function filterLegalProcesses(
   const to = f.deadlineTo ? new Date(f.deadlineTo).getTime() : null
 
   return processos.filter((p) => {
+    if (f.monitoring.length > 0 && !f.monitoring.includes(monitoringSourceOf(p))) return false
+
     // A processo with no linked crm_item has none of the item-side fields —
     // any filter on them excludes it, but it still matches by CNJ/parties.
     const item = p.crm_item

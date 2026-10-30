@@ -214,6 +214,7 @@ async function syncCapa(
       polo: party.polo,
       party_type: party.party_type ?? null,
       position: party.position,
+      lawyer_oabs: party.lawyer_oabs ?? [],
     })),
   )
   if (error) throw new Error(`Gravação das partes falhou: ${error.message}`)

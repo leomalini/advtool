@@ -161,6 +161,7 @@ export async function replaceLegalProcessParties(
       party_type: p.party_type ?? null,
       position: p.position ?? index,
       client_id: p.client_id ?? null,
+      lawyer_oabs: p.lawyer_oabs ?? [],
     }))
   )
   if (error) throw error

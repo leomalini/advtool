@@ -13,6 +13,7 @@ import {
   linkPartyToClient,
 } from '../services/legalProcesses.service'
 import { syncProcessoFromApi } from '../services/syncProcesso.service'
+import type { OfficeClientsResult } from '@/lib/clientes/officeClients'
 import {
   createProcessMonitoring,
   deleteProcessMonitoring,
@@ -162,10 +163,32 @@ async function collectFromApi(
     if (sync.failed.length > 0) {
       toast.warning(`Não foi possível carregar: ${sync.failed.map((f) => f.block).join(', ')}.`)
     }
+    announceOfficeClients(sync.officeClients)
   } catch {
     // Cadastro feito é cadastro feito: falha na coleta vira aviso, não erro
     // do salvamento. Sincronizar de novo depois traz o que faltou.
     toast.warning('Dados do tribunal não foram carregados. Sincronize o processo depois.')
+  }
+}
+
+/** Conta o que o cadastro automático fez pela capa — sem isto o processo
+ * aparecia com um cliente que ninguém escolheu, e sem explicação. */
+function announceOfficeClients(result: OfficeClientsResult | null): void {
+  if (!result) return
+
+  const created = result.clients.filter((client) => client.action !== 'existing')
+  const existing = result.clients.filter((client) => client.action === 'existing')
+
+  if (created.length > 0) {
+    toast.success(
+      `Cliente cadastrado automaticamente: ${created.map((client) => client.name).join(', ')}.`,
+      { description: 'É a parte representada por uma OAB do escritório. Confira o cadastro.' },
+    )
+  }
+  if (existing.length > 0) {
+    toast.success(
+      `Parte vinculada ao cliente ${existing.map((client) => client.name).join(', ')}.`,
+    )
   }
 }
 
@@ -296,6 +319,7 @@ export function useSyncProcesso() {
       syncProcessoFromApi({ legalProcessId, cnj, force: ['capa', 'movimentacoes'] }),
     onSuccess: (sync) => {
       invalidate()
+      announceOfficeClients(sync.officeClients)
 
       if (sync.failed.length > 0) {
         toast.warning(`Não foi possível carregar: ${sync.failed.map((f) => f.block).join(', ')}.`)

@@ -19,6 +19,7 @@ import {
   Gavel,
   Newspaper,
   TriangleAlert,
+  UserPlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,6 +58,7 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   assinatura_concluida: FileCheck2,
   assinatura_cancelada: FileX2,
   assinatura_email_falhou: MailWarning,
+  cliente_cadastrado_auto: UserPlus,
 }
 
 function relativeTime(iso: string): string {

@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { syncProcessoFromBp, SYNC_BLOCKS } from '@/lib/buscaprocessos/sync'
+import { syncProcessoFromBp, SYNC_BLOCKS, type SyncResult } from '@/lib/buscaprocessos/sync'
 import { BpApiError } from '@/lib/buscaprocessos/client'
 import { enqueueProcessWork } from '@/features/ia/batch/arrival'
+import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import {
+  linkOfficeClientsOnProcess,
+  type OfficeClientsResult,
+} from '@/lib/clientes/officeClients'
 
 /** Segundos. Inclui o `after` que manda o resumo e o portal para o lote. */
 export const maxDuration = 120
@@ -70,12 +75,54 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         await enqueueProcessWork(legalProcessId)
       })
     }
-    return NextResponse.json(result)
+
+    const officeClients = await registerOfficeClients(
+      parsed.data.legal_process_id,
+      parsed.data.cnj,
+      result,
+      parsed.data.assume_fresh,
+    )
+    return NextResponse.json({ ...result, officeClients })
   } catch (err) {
     if (err instanceof BpApiError) {
       return NextResponse.json({ error: err.message }, { status: err.status })
     }
     console.error('[buscaprocessos/sync]', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+  }
+}
+
+/**
+ * Cadastra o cliente que o escritório representa no processo, pela capa que
+ * acabou de chegar — no cadastro ela vem do formulário (`assume_fresh`), na
+ * sincronização vem da consulta.
+ *
+ * Só com capa nova: rodar em toda sincronização recriaria, a cada clique, o
+ * cliente que alguém apagou de propósito.
+ *
+ * Pelo client de `service_role`, como no webhook: é uma ação do sistema, não de
+ * quem clicou — o cadastro sai assinado pelo advogado da parte, e o aviso do
+ * sino só é gravável por ele. Quem chega aqui já passou pela sessão acima.
+ * Best-effort: falhar aqui não desfaz a sincronização.
+ */
+async function registerOfficeClients(
+  legalProcessId: string,
+  cnj: string,
+  result: SyncResult,
+  assumeFresh: readonly string[] | undefined,
+): Promise<OfficeClientsResult | null> {
+  const capaFresh =
+    result.synced.includes('capa') ||
+    (Boolean(assumeFresh?.includes('capa')) && result.skipped.includes('capa'))
+  if (!capaFresh || !hasServiceRoleKey()) return null
+
+  try {
+    return await linkOfficeClientsOnProcess(createAdminClient(), legalProcessId, {
+      source: 'sync',
+      cnj,
+    })
+  } catch (err) {
+    console.error('[buscaprocessos/sync] cadastro automático do cliente:', err)
+    return null
   }
 }

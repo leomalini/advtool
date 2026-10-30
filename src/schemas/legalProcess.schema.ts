@@ -24,6 +24,9 @@ export const legalProcessPartySchema = z.object({
   party_type: z.string().max(100).optional().nullable(),
   position: z.number().int().nonnegative(),
   client_id: z.string().uuid().optional().nullable(),
+  // Sem campo na tela: só existe no schema para o resolver não descartar o que
+  // a capa trouxe (migration 88).
+  lawyer_oabs: z.array(z.string().max(20)).max(50).optional(),
 })
 
 export const legalProcessSchema = z.object({

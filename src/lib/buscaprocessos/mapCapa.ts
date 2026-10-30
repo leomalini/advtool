@@ -5,6 +5,7 @@
 // assíncrono devolvido por um 202 (`/api/buscaprocessos/requests/[requestId]`).
 import type { BpEnvolvido, BpFonte, BpProcessoCapa } from './types'
 import type { CnjLookupResult, LegalProcessPartyInput } from '@/types/legalProcess.types'
+import { oabKey } from '@/lib/oab'
 
 /**
  * O mesmo processo chega repartido em `fontes` — um item por tribunal e grau
@@ -26,7 +27,9 @@ function primaryFonte(fontes: BpFonte[]): BpFonte | null {
  * CAIXA ALTA e assume também 'ADVOGADO' e 'NENHUM'. Só ATIVO e PASSIVO viram
  * partes do processo.
  */
-function mapParties(envolvidos: BpEnvolvido[]): LegalProcessPartyInput[] {
+function mapParties(envolvidos: BpEnvolvido[], fontes: BpFonte[]): LegalProcessPartyInput[] {
+  const oabsByName = lawyerOabsByName(fontes)
+
   return envolvidos
     .filter((e) => e.polo === 'ATIVO' || e.polo === 'PASSIVO')
     .map((e, index) => ({
@@ -35,7 +38,37 @@ function mapParties(envolvidos: BpEnvolvido[]): LegalProcessPartyInput[] {
       polo: e.polo === 'ATIVO' ? ('ativo' as const) : ('passivo' as const),
       party_type: e.tipo_normalizado ?? e.tipo ?? null,
       position: index,
+      lawyer_oabs: [...(oabsByName.get(partyNameKey(e.nome)) ?? [])],
     }))
+}
+
+/**
+ * As OABs dos advogados de cada parte, pelo nome dela, em TODAS as fontes — é
+ * por elas que o sistema reconhece a parte que o escritório representa
+ * (migration 88). As partes vêm da fonte principal, mas o advogado que entrou
+ * só no recurso aparece apenas na fonte do 2º grau.
+ */
+function lawyerOabsByName(fontes: BpFonte[]): Map<string, Set<string>> {
+  const byName = new Map<string, Set<string>>()
+  for (const fonte of fontes) {
+    for (const envolvido of fonte.envolvidos ?? []) {
+      for (const advogado of envolvido.advogados ?? []) {
+        for (const oab of advogado.oab ?? []) {
+          const key = oabKey(oab.uf, oab.numero)
+          if (!key) continue
+          const name = partyNameKey(envolvido.nome)
+          const keys = byName.get(name) ?? new Set<string>()
+          keys.add(key)
+          byName.set(name, keys)
+        }
+      }
+    }
+  }
+  return byName
+}
+
+function partyNameKey(name: string): string {
+  return name.replace(/\s+/g, ' ').trim().toUpperCase()
 }
 
 function firstPartyName(envolvidos: BpEnvolvido[], polo: 'ATIVO' | 'PASSIVO'): string | null {
@@ -92,6 +125,6 @@ export function toLookupResult(processo: BpProcessoCapa): CnjLookupResult {
     case_value: toNumber(processo.valor_causa?.valor ?? capa?.valor_causa?.valor),
     filing_date: toIsoDate(capa?.data_distribuicao ?? processo.data_inicio),
     status: mapStatus(capa?.situacao, processo.fontes_tribunais_estao_arquivadas),
-    parties: mapParties(envolvidos),
+    parties: mapParties(envolvidos, processo.fontes ?? []),
   }
 }
