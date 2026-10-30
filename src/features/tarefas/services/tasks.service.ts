@@ -12,6 +12,11 @@ import {
 import type { Task, TaskComment, TaskChecklistItem } from '@/types/task.types'
 import type { CreateTaskInput, UpdateTaskInput } from '@/schemas/task.schema'
 import { toRecurrenceRule, type RecurrenceFormValues } from '@/schemas/recurrence.schema'
+import {
+  deleteTaskOnlyDocuments,
+  moveTaskDocuments,
+} from '@/features/documentos/services/documents.service'
+import { chunk } from '@/utils/chunk'
 
 const supabase = createClient()
 
@@ -333,15 +338,25 @@ async function regenerateSeries(params: {
   const { current, patch, rule, anchor, userId, oldSeriesId, fromDate } = params
 
   if (oldSeriesId) {
-    let removal = supabase
+    let doomedQuery = supabase
       .from('tasks')
-      .delete()
+      .select('id')
       .eq('recurrence_series_id', oldSeriesId)
       .neq('status', 'done')
       .neq('id', current.id)
-    if (fromDate) removal = removal.gte('due_date', fromDate)
-    const { error: removalError } = await removal
-    if (removalError) throw removalError
+    if (fromDate) doomedQuery = doomedQuery.gte('due_date', fromDate)
+    const { data: doomed, error: doomedError } = await doomedQuery
+    if (doomedError) throw doomedError
+    const doomedIds = (doomed ?? []).map((row) => row.id as string)
+
+    // Os anexos das ocorrências refeitas passam para esta, que sobrevive —
+    // senão travariam a exclusão pelo CHECK de dono. Mesmo passo do evento.
+    await moveTaskDocuments(doomedIds, current.id)
+
+    for (const ids of chunk(doomedIds)) {
+      const { error: removalError } = await supabase.from('tasks').delete().in('id', ids)
+      if (removalError) throw removalError
+    }
 
     if (fromDate) {
       await supabase
@@ -401,23 +416,41 @@ async function regenerateSeries(params: {
 /**
  * Exclui a tarefa — ou, numa série, ela e as seguintes / a série inteira. Das
  * outras ocorrências só saem as pendentes: concluída é histórico.
+ *
+ * Anexos SÓ da tarefa saem junto (linha e arquivo), como no evento: com
+ * `documents.task_id` em `set null`, o CHECK de dono travaria a exclusão. O
+ * que também é do processo, do cliente ou do card continua lá.
  */
 export async function deleteTask(id: string, options: TaskWriteOptions = {}): Promise<void> {
   const { current, scope = 'this' } = options
   const seriesId = current?.recurrence_series_id
 
-  const { error } = await supabase.from('tasks').delete().eq('id', id)
-  if (error) throw error
-  if (!seriesId || scope === 'this' || !current) return
+  if (!seriesId || scope === 'this' || !current) {
+    await deleteTaskOnlyDocuments([id])
+    const { error } = await supabase.from('tasks').delete().eq('id', id)
+    if (error) throw error
+    return
+  }
 
-  let removal = supabase
+  let doomedQuery = supabase
     .from('tasks')
-    .delete()
+    .select('id')
     .eq('recurrence_series_id', seriesId)
     .neq('status', 'done')
-  if (scope === 'following' && current.due_date) removal = removal.gte('due_date', current.due_date)
-  const { error: removalError } = await removal
-  if (removalError) throw removalError
+  if (scope === 'following' && current.due_date) {
+    doomedQuery = doomedQuery.gte('due_date', current.due_date)
+  }
+  const { data: doomed, error: doomedError } = await doomedQuery
+  if (doomedError) throw doomedError
+  // A própria sai mesmo concluída — foi ela que se pediu para excluir.
+  const doomedIds = [id, ...(doomed ?? []).map((row) => row.id as string).filter((v) => v !== id)]
+
+  await deleteTaskOnlyDocuments(doomedIds)
+
+  for (const ids of chunk(doomedIds)) {
+    const { error: removalError } = await supabase.from('tasks').delete().in('id', ids)
+    if (removalError) throw removalError
+  }
 
   if (scope === 'following' && current.due_date) {
     // O que sobrou da série termina na véspera.

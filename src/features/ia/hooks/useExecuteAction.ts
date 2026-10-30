@@ -203,6 +203,7 @@ export function useExecuteAction() {
               legal_process_id: input.processo_id ?? null,
               crm_item_id: null,
               event_id: null,
+              origin: 'ia',
             },
             file,
             userId,
@@ -433,7 +434,7 @@ async function registerContract(
   if (input.minuta_arquivo_id) {
     try {
       const file = await downloadAiFileAsFile(input.minuta_arquivo_id)
-      await uploadContractFile(contract.id, 'minuta', file, userId)
+      await uploadContractFile(contract.id, 'minuta', file, userId, 'ia')
     } catch {
       problems.push('a minuta não foi anexada')
     }
@@ -441,7 +442,7 @@ async function registerContract(
   for (const attachment of input.anexos ?? []) {
     try {
       const file = await downloadAiFileAsFile(attachment.arquivo_id)
-      const document = await uploadContractFile(contract.id, 'anexo', file, userId)
+      const document = await uploadContractFile(contract.id, 'anexo', file, userId, 'ia')
       const owner = attachment.parte !== undefined ? created[attachment.parte] : undefined
       await linkDocumentToParty(document.id, {
         partyId: owner?.id ?? null,

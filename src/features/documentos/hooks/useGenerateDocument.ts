@@ -142,7 +142,7 @@ export function useGenerateDocument() {
       if (saveTo) {
         if (!user) throw new Error('Sessão expirada. Entre de novo para salvar.')
         if (saveTo.kind === 'contract') {
-          await uploadContractFile(saveTo.contractId, 'minuta', file, user.id)
+          await uploadContractFile(saveTo.contractId, 'minuta', file, user.id, 'modelo')
           // Só lembram o modelo e o preenchido para a próxima versão: falhar
           // aqui não desfaz a minuta, que já está salva.
           await Promise.all([
@@ -159,6 +159,7 @@ export function useGenerateDocument() {
               legal_process_id: saveTo.processId,
               crm_item_id: null,
               event_id: null,
+              origin: 'modelo',
             },
             file,
             user.id,

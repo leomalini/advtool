@@ -15,6 +15,8 @@ import {
 import { taskKeys } from './useTasks'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { hearingKeys } from '@/features/audiencias/hooks/hearingKeys'
+import { documentKeys } from '@/features/documentos/hooks/useDocuments'
+import { AttachedDocumentsError } from '@/features/documentos/services/documents.service'
 import { useAuth } from '@/hooks/useAuth'
 import type { CreateTaskInput, UpdateTaskInput } from '@/schemas/task.schema'
 import type { Task, TaskStatus } from '@/types/task.types'
@@ -33,6 +35,8 @@ export function useInvalidateTaskSurfaces() {
     // Tarefa do checklist de uma audiência: concluí-la marca o item no banco
     // (migration 77), e o progresso da ficha e do Quadro muda junto.
     queryClient.invalidateQueries({ queryKey: hearingKeys.all })
+    // Excluir a tarefa leva os anexos só dela; refazer a série os muda de dono.
+    queryClient.invalidateQueries({ queryKey: documentKeys.all })
   }
 }
 
@@ -77,7 +81,10 @@ export function useDeleteTask() {
       invalidate()
       toast.success('Tarefa removida.')
     },
-    onError: () => toast.error('Erro ao remover tarefa.'),
+    onError: (error) =>
+      toast.error(
+        error instanceof AttachedDocumentsError ? error.message : 'Erro ao remover tarefa.'
+      ),
   })
 }
 

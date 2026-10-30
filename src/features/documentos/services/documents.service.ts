@@ -1,6 +1,10 @@
 import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
-import type { DocumentRecord, DocumentWithRelations } from '@/types/document.types'
+import type {
+  DocumentCategory,
+  DocumentRecord,
+  DocumentWithRelations,
+} from '@/types/document.types'
 import type { DocumentUploadInput } from '@/schemas/document.schema'
 import { chunk } from '@/utils/chunk'
 
@@ -24,6 +28,8 @@ const DOCUMENT_SELECT = `
     client:clients(id, type, name, company_name, trade_name),
     legal_process:legal_processes(id, cnj_number)
   ),
+  task:tasks(id, title),
+  event:events(id, title),
   uploader:profiles!documents_uploaded_by_fkey(id, full_name)
 `
 
@@ -57,6 +63,7 @@ function buildFilePath(input: DocumentUploadInput, fileName: string): string {
     ['casos', input.crm_item_id],
     ['clientes', input.client_id],
     ['eventos', input.event_id],
+    ['tarefas', input.task_id],
   ]
   const [scope, id] = owner.find(([, value]) => !!value) ?? ['avulsos', 'sem-vinculo']
   // Nome sanitizado: acento e espaço quebram a Storage API do Supabase.
@@ -96,11 +103,19 @@ export async function getDocumentsForEntity(params: {
   crmItemIds?: string[]
   clientId?: string | null
   eventId?: string | null
+  taskId?: string | null
   financialEntryId?: string | null
   contractId?: string | null
 }): Promise<DocumentWithRelations[]> {
-  const { legalProcessId, crmItemIds = [], clientId, eventId, financialEntryId, contractId } =
-    params
+  const {
+    legalProcessId,
+    crmItemIds = [],
+    clientId,
+    eventId,
+    taskId,
+    financialEntryId,
+    contractId,
+  } = params
 
   const terms: string[] = []
   if (legalProcessId) terms.push(`legal_process_id.eq.${legalProcessId}`)
@@ -108,6 +123,7 @@ export async function getDocumentsForEntity(params: {
   if (crmItemIds.length > 0) terms.push(`crm_item_id.in.(${crmItemIds.join(',')})`)
   if (clientId) terms.push(`client_id.eq.${clientId}`)
   if (eventId) terms.push(`event_id.eq.${eventId}`)
+  if (taskId) terms.push(`task_id.eq.${taskId}`)
   if (financialEntryId) terms.push(`financial_entry_id.eq.${financialEntryId}`)
   if (contractId) terms.push(`contract_id.eq.${contractId}`)
   if (terms.length === 0) return []
@@ -183,6 +199,19 @@ export async function removeDocumentFiles(filePaths: string[]): Promise<void> {
   if (error) console.error('[storage] remove failed:', error.message)
 }
 
+/** Troca a categoria de um documento já enviado. A RLS de update segue o dono
+ * (migration 69), como o resto. */
+export async function updateDocumentCategory(id: string, category: DocumentCategory): Promise<void> {
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ category })
+    .eq('id', id)
+    .select('id')
+  if (error) throw error
+  // Sem permissão a RLS recusa em silêncio (0 linhas).
+  if (!data || data.length === 0) throw new Error('Sem permissão para alterar este documento.')
+}
+
 export async function deleteDocument(id: string, filePath: string): Promise<void> {
   const { error } = await supabase.from('documents').delete().eq('id', id)
   if (error) throw error
@@ -219,10 +248,14 @@ export async function getContractFilePaths(contractId: string): Promise<string[]
   return (data ?? []).map((doc) => doc.file_path as string)
 }
 
-/** Há documento anexado só ao evento, e o perfil não pode excluí-lo. */
+/** Há documento anexado só ao evento (ou à tarefa), e o perfil não pode
+ * excluí-lo. */
 export class AttachedDocumentsError extends Error {
-  constructor() {
-    super('Há documentos anexados só a este evento, e você não tem permissão para excluí-los.')
+  constructor(owner: 'evento' | 'tarefa' = 'evento') {
+    super(
+      `Há documentos anexados só a ${owner === 'evento' ? 'este evento' : 'esta tarefa'}, e você ` +
+        'não tem permissão para excluí-los.'
+    )
     this.name = 'AttachedDocumentsError'
   }
 }
@@ -241,17 +274,33 @@ export class AttachedDocumentsError extends Error {
  * que a tela consegue explicar, em vez do CHECK estourando depois.
  */
 export async function deleteEventOnlyDocuments(eventIds: string[]): Promise<void> {
-  if (eventIds.length === 0) return
+  await deleteOwnedOnlyDocuments('event_id', eventIds)
+}
+
+/** O mesmo de `deleteEventOnlyDocuments`, para a tarefa (migration 87). Roda
+ * antes de excluir as tarefas, pelo mesmo motivo. */
+export async function deleteTaskOnlyDocuments(taskIds: string[]): Promise<void> {
+  await deleteOwnedOnlyDocuments('task_id', taskIds)
+}
+
+/** Documentos cujo único dono é um destes eventos ou tarefas. */
+async function deleteOwnedOnlyDocuments(
+  column: 'event_id' | 'task_id',
+  ownerIds: string[]
+): Promise<void> {
+  if (ownerIds.length === 0) return
+  const otherOwner = column === 'event_id' ? 'task_id' : 'event_id'
 
   const owned: { id: string; file_path: string }[] = []
-  for (const ids of chunk(eventIds)) {
+  for (const ids of chunk(ownerIds)) {
     const { data, error } = await supabase
       .from('documents')
       .select('id, file_path')
-      .in('event_id', ids)
+      .in(column, ids)
       .is('client_id', null)
       .is('crm_item_id', null)
       .is('legal_process_id', null)
+      .is(otherOwner, null)
     if (error) throw error
     owned.push(...((data ?? []) as { id: string; file_path: string }[]))
   }
@@ -263,7 +312,9 @@ export async function deleteEventOnlyDocuments(eventIds: string[]): Promise<void
     if (error) throw error
     deleted += data?.length ?? 0
   }
-  if (deleted < owned.length) throw new AttachedDocumentsError()
+  if (deleted < owned.length) {
+    throw new AttachedDocumentsError(column === 'event_id' ? 'evento' : 'tarefa')
+  }
 
   await removeDocumentFiles(owned.map((doc) => doc.file_path))
 }
@@ -281,6 +332,17 @@ export async function moveEventDocuments(fromEventIds: string[], toEventId: stri
       .from('documents')
       .update({ event_id: toEventId })
       .in('event_id', ids)
+    if (error) throw error
+  }
+}
+
+/** O mesmo de `moveEventDocuments`, quando a série de uma tarefa é refeita. */
+export async function moveTaskDocuments(fromTaskIds: string[], toTaskId: string): Promise<void> {
+  for (const ids of chunk(fromTaskIds)) {
+    const { error } = await supabase
+      .from('documents')
+      .update({ task_id: toTaskId })
+      .in('task_id', ids)
     if (error) throw error
   }
 }

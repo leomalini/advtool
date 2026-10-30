@@ -34,6 +34,10 @@ const TASK_SCOPE_LABELS: Record<SeriesScope, string> = {
   following: 'Esta e as tarefas seguintes',
   all: 'Todas as tarefas',
 }
+
+/** Ver deleteTaskOnlyDocuments: só sai o anexo que não tem outro dono. */
+const DELETE_DOCUMENTS_NOTICE =
+  'Documentos anexados só à tarefa também são excluídos; os que também são do processo ou do cliente continuam lá.'
 import { useTaskComments } from '../hooks/useTasks'
 import {
   useUpdateTask,
@@ -46,6 +50,7 @@ import {
 import { TaskForm } from './TaskForm'
 import { isTaskOverdue } from '../utils/filterTasks'
 import { Can } from '@/components/shared/Can'
+import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 
 const STATUS_TONE: Record<TaskStatus, string> = {
   todo: 'bg-muted text-muted-foreground',
@@ -311,6 +316,24 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
                   </form>
                 </section>
 
+                {/* Documentos — lê só os desta tarefa; grava com os vínculos
+                    dela, para o arquivo aparecer no processo também. Mesmo
+                    desenho do detalhe do evento. */}
+                <Can resource="documentos" action="view">
+                  <section>
+                    <DocumentsTab
+                      compact
+                      taskId={task.id}
+                      lockedTaskId={task.id}
+                      lockedLegalProcessId={task.legal_process_id}
+                      lockedClientId={task.client_id}
+                      lockedCrmItemId={task.crm_item_id}
+                      itemLabel="tarefa"
+                      itemFeminine
+                    />
+                  </section>
+                </Can>
+
                 {/* Comentários */}
                 <section className="space-y-3">
                   <div className="flex items-center gap-2">
@@ -429,7 +452,7 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Excluir tarefa"
-        description={`"${task.title}" será removida permanentemente, junto com seus comentários e itens de checklist.`}
+        description={`"${task.title}" será removida permanentemente, junto com seus comentários e itens de checklist. ${DELETE_DOCUMENTS_NOTICE}`}
         confirmLabel="Excluir"
         onConfirm={() => runDelete('this')}
       />
@@ -453,8 +476,9 @@ export function TaskDetailModal({ task, open, onClose }: TaskDetailModalProps) {
         action="delete"
         labels={TASK_SCOPE_LABELS}
         hints={{
-          following: 'Das seguintes, só as pendentes — concluídas ficam como histórico.',
-          all: 'Das outras, só as pendentes — concluídas ficam como histórico.',
+          this: DELETE_DOCUMENTS_NOTICE,
+          following: `Das seguintes, só as pendentes — concluídas ficam como histórico. ${DELETE_DOCUMENTS_NOTICE}`,
+          all: `Das outras, só as pendentes — concluídas ficam como histórico. ${DELETE_DOCUMENTS_NOTICE}`,
         }}
         isLoading={deleteTask.isPending}
         onConfirm={runDelete}

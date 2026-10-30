@@ -4,10 +4,8 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Download, FileText, Search, Signature, Trash2, Upload, X } from 'lucide-react'
+import { Download, FileText, Signature, Trash2, Upload } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -22,6 +20,7 @@ import { getDisplayName } from '@/utils/profile'
 import { getClientDisplayName } from '@/types/cliente.types'
 import {
   DOCUMENT_CATEGORY_LABELS,
+  DOCUMENT_ORIGIN_LABELS,
   documentPermission,
   formatFileSize,
   getFileExtension,
@@ -29,7 +28,18 @@ import {
   type DocumentWithRelations,
 } from '@/types/document.types'
 import { useDocuments } from '../hooks/useDocuments'
-import { useDeleteDocument, useOpenDocument } from '../hooks/useDocumentMutations'
+import {
+  useDeleteDocument,
+  useOpenDocument,
+  useUpdateDocumentCategory,
+} from '../hooks/useDocumentMutations'
+import {
+  documentOwners,
+  emptyDocumentFilters,
+  filterDocuments,
+  type DocumentFilters,
+} from '../utils/filterDocuments'
+import { DocumentFilterBar } from './DocumentFilterBar'
 import { Can } from '@/components/shared/Can'
 import {
   DocumentSignatureDialogs,
@@ -39,67 +49,24 @@ import {
 } from '@/features/assinaturas/components/DocumentSignature'
 
 const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
-const ALL = '__all__'
-const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_110px_100px_104px]'
-
-/** Cliente e processo de um documento. O anexo de lançamento e o arquivo de
- * contrato não têm vínculo próprio (migrations 63 e 69): herdam os do dono,
- * para não aparecer soltos. */
-function documentOwners(doc: DocumentWithRelations) {
-  return {
-    client: doc.client ?? doc.financial_entry?.client ?? doc.contract?.client ?? null,
-    legalProcess:
-      doc.legal_process ??
-      doc.financial_entry?.legal_process ??
-      doc.contract?.legal_process ??
-      null,
-  }
-}
+const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_200px_100px_104px]'
 
 export function DocumentosContent() {
   const { data: documents = [], isLoading } = useDocuments()
   const deleteDocument = useDeleteDocument()
   const openDocument = useOpenDocument()
+  const updateCategory = useUpdateDocumentCategory()
 
   const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
-  const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<DocumentCategory | null>(null)
+  const [filters, setFilters] = useState<DocumentFilters>(emptyDocumentFilters)
   const signature = useDocumentSignatureSeals()
   const [sending, setSending] = useState<DocumentWithRelations | null>(null)
   const [viewing, setViewing] = useState<DocumentWithRelations | null>(null)
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const qDigits = q.replace(/\D/g, '')
-
-    return documents.filter((doc) => {
-      if (categoryFilter && doc.category !== categoryFilter) return false
-      if (!q) return true
-
-      const { client, legalProcess } = documentOwners(doc)
-      const haystack = [
-        doc.file_name,
-        client
-          ? getClientDisplayName(client as Parameters<typeof getClientDisplayName>[0])
-          : null,
-        legalProcess?.cnj_number,
-        doc.financial_entry?.description,
-        doc.contract?.title,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-
-      const matchesText = haystack.includes(q)
-      const matchesDigits =
-        qDigits.length > 0 &&
-        (legalProcess?.cnj_number?.replace(/\D/g, '') ?? '').includes(qDigits)
-
-      return matchesText || matchesDigits
-    })
-  }, [documents, search, categoryFilter])
-
-  const hasFilters = search.trim() !== '' || categoryFilter !== null
+  const filtered = useMemo(
+    () => filterDocuments(documents, filters, signature.seals),
+    [documents, filters, signature.seals]
+  )
 
   return (
     <div className="space-y-6">
@@ -128,68 +95,13 @@ export function DocumentosContent() {
         </CardContent>
       </Card>
 
-      {/* Filtros */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, cliente ou CNJ..."
-            className="pl-8 h-9 text-sm"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label="Limpar busca"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <Select
-          value={categoryFilter ?? ALL}
-          onValueChange={(v) => setCategoryFilter(v === ALL ? null : (v as DocumentCategory))}
-        >
-          <SelectTrigger className="h-9 w-[180px] text-sm">
-            <SelectValue>
-              {categoryFilter ? DOCUMENT_CATEGORY_LABELS[categoryFilter] : 'Todas as categorias'}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Todas as categorias</SelectItem>
-            {CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>
-                {DOCUMENT_CATEGORY_LABELS[c]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSearch('')
-              setCategoryFilter(null)
-            }}
-            className="h-9 text-muted-foreground"
-          >
-            <X className="w-3.5 h-3.5 mr-1" />
-            Limpar
-          </Button>
-        )}
-
-        {documents.length > 0 && (
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filtered.length} de {documents.length} arquivo{documents.length === 1 ? '' : 's'}
-          </span>
-        )}
-      </div>
+      <DocumentFilterBar
+        filters={filters}
+        onChange={setFilters}
+        signatureReady={signature.ready}
+        resultCount={filtered.length}
+        total={documents.length}
+      />
 
       {/* Tabela */}
       <Card>
@@ -259,6 +171,11 @@ export function DocumentosContent() {
                             {doc.financial_entry &&
                               ` · Lançamento: ${doc.financial_entry.description}`}
                             {doc.contract && ` · Contrato: ${doc.contract.title}`}
+                            {doc.task && ` · Tarefa: ${doc.task.title}`}
+                            {doc.event && ` · Evento: ${doc.event.title}`}
+                            {doc.origin && doc.origin !== 'upload' && (
+                              <> · {DOCUMENT_ORIGIN_LABELS[doc.origin]}</>
+                            )}
                           </p>
                           {seal && (
                             <div className="mt-0.5">
@@ -300,9 +217,40 @@ export function DocumentosContent() {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
 
-                      <span className="text-xs text-muted-foreground">
-                        {DOCUMENT_CATEGORY_LABELS[doc.category]}
-                      </span>
+                      {/* Reclassificar é editar o documento: segue o dono, como
+                          a RLS de update. */}
+                      <Can
+                        {...documentPermission(doc, 'update')}
+                        fallback={
+                          <span className="text-xs text-muted-foreground truncate">
+                            {DOCUMENT_CATEGORY_LABELS[doc.category]}
+                          </span>
+                        }
+                      >
+                        <Select
+                          value={doc.category}
+                          onValueChange={(v) =>
+                            updateCategory.mutate({ id: doc.id, category: v as DocumentCategory })
+                          }
+                        >
+                          <SelectTrigger
+                            aria-label={`Categoria de ${doc.file_name}`}
+                            className={cn(
+                              'data-[size=default]:h-7 w-full min-w-0 px-1.5 text-xs text-muted-foreground',
+                              'border-transparent bg-transparent dark:bg-transparent shadow-none hover:border-input'
+                            )}
+                          >
+                            <SelectValue>{DOCUMENT_CATEGORY_LABELS[doc.category]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CATEGORIES.map((c) => (
+                              <SelectItem key={c} value={c}>
+                                {DOCUMENT_CATEGORY_LABELS[c]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Can>
 
                       <span className="text-xs text-muted-foreground">
                         {format(parseISO(doc.created_at), 'dd/MM/yyyy', { locale: ptBR })}

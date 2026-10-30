@@ -16,7 +16,7 @@ import type {
   ContractStatusChange,
   ContractWithRelations,
 } from '@/types/contract.types'
-import type { DocumentCategory, DocumentRecord } from '@/types/document.types'
+import type { DocumentCategory, DocumentOrigin, DocumentRecord } from '@/types/document.types'
 
 const supabase = createClient()
 
@@ -174,13 +174,15 @@ export async function uploadContractFile(
   contractId: string,
   role: ContractFileRole,
   file: File,
-  userId: string
+  userId: string,
+  origin: DocumentOrigin = 'upload'
 ): Promise<DocumentRecord> {
   return uploadDocument(
     {
       category: contractFileCategory(role),
       contract_id: contractId,
       contract_file_role: role,
+      origin,
     },
     file,
     userId
