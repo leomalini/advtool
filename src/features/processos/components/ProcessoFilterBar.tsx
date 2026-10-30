@@ -1,8 +1,10 @@
 'use client'
 
-import { Search, X, CalendarRange } from 'lucide-react'
+import { Search, X, CalendarRange, Radar } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -22,11 +24,19 @@ import {
   hasActiveProcessoFilters,
   countActiveProcessoFilters,
   emptyProcessoFilters,
+  MONITORING_SOURCES,
+  MONITORING_SOURCE_LABELS,
+  type MonitoringSource,
   type ProcessoFilters,
 } from '../utils/filterLegalProcesses'
 import type { Workflow } from '@/types/workflow.types'
 
 const ALL = '__all__'
+
+const MONITORING_SOURCE_HINTS: Record<MonitoringSource, string> = {
+  oab: '"Não monitorado" no detalhe: chega pelo monitoramento das OABs do escritório',
+  manual: 'Com frequência de monitoramento escolhida no detalhe do processo',
+}
 
 interface ProcessoFilterBarProps {
   workflow: Workflow
@@ -42,6 +52,18 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
 
   function set<K extends keyof ProcessoFilters>(key: K, value: ProcessoFilters[K]) {
     onChange({ ...filters, [key]: value })
+  }
+
+  // Na ordem de MONITORING_SOURCES, para o rótulo do Assistente não depender
+  // da ordem dos cliques.
+  function toggleMonitoring(source: MonitoringSource, checked: boolean) {
+    const next = new Set(filters.monitoring)
+    if (checked) next.add(source)
+    else next.delete(source)
+    set(
+      'monitoring',
+      MONITORING_SOURCES.filter((s) => next.has(s))
+    )
   }
 
   // Radix's SelectValue renders the selected item's own children by default;
@@ -63,6 +85,10 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
       ],
       ['Prazo a partir de', filters.deadlineFrom],
       ['Prazo até', filters.deadlineTo],
+      [
+        'Monitoramento',
+        filters.monitoring.map((source) => MONITORING_SOURCE_LABELS[source]).join(' e '),
+      ],
     ]),
   })
   const assignedLabel = !filters.assignedTo ? (
@@ -188,6 +214,27 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
             <X className="w-3.5 h-3.5" />
           </button>
         )}
+      </div>
+
+      {/* Monitoramento — marcável, os dois ao mesmo tempo */}
+      <div className="flex items-center gap-3 h-9 px-2.5 rounded-md border border-input bg-transparent dark:bg-input/30">
+        <Radar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <span className="text-xs font-medium text-muted-foreground shrink-0">Monitoramento:</span>
+        {MONITORING_SOURCES.map((source) => (
+          <div key={source} className="flex items-center gap-1.5" title={MONITORING_SOURCE_HINTS[source]}>
+            <Checkbox
+              id={`processo-monitoring-${source}`}
+              checked={filters.monitoring.includes(source)}
+              onCheckedChange={(checked) => toggleMonitoring(source, checked === true)}
+            />
+            <Label
+              htmlFor={`processo-monitoring-${source}`}
+              className="text-xs font-normal cursor-pointer"
+            >
+              {MONITORING_SOURCE_LABELS[source]}
+            </Label>
+          </div>
+        ))}
       </div>
 
       {active && (
