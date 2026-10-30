@@ -68,7 +68,11 @@ export function screenHref(input: OpenScreenInput): string | null {
     return input.id ? `${RECORD_ROUTES[input.destino]}/${input.id}` : null
   }
   const base = MODULE_ROUTES[input.destino]
-  if (input.destino === 'financeiro' && input.situacao) return `${base}?situacao=${input.situacao}`
+  // `periodo=tudo`: the screen opens on the current month otherwise, and the
+  // situation always meant every date.
+  if (input.destino === 'financeiro' && input.situacao) {
+    return `${base}?periodo=tudo&situacao=${input.situacao}`
+  }
   return base
 }
 

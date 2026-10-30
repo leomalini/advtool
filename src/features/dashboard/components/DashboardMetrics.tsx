@@ -175,7 +175,8 @@ const RECEIVABLE_PARTS: {
 ]
 
 /** "A receber" is the whole bucket — a vencer + condição especial + vencido —
- * the same `getFinancialSummary` the Financeiro page shows. */
+ * summed like the Financeiro page (`summarizeEntries`). The links open it on
+ * every date and on revenue only: the rows that add up to the number. */
 function ReceivableMetric({ step }: { step: number }) {
   const { data: summary, isError } = useFinancialSummary()
   const overdue = summary?.receivableOverdue ?? 0
@@ -185,7 +186,7 @@ function ReceivableMetric({ step }: { step: number }) {
       label="A receber"
       icon={Wallet}
       tone="success"
-      href="/financeiro?situacao=a_receber"
+      href="/financeiro?periodo=tudo&tipo=receita&situacao=a_receber"
       value={valueOf(summary, (s) => Math.round(s.receivableTotal))}
       isError={isError}
       prefix="R$"
@@ -197,7 +198,7 @@ function ReceivableMetric({ step }: { step: number }) {
             value: part.value(summary),
             className: part.className,
             label: `${part.label}: ${formatWholeBRL(part.value(summary))}`,
-            href: `/financeiro?situacao=${part.situation}`,
+            href: `/financeiro?periodo=tudo&tipo=receita&situacao=${part.situation}`,
           }))}
         />
       )}

@@ -1,30 +1,16 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from 'recharts'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import {
-  TrendingUp,
-  TrendingDown,
-  Plus,
-  Scale,
-  Check,
-  Undo2,
-  X,
-} from 'lucide-react'
+import { Plus, Scale, Check, Undo2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
 import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
@@ -39,12 +25,9 @@ import type { PendingAttachments } from '@/types/document.types'
 import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import { CHARGE_BLOCK_REASONS, summarizePaymentCharges } from '@/types/paymentCharge.types'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useMounted } from '@/hooks/useMounted'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
-import {
-  useFinancialEntries,
-  useFinancialSummary,
-  useMonthlyCashFlow,
-} from '../hooks/useFinancialEntries'
+import { useFinancialEntries } from '../hooks/useFinancialEntries'
 import {
   useCreateFinancialEntry,
   useUpdateFinancialEntry,
@@ -52,27 +35,22 @@ import {
 import { FinancialEntryForm, type FinancialEntrySubmitOptions } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
 import { FinanceiroFilterBar } from './FinanceiroFilterBar'
+import { FinancialOverview } from './FinancialOverview'
+import { FinancialCashFlowChart } from './FinancialCashFlowChart'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { AttachmentCountBadge } from './AttachmentCountBadge'
 import { PaymentLinkBadge } from './PaymentLinkBadge'
 import {
+  clearListFilters,
+  countListFilters,
   filterFinancialEntries,
+  periodOf,
   sortByCashFlowDate,
-  emptyFinancialFilters,
-  monthRange,
   type FinancialFilters,
-  type FinancialSituationFilter,
 } from '../utils/filterFinancialEntries'
+import { parseFinancialUrl, serializeFinancialUrl } from '../utils/financialFiltersUrl'
+import { describePeriod, isAllDates } from '../utils/periods'
 import { Can } from '@/components/shared/Can'
-
-/** Chave da coluna "Sem data" no gráfico. Não é 'yyyy-MM' de propósito: o
- * parse de mês tem que falhar ruidosamente se alguém tratá-la como um mês. */
-const UNDATED_KEY = 'undated'
-
-const chartConfig = {
-  receita: { label: 'Receitas', color: 'var(--success)' },
-  despesa: { label: 'Despesas', color: 'var(--destructive)' },
-} satisfies ChartConfig
 
 /** Uma constante só para cabeçalho e linhas não saírem de sincronia. */
 const TABLE_GRID = 'grid grid-cols-[1fr_150px_150px_100px_120px_100px_44px]'
@@ -82,92 +60,31 @@ function formatDay(iso: string): string {
   return format(parseISO(iso), 'dd/MM/yyyy', { locale: ptBR })
 }
 
-interface SummaryCardProps {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sublabel?: string
-  colorClass: string
-  bgClass: string
-}
+/**
+ * The Financeiro screen. The filters and the open entry start from the URL
+ * (`financialFiltersUrl.ts`) and are written back to it, so a dashboard link,
+ * the bell's `?id=` or a reload land on the same screen.
+ *
+ * The state is the source of truth and the URL mirrors it — not the other way
+ * round: Next applies `history.replaceState` to `useSearchParams` inside a
+ * transition, and a date input driven by the URL would lag behind the typing.
+ */
+export function FinanceiroContent() {
+  const searchParams = useSearchParams()
+  // "Today" is the browser's: the server runs on UTC, which from 21h in
+  // Brasília is already tomorrow — on the last day of a month it would render
+  // next month's period, and hydration would break. Until mounted, the screen
+  // below the header is a placeholder on both sides (the data only exists in
+  // the browser anyway).
+  const mounted = useMounted()
+  const [initialUrl] = useState(() => parseFinancialUrl(searchParams))
+  const [filters, setFilters] = useState<FinancialFilters>(initialUrl.filters)
+  const [selectedId, setSelectedId] = useState<string | null>(initialUrl.entryId)
 
-function SummaryCard({ icon, label, value, sublabel, colorClass, bgClass }: SummaryCardProps) {
-  return (
-    <Card>
-      <CardContent className="pt-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">{label}</p>
-            <p className={cn('text-2xl font-semibold tabular-nums', colorClass)}>{value}</p>
-            {sublabel && <p className="text-xs text-muted-foreground mt-1">{sublabel}</p>}
-          </div>
-          <div className={cn('p-2.5 rounded-lg', bgClass)}>{icon}</div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-interface ReceivableTileProps {
-  label: string
-  value: number
-  sublabel?: string
-  colorClass: string
-  active: boolean
-  onClick: () => void
-}
-
-/** Uma das três parcelas que somam "A receber". Clicável porque o indicador e
- * o filtro passaram a falar a mesma língua: o card mostra o número, o clique
- * mostra de quais lançamentos ele veio. */
-function ReceivableTile({
-  label,
-  value,
-  sublabel,
-  colorClass,
-  active,
-  onClick,
-}: ReceivableTileProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-lg border p-3 text-left transition-all',
-        'hover:border-foreground/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active ? 'border-foreground/40 bg-muted/40' : 'border-border'
-      )}
-    >
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className={cn('text-lg font-semibold tabular-nums mt-0.5', colorClass)}>
-        {formatCurrency(value)}
-      </p>
-      <p className="text-[11px] text-muted-foreground/80 mt-0.5 h-4">{sublabel ?? ''}</p>
-    </button>
-  )
-}
-
-/** `initialEntryId`: o lançamento que o aviso do sino mandou abrir.
- * `initialSituation`: o recorte do número clicado no dashboard. */
-export function FinanceiroContent({
-  initialEntryId,
-  initialSituation,
-}: {
-  initialEntryId?: string
-  initialSituation?: FinancialSituationFilter
-}) {
   const { data: entries = [], isLoading } = useFinancialEntries()
-  const { data: summary } = useFinancialSummary()
-  const { data: cashFlow } = useMonthlyCashFlow(6)
   const createEntry = useCreateFinancialEntry()
   const updateEntry = useUpdateFinancialEntry()
   const [createOpen, setCreateOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(initialEntryId ?? null)
-  const [filters, setFilters] = useState<FinancialFilters>({
-    ...emptyFinancialFilters,
-    situation: initialSituation ?? null,
-  })
   const { can } = usePermissions()
   const { data: officeSettings } = useOfficeSettings()
   // Gerar o link junto com o lançamento: só com a conta configurada e para quem
@@ -179,83 +96,44 @@ export function FinanceiroContent({
   const selected = selectedId ? (entries.find((e) => e.id === selectedId) ?? null) : null
   const setSelected = (entry: { id: string } | null) => setSelectedId(entry?.id ?? null)
 
-  const chartData = useMemo(() => {
-    if (!cashFlow) return []
-
-    const months = cashFlow.months.map((m) => ({
-      // 'yyyy-MM' → 'Jan', com o dia 1 só para o parse funcionar
-      mes: format(parseISO(`${m.month}-01`), 'MMM', { locale: ptBR }),
-      month: m.month,
-      receita: m.receita,
-      despesa: m.despesa,
-    }))
-
-    // A coluna "Sem data" só aparece quando existe algo nela: uma barra vazia
-    // permanente ensinaria o olho a ignorá-la justamente quando ela importa.
-    if (cashFlow.undated.count === 0) return months
-
-    return [
-      ...months,
-      {
-        mes: 'Sem data',
-        month: UNDATED_KEY,
-        receita: cashFlow.undated.receita,
-        despesa: cashFlow.undated.despesa,
-      },
-    ]
-  }, [cashFlow])
+  // An id that is not in the list (deleted, or not visible to this profile)
+  // leaves the URL once the list arrives; while it loads, it stays.
+  const urlEntryId = isLoading ? selectedId : (selected?.id ?? null)
+  const query = serializeFinancialUrl({ filters, entryId: urlEntryId })
+  const currentQuery = searchParams.toString()
+  useEffect(() => {
+    // Also when the URL changed under the screen (a link to /financeiro while
+    // on it): the screen did not change, so the URL goes back to saying what
+    // it shows. replaceState: no server render, no history entry per click.
+    if (query === currentQuery) return
+    window.history.replaceState(null, '', `${window.location.pathname}?${query}`)
+  }, [query, currentQuery])
 
   const filtered = useMemo(
     () => sortByCashFlowDate(filterFinancialEntries(entries, filters)),
     [entries, filters]
   )
-
-  /** Alterna um bucket: clicar de novo no mesmo card desfaz o filtro. */
-  function toggleSituation(situation: FinancialSituationFilter) {
-    setFilters((prev) => ({
-      ...prev,
-      situation: prev.situation === situation ? null : situation,
-    }))
-  }
-
-  /** Clicar numa coluna do gráfico filtra a tabela por aquele recorte — e
-   * clicar de novo desfaz, para o gesto ser reversível sem caçar o botão de
-   * limpar. */
-  function handleColumnClick(key: string) {
-    if (key === UNDATED_KEY) {
-      // "Sem data" não é um período: vira o filtro próprio, e o intervalo sai
-      // do caminho para os dois não se contradizerem.
-      setFilters((prev) => ({
-        ...prev,
-        undatedOnly: !prev.undatedOnly,
+  // The cards: every filter but the situation — their own slice, which would
+  // otherwise zero the cards beside the one clicked.
+  const cardRows = useMemo(
+    () => filterFinancialEntries(entries, { ...filters, situation: null }),
+    [entries, filters]
+  )
+  // Every date: what the period leaves out, and the chart's six months.
+  const allDateRows = useMemo(
+    () =>
+      filterFinancialEntries(entries, {
+        ...filters,
+        situation: null,
         periodFrom: null,
         periodTo: null,
-      }))
-      return
-    }
+        undatedOnly: false,
+      }),
+    [entries, filters]
+  )
 
-    const { from, to } = monthRange(key)
-    const alreadyFiltered = filters.periodFrom === from && filters.periodTo === to
-    setFilters((prev) => ({
-      ...prev,
-      periodFrom: alreadyFiltered ? null : from,
-      periodTo: alreadyFiltered ? null : to,
-      undatedOnly: false,
-    }))
-  }
-
-  const selectedMonth =
-    filters.periodFrom &&
-    filters.periodTo &&
-    filters.periodFrom.slice(0, 7) === filters.periodTo.slice(0, 7)
-      ? filters.periodFrom.slice(0, 7)
-      : null
-
-  // Os totais do rodapé ficam nos 6 meses. Somar o sem-data aqui inflaria o
-  // "Resultado" com dinheiro que depende de um evento sem prazo — ele aparece
-  // na coluna e no seu próprio número, separado do que tem data.
-  const totalReceitas = (cashFlow?.months ?? []).reduce((s, m) => s + m.receita, 0)
-  const totalDespesas = (cashFlow?.months ?? []).reduce((s, m) => s + m.despesa, 0)
+  const period = periodOf(filters)
+  const hasListFilters = countListFilters(filters) > 0
 
   async function handleCreate(
     data: FinancialEntryInput,
@@ -286,269 +164,45 @@ export function FinanceiroContent({
         </Can>
       </div>
 
-      {/* ── Realizado no mês ── */}
-      <div className="grid grid-cols-2 gap-4">
-        <SummaryCard
-          icon={<TrendingUp className="h-4.5 w-4.5 text-success" />}
-          label="Recebido no mês"
-          value={formatCurrency(summary?.receivedThisMonth ?? 0)}
-          colorClass="text-success"
-          bgClass="bg-success/10"
-        />
-        <SummaryCard
-          icon={<TrendingDown className="h-4.5 w-4.5 text-destructive" />}
-          label="Despesas do mês"
-          value={formatCurrency(summary?.expensesThisMonth ?? 0)}
-          colorClass="text-destructive"
-          bgClass="bg-destructive/10"
-        />
-      </div>
+      {mounted ? (
+        <>
+          <FinanceiroFilterBar filters={filters} onChange={setFilters} />
 
-      {/* ── A receber ──
-          Hierarquia, não quatro cards soltos: o número grande é o TUDO, e as
-          três parcelas ao lado somam exatamente ele. */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <button
-              type="button"
-              onClick={() => toggleSituation('a_receber')}
-              aria-pressed={filters.situation === 'a_receber'}
-              className={cn(
-                'shrink-0 rounded-lg border p-3 text-left transition-all lg:w-56',
-                'hover:border-foreground/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                filters.situation === 'a_receber'
-                  ? 'border-foreground/40 bg-muted/40'
-                  : 'border-transparent'
-              )}
-            >
-              <p className="text-xs text-muted-foreground">A receber</p>
-              <p className="text-3xl font-semibold tabular-nums mt-0.5">
-                {formatCurrency(summary?.receivableTotal ?? 0)}
-              </p>
-              <p className="text-[11px] text-muted-foreground/80 mt-1">
-                Tudo que ainda não foi recebido
-              </p>
-            </button>
+          <FinancialOverview
+            rows={cardRows}
+            allDateRows={allDateRows}
+            filters={filters}
+            onChange={setFilters}
+            isLoading={isLoading}
+          />
 
-            <span className="hidden lg:block text-lg text-muted-foreground/40">=</span>
-
-            {/* min-w-0: um item flex tem `min-width: auto`, então sem isto o
-                grid se recusa a encolher abaixo do conteúdo das três parcelas
-                e empurra a linha para fora do card em telas estreitas. */}
-            <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
-              <ReceivableTile
-                label="A vencer"
-                value={summary?.receivableUpcoming ?? 0}
-                sublabel="Com data, no prazo"
-                colorClass="text-warning"
-                active={filters.situation === 'a_vencer'}
-                onClick={() => toggleSituation('a_vencer')}
-              />
-              <ReceivableTile
-                label="Vencido"
-                value={summary?.receivableOverdue ?? 0}
-                sublabel={summary?.receivableOverdue ? 'Cobrança em atraso' : 'Nenhum atraso'}
-                colorClass={
-                  summary?.receivableOverdue ? 'text-destructive' : 'text-muted-foreground'
-                }
-                active={filters.situation === 'vencido'}
-                onClick={() => toggleSituation('vencido')}
-              />
-              <ReceivableTile
-                label="Condição especial"
-                value={summary?.receivableConditional ?? 0}
-                sublabel={
-                  summary?.receivableConditionalCount
-                    ? `${summary.receivableConditionalCount} lançamento${
-                        summary.receivableConditionalCount === 1 ? '' : 's'
-                      }`
-                    : 'Nenhum'
-                }
-                colorClass={
-                  summary?.receivableConditional ? 'text-info' : 'text-muted-foreground'
-                }
-                active={filters.situation === 'condicao_especial'}
-                onClick={() => toggleSituation('condicao_especial')}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Fluxo de caixa ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm font-semibold">
-              Fluxo de Caixa — últimos 6 meses
-            </CardTitle>
-            {selectedMonth || filters.undatedOnly ? (
-              <button
-                type="button"
-                onClick={() =>
-                  setFilters((p) => ({
-                    ...p,
-                    periodFrom: null,
-                    periodTo: null,
-                    undatedOnly: false,
-                  }))
-                }
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-                Filtrando{' '}
-                {selectedMonth
-                  ? format(parseISO(`${selectedMonth}-01`), 'MMMM', { locale: ptBR })
-                  : 'sem data'}
-              </button>
-            ) : (
-              <span className="text-[11px] text-muted-foreground/70 hidden sm:block">
-                Clique numa coluna para filtrar a tabela
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {chartData.length === 0 ? (
-            <Skeleton className="h-[200px] w-full rounded-lg" />
-          ) : (
-            <>
-              <ChartContainer config={chartConfig} className="w-full" style={{ height: 220 }}>
-                {/* onClick no gráfico, não nas barras: pega a coluna inteira do
-                    mês, incluindo o espaço vazio acima das barras — bem mais
-                    fácil de acertar que uma barra de 22px. */}
-                <BarChart
-                  accessibilityLayer
-                  data={chartData}
-                  margin={{ left: 8, right: 8, top: 8 }}
-                  onClick={(state) => {
-                    // Recharts 3 entrega o índice da coluna ativa, não o payload
-                    // (activePayload existia na v2). Resolvemos pelo chartData.
-                    const index = Number(state?.activeIndex)
-                    const key = Number.isInteger(index) ? chartData[index]?.month : undefined
-                    if (key) handleColumnClick(key)
-                  }}
-                  className="cursor-pointer"
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="mes"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                    className="capitalize"
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={64}
-                    tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                    tickFormatter={(v: number) =>
-                      v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)
-                    }
-                  />
-                  {/* ⚠️ Passar `formatter` substitui a LINHA INTEIRA do
-                      tooltip — o quadradinho colorido e o nome da série somem
-                      junto (ver ChartTooltipContent). Por isso o formatter
-                      remonta a linha: sem ela, o tooltip mostra dois valores
-                      nus e não dá para saber qual é receita e qual é despesa. */}
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        formatter={(value, name) => {
-                          const serie = chartConfig[name as keyof typeof chartConfig]
-                          return (
-                            <div className="flex w-full items-center justify-between gap-4">
-                              <span className="flex items-center gap-1.5">
-                                <span
-                                  className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                                  style={{ backgroundColor: serie?.color }}
-                                />
-                                <span className="text-muted-foreground">
-                                  {serie?.label ?? name}
-                                </span>
-                              </span>
-                              <span
-                                className="font-medium tabular-nums"
-                                style={{ color: serie?.color }}
-                              >
-                                {formatCurrency(Number(value))}
-                              </span>
-                            </div>
-                          )
-                        }}
-                      />
-                    }
-                  />
-                  <Legend
-                    verticalAlign="top"
-                    align="left"
-                    height={32}
-                    iconType="square"
-                    iconSize={9}
-                    formatter={(value: string) => (
-                      <span className="text-xs text-muted-foreground">
-                        {chartConfig[value as keyof typeof chartConfig]?.label ?? value}
-                      </span>
-                    )}
-                  />
-                  <Bar dataKey="receita" fill="var(--success)" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                  <Bar dataKey="despesa" fill="var(--destructive)" radius={[3, 3, 0, 0]} maxBarSize={22} />
-                </BarChart>
-              </ChartContainer>
-
-              <div className="flex gap-6 mt-4 pt-4 border-t">
-                <div>
-                  <p className="text-xs text-muted-foreground">Total receitas</p>
-                  <p className="text-sm font-semibold text-success tabular-nums">
-                    {formatCurrency(totalReceitas)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total despesas</p>
-                  <p className="text-sm font-semibold text-destructive tabular-nums">
-                    {formatCurrency(totalDespesas)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Resultado</p>
-                  <p
-                    className={cn(
-                      'text-sm font-semibold tabular-nums',
-                      totalReceitas - totalDespesas >= 0 ? 'text-foreground' : 'text-destructive'
-                    )}
-                  >
-                    {formatCurrency(totalReceitas - totalDespesas)}
-                  </p>
-                </div>
-
-                {/* Fora do resultado de propósito — ver o cálculo dos totais. */}
-                {cashFlow && cashFlow.undated.count > 0 && (
-                  <div className="ml-auto text-right">
-                    <p className="text-xs text-muted-foreground">Sem data definida</p>
-                    <p className="text-sm font-semibold text-info tabular-nums">
-                      {formatCurrency(cashFlow.undated.receita - cashFlow.undated.despesa)}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+          <FinancialCashFlowChart
+            rows={allDateRows}
+            filters={filters}
+            onChange={setFilters}
+            isLoading={isLoading}
+          />
+        </>
+      ) : (
+        <div className="space-y-4">
+          <Skeleton className="h-[104px] w-full rounded-xl" />
+          <Skeleton className="h-[106px] w-full rounded-xl" />
+          <Skeleton className="h-[140px] w-full rounded-xl" />
+        </div>
+      )}
 
       {/* ── Tabela de lançamentos ── */}
       <Card>
-        <CardHeader className="pb-3 space-y-3">
-          <CardTitle className="text-sm font-semibold">Lançamentos</CardTitle>
-          {entries.length > 0 && (
-            <FinanceiroFilterBar
-              filters={filters}
-              onChange={setFilters}
-              resultCount={filtered.length}
-            />
-          )}
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <CardTitle className="text-sm font-semibold">Lançamentos</CardTitle>
+            {!isLoading && entries.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {filtered.length} lançamento{filtered.length === 1 ? '' : 's'}{' '}
+                {filters.undatedOnly ? 'sem data definida' : describePeriod(period)}
+              </span>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0 pb-1">
           {isLoading ? (
@@ -584,13 +238,33 @@ export function FinanceiroContent({
                     <p className="text-sm text-muted-foreground">
                       Nenhum lançamento com esses filtros.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => setFilters(emptyFinancialFilters)}
-                      className="text-xs text-primary hover:underline mt-1"
-                    >
-                      Limpar filtros
-                    </button>
+                    <div className="mt-1 flex justify-center gap-4">
+                      {hasListFilters && (
+                        <button
+                          type="button"
+                          onClick={() => setFilters(clearListFilters(filters))}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Limpar filtros
+                        </button>
+                      )}
+                      {(!isAllDates(period) || filters.undatedOnly) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFilters({
+                              ...filters,
+                              periodFrom: null,
+                              periodTo: null,
+                              undatedOnly: false,
+                            })
+                          }
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Ver todas as datas
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
                 {filtered.map((entry) => {
@@ -784,16 +458,12 @@ export function FinanceiroContent({
         </DialogContent>
       </Dialog>
 
+      {/* Closing drops `?id=` from the URL (the effect above): a reload does
+          not reopen it. */}
       <FinancialEntryDetailModal
         entry={selected}
         open={!!selected}
-        onClose={() => {
-          setSelectedId(null)
-          // Fechou o que o aviso abriu: sem o ?id=, recarregar não reabre o
-          // detalhe. API nativa, que o roteador do Next acompanha sem render
-          // no servidor.
-          if (initialEntryId) window.history.replaceState(null, '', '/financeiro')
-        }}
+        onClose={() => setSelectedId(null)}
       />
     </div>
   )

@@ -147,7 +147,9 @@ export async function registerFinancialEntry(
     return { ok: false, motivo: parsed.error.issues[0]?.message ?? 'dados do lançamento incompletos' }
   }
   const entry = await createFinancialEntry(parsed.data, userId)
-  return { ok: true, id: entry.id, link: '/financeiro' }
+  // The entry itself: the screen opens on the current month, and an entry due
+  // next month would not be in the list behind a bare '/financeiro'.
+  return { ok: true, id: entry.id, link: `/financeiro?id=${entry.id}` }
 }
 
 export async function linkPublication(

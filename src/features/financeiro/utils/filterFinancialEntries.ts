@@ -7,6 +7,7 @@ import {
   type FinancialSituation,
 } from '@/types/financialEntry.types'
 import { getClientDisplayName } from '@/types/cliente.types'
+import { isWithinPeriod, presetRange, type PeriodRange } from './periods'
 
 /**
  * As quatro situações da taxonomia, mais o guarda-chuva `a_receber` — que é
@@ -42,6 +43,9 @@ export interface FinancialFilters {
    * (getCashFlowDate): o pago conta pelo pagamento, o resto pelo vencimento.
    * É o critério do gráfico — por isso o clique numa coluna preenche estes
    * dois campos e a tabela mostra exatamente o que a coluna somou.
+   *
+   * The period of the whole screen (docs/financeiro.md): the cards add up
+   * the same rows. Both `null` = every date.
    */
   periodFrom: string | null
   periodTo: string | null
@@ -54,40 +58,49 @@ export interface FinancialFilters {
   undatedOnly: boolean
 }
 
-export const emptyFinancialFilters: FinancialFilters = {
-  search: '',
-  type: null,
-  situation: null,
-  clientId: null,
-  legalProcessId: null,
-  periodFrom: null,
-  periodTo: null,
-  undatedOnly: false,
+/** How the screen opens: the current month, nothing else filtered — the slice
+ * the cards always had ("no mês"). */
+export function defaultFinancialFilters(today: string = todayISO()): FinancialFilters {
+  const month = presetRange('mes', today)
+  return {
+    search: '',
+    type: null,
+    situation: null,
+    clientId: null,
+    legalProcessId: null,
+    periodFrom: month.from,
+    periodTo: month.to,
+    undatedOnly: false,
+  }
 }
 
-export function hasActiveFinancialFilters(f: FinancialFilters): boolean {
-  return (
-    f.search.trim() !== '' ||
-    f.type !== null ||
-    f.situation !== null ||
-    f.clientId !== null ||
-    f.legalProcessId !== null ||
-    f.periodFrom !== null ||
-    f.periodTo !== null ||
-    f.undatedOnly
-  )
+export function periodOf(f: FinancialFilters): PeriodRange {
+  return { from: f.periodFrom, to: f.periodTo }
 }
 
-export function countActiveFinancialFilters(f: FinancialFilters): number {
+/**
+ * The list filters are everything but the period. "Limpar" clears them and
+ * keeps the period: the period is always something (it opens on the month),
+ * and it has its own buttons — "Tudo" is its way back to every date.
+ */
+export function clearListFilters(f: FinancialFilters): FinancialFilters {
+  return {
+    ...f,
+    search: '',
+    type: null,
+    situation: null,
+    clientId: null,
+    legalProcessId: null,
+  }
+}
+
+export function countListFilters(f: FinancialFilters): number {
   let n = 0
   if (f.search.trim() !== '') n++
   if (f.type !== null) n++
   if (f.situation !== null) n++
   if (f.clientId !== null) n++
   if (f.legalProcessId !== null) n++
-  // Um período conta como um filtro só, mesmo com as duas pontas preenchidas.
-  if (f.periodFrom !== null || f.periodTo !== null) n++
-  if (f.undatedOnly) n++
   return n
 }
 
@@ -112,9 +125,7 @@ export function sortByCashFlowDate(
 
 /** Primeiro e último dia de um mês 'yyyy-MM' — usado pelo clique no gráfico. */
 export function monthRange(month: string): { from: string; to: string } {
-  const [year, m] = month.split('-').map(Number)
-  const last = new Date(year, m, 0).getDate()
-  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` }
+  return presetRange('mes', `${month}-01`)
 }
 
 export function filterFinancialEntries(
@@ -124,6 +135,7 @@ export function filterFinancialEntries(
   const q = f.search.trim().toLowerCase()
   const qDigits = q.replace(/\D/g, '')
   const today = todayISO()
+  const period = periodOf(f)
 
   return entries.filter((e) => {
     if (f.type && e.type !== f.type) return false
@@ -146,14 +158,7 @@ export function filterFinancialEntries(
       }
     }
 
-    // Sem data não pertence a período nenhum. A comparação direta não serviria:
-    // em JS `null < '2026-01-01'` é false, então um lançamento sem data
-    // escaparia dos dois limites e apareceria em qualquer intervalo.
-    if (f.periodFrom || f.periodTo) {
-      if (cashFlowDate === null) return false
-      if (f.periodFrom && cashFlowDate < f.periodFrom) return false
-      if (f.periodTo && cashFlowDate > f.periodTo) return false
-    }
+    if (!isWithinPeriod(cashFlowDate, period)) return false
 
     if (q) {
       const haystack = [
