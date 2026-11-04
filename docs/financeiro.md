@@ -4,8 +4,8 @@
 > as "Decididas no plano", sem veto). **Fase 1** (períodos e dashboard) na
 > branch `feat/financeiro-periodos`, sem migration. **Fase 2** (êxitos e
 > percentuais) na branch `feat/financeiro-exitos`, empilhada na 1, com a
-> migration 89 **ainda não aplicada**. Ver "Como ficou" de cada fase. Fase 3
-> por fazer.
+> migration 89 aplicada no remoto em 2026-11-04. Ver "Como ficou" de cada fase.
+> Fase 3 por fazer.
 
 Pedido, em seis itens:
 
@@ -332,7 +332,7 @@ Branch `feat/financeiro-periodos`, a partir de `release/financeiro` (criada da
 ## Como ficou a fase 2
 
 Branch `feat/financeiro-exitos`, empilhada na fase 1 (`e7d9c45`). Migration 89
-escrita e **não aplicada**: o deploy desta fase depende dela.
+aplicada no remoto em 2026-11-04 (`db push`).
 
 ### Banco — migration 89
 
@@ -412,5 +412,13 @@ escrita e **não aplicada**: o deploy desta fase depende dela.
   da 89; detalhe; prévia do contrato; 375 px sem rolagem lateral.
 - **Revisão automática** das fases 1 e 2 (`/auto-review`): sem bloqueios; as
   correções estão na tabela acima.
-- **Não conferido:** a migration 89 e a `assess_success_fee` contra um banco
-  (inclusive a RLS da função), e a tela com login.
+- **Remoto, só lendo (2026-11-04):** a 89 consta nos dois lados; as quatro
+  colunas com os tipos do plano; os CHECKs novos e o de `category` com `exito`;
+  `assess_success_fee` em plpgsql, `security invoker`, com
+  `search_path=public`. `authenticated` executa, e `anon` também, pelo padrão
+  do Supabase: como a função é `security invoker` e as policies pedem
+  `public.can()`, é o mesmo caso da `retime_event_series`. Dados: os 8
+  lançamentos seguem iguais, sem percentual, e o backfill não tinha o que
+  converter.
+- **Não conferido:** a `assess_success_fee` executando contra o banco (nem a
+  RLS dela em execução) e a tela com login.
