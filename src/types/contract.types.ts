@@ -271,8 +271,3 @@ export interface ContractTemplateValues {
   /** Campo manual → documento de onde a IA tirou o valor (leitor). */
   manualSources?: Record<string, string>
 }
-
-/** Percentual como o contrato o escreve: "20%" ou "12,5%". */
-export function formatPercent(value: number): string {
-  return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
-}

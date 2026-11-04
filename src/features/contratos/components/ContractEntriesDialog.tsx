@@ -17,7 +17,7 @@ import { CurrencyInput } from '@/components/shared/CurrencyInput'
 import { usePermissions } from '@/hooks/usePermissions'
 import { cn } from '@/lib/utils'
 import type { Contract } from '@/types/contract.types'
-import { formatCurrency } from '@/types/financialEntry.types'
+import { formatCurrency, formatPercent } from '@/types/financialEntry.types'
 import { useCreateContractEntries } from '../hooks/useContractMutations'
 import {
   buildContractEntryDrafts,
@@ -172,6 +172,7 @@ function EntriesForm({
           {drafts.map((draft) => {
             const error = errors.get(draft.key)
             const conditional = draft.settlement_kind === 'conditional'
+            const successFeePercent = draft.percent
             return (
               <li
                 key={draft.key}
@@ -230,16 +231,39 @@ function EntriesForm({
                   )}
                   <div className="space-y-1">
                     <Label className="text-[11px] text-muted-foreground">Valor</Label>
-                    <CurrencyInput
-                      value={draft.amount}
-                      onChange={(value) => update(draft.key, { amount: value ?? 0 })}
+                    {successFeePercent !== null ? (
+                      <p className="flex h-8 items-center justify-end text-sm text-muted-foreground">
+                        a apurar
+                      </p>
+                    ) : (
+                      <CurrencyInput
+                        value={draft.amount}
+                        onChange={(value) => update(draft.key, { amount: value ?? 0 })}
+                        className="h-8 text-sm"
+                      />
+                    )}
+                  </div>
+                </div>
+                {successFeePercent !== null && (
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatPercent(successFeePercent)} sobre
+                    </span>
+                    <Input
+                      aria-label="Sobre o que incide o êxito"
+                      value={draft.base_description}
+                      maxLength={300}
+                      onChange={(event) =>
+                        update(draft.key, { base_description: event.target.value })
+                      }
                       className="h-8 text-sm"
                     />
                   </div>
-                </div>
-                {conditional && !error && draft.amount === 0 && (
+                )}
+                {successFeePercent !== null && !error && (
                   <p className="text-[11px] text-muted-foreground">
-                    Fica em R$ 0 até se saber o valor: quem der a baixa informa quanto entrou.
+                    Fica em R$ 0, a apurar, até se saber o valor da base: aí é só usar
+                    “Apurar” no lançamento.
                   </p>
                 )}
                 {error && <p className="text-xs text-destructive">{error}</p>}

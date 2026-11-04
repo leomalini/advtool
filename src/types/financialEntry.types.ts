@@ -2,7 +2,8 @@ import type { Profile } from './common.types'
 import type { PaymentChargeSummary } from './paymentCharge.types'
 
 export type FinancialEntryType = 'receita' | 'despesa'
-export type FinancialEntryCategory = 'honorario' | 'custas' | 'pericia' | 'outros'
+/** `exito` (migration 89): the success fee, which the Êxitos tab lists. */
+export type FinancialEntryCategory = 'honorario' | 'exito' | 'custas' | 'pericia' | 'outros'
 /** "Atrasado" não é um estado guardado — ver getFinancialSituation. */
 export type FinancialEntryStatus = 'pendente' | 'pago'
 /**
@@ -17,8 +18,10 @@ export const FINANCIAL_TYPE_LABELS: Record<FinancialEntryType, string> = {
   despesa: 'Despesa',
 }
 
+/** In this order in the form's select: the success fee right after the fee. */
 export const FINANCIAL_CATEGORY_LABELS: Record<FinancialEntryCategory, string> = {
   honorario: 'Honorário',
+  exito: 'Êxito',
   custas: 'Custas',
   pericia: 'Perícia',
   outros: 'Outros',
@@ -54,6 +57,16 @@ export interface FinancialEntry {
   /** Contrato que originou o lançamento (migration 71). Editar o contrato não
    * reescreve o lançamento. */
   contract_id: string | null
+  /** Percentage of `base_description` (migration 89). `null` = fixed amount. */
+  percent: number | null
+  /** What the percentage is of: "o proveito econômico". */
+  base_description: string | null
+  /** The base, once the event happens. `null` with a percentage = to assess:
+   * R$ 0, pending, conditional. On an installment, the whole base. */
+  base_amount: number | null
+  /** An estimate of the base while to assess. It only informs: never summed
+   * into "A receber". */
+  estimated_base_amount: number | null
   created_by: string
   created_at: string
   updated_at: string
@@ -172,6 +185,104 @@ export function needsAmountBeforePayment(
 export function formatCurrency(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
+
+/** "30%", "33,33%". */
+export function formatPercent(value: number): string {
+  return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
+}
+
+// ── Êxitos e percentuais (migration 89) ─────────────────────────────────────
+
+type PercentFields = Partial<Pick<FinancialEntry, 'percent' | 'base_amount'>>
+
+/**
+ * A percentage whose base is not known yet — R$ 0, pending, conditional (a
+ * CHECK of migration 89). Rows read without the columns count as not.
+ */
+export function isToAssess(entry: PercentFields): boolean {
+  return (entry.percent ?? null) !== null && (entry.base_amount ?? null) === null
+}
+
+/** The fee a base yields, rounded to the cent: 30% of 80.000,00 = 24.000,00. */
+export function feeFromBase(baseAmount: number, percent: number): number {
+  return Math.round((Math.round(baseAmount * 100) * percent) / 100) / 100
+}
+
+/** "30% sobre o proveito econômico" — the base as typed, after "sobre", so no
+ * article has to be guessed. `null` for a fixed amount, and for a row read
+ * from a database still without migration 89, where the column is undefined. */
+export function describePercentage(
+  entry: Pick<FinancialEntry, 'percent' | 'base_description'>
+): string | null {
+  const percent = entry.percent ?? null
+  if (percent === null) return null
+  return `${formatPercent(percent)} sobre ${entry.base_description ?? 'a base'}`
+}
+
+/**
+ * Where a success fee stands — the Êxitos tab's taxonomy. Derived from the
+ * situation, as everything here: "aguardando" is a condition with a known
+ * amount, "a apurar" one still without it.
+ */
+export type SuccessFeeStage = 'a_apurar' | 'aguardando' | 'a_vencer' | 'vencido' | 'recebido'
+
+export const SUCCESS_FEE_STAGE_LABELS: Record<SuccessFeeStage, string> = {
+  a_apurar: 'A apurar',
+  aguardando: 'Aguardando',
+  a_vencer: 'A vencer',
+  vencido: 'Vencido',
+  recebido: 'Recebido',
+}
+
+export function getSuccessFeeStage(
+  entry: Pick<FinancialEntry, 'status' | 'settlement_kind' | 'due_date'> & PercentFields,
+  today: string = todayISO()
+): SuccessFeeStage {
+  const situation = getFinancialSituation(entry, today)
+  switch (situation) {
+    case 'pago':
+      return 'recebido'
+    case 'condicao_especial':
+      return isToAssess(entry) ? 'a_apurar' : 'aguardando'
+    default:
+      return situation
+  }
+}
+
+/** The fee the estimated base would yield — what the Êxitos tab adds up apart
+ * from "A receber". `null` without an estimate. */
+export function estimatedFee(
+  entry: Pick<FinancialEntry, 'percent' | 'estimated_base_amount'>
+): number | null {
+  const percent = entry.percent ?? null
+  const estimate = entry.estimated_base_amount ?? null
+  if (percent === null || estimate === null) return null
+  return feeFromBase(estimate, percent)
+}
+
+/**
+ * The line under a percentage entry's description, the same on every list:
+ * "30% sobre o proveito econômico · a apurar · est. R$ 24.000,00", or, once
+ * assessed, "… · base R$ 80.000,00". `null` for a fixed amount.
+ */
+export function describePercentageNote(
+  entry: Pick<
+    FinancialEntry,
+    'percent' | 'base_description' | 'base_amount' | 'estimated_base_amount'
+  >
+): string | null {
+  const percentage = describePercentage(entry)
+  if (percentage === null) return null
+  if (entry.base_amount !== null) return `${percentage} · base ${formatCurrency(entry.base_amount)}`
+  const estimate = estimatedFee(entry)
+  return estimate === null
+    ? `${percentage} · a apurar`
+    : `${percentage} · a apurar · est. ${formatCurrency(estimate)}`
+}
+
+/** Marking it paid needs the base first — the click opens "Apurar" instead. */
+export const ASSESS_BEFORE_PAYMENT_REASON =
+  'Êxito a apurar: informe o valor da base em "Apurar" antes da baixa.'
 
 /** Texto do diálogo de exclusão. Os anexos saem junto (migration 63), e isso
  * precisa estar escrito antes do clique. */

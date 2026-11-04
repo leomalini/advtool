@@ -3,11 +3,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  assessSuccessFee,
   attachFilesToFinancialEntry,
   createFinancialEntry,
   updateFinancialEntry,
   deleteFinancialEntry,
 } from '../services/financialEntries.service'
+import type { AssessmentRow } from '../utils/successFees'
 import { createPaymentLink } from '../services/paymentCharges.service'
 import { financialEntryKeys } from './useFinancialEntries'
 import { paymentChargeKeys } from './usePaymentCharges'
@@ -114,6 +116,36 @@ export function useUpdateFinancialEntry() {
     // A trava de cobrança (migration 67) já explica em português o que fazer.
     onError: (error) =>
       toast.error(chargeGuardMessage(error) ?? 'Erro ao atualizar lançamento.'),
+  })
+}
+
+/** Apurar um êxito (migration 89). PT409 is the project's "conflict, and the
+ * message explains it": here, someone assessed it first. */
+export function useAssessSuccessFee() {
+  const invalidate = useInvalidateFinancialSurfaces()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: ({
+      entryId,
+      rows,
+      keepOpen,
+    }: {
+      entryId: string
+      rows: AssessmentRow[]
+      keepOpen: boolean
+    }) => assessSuccessFee(entryId, rows, keepOpen, user!.id),
+    onSuccess: (_ids, { rows, keepOpen }) => {
+      invalidate()
+      toast.success(
+        keepOpen
+          ? 'Parte apurada. O êxito segue a apurar para o restante.'
+          : rows.length > 1
+            ? `Êxito apurado em ${rows.length} parcelas.`
+            : 'Êxito apurado!'
+      )
+    },
+    onError: (error) => toast.error(chargeGuardMessage(error) ?? 'Erro ao apurar o êxito.'),
   })
 }
 

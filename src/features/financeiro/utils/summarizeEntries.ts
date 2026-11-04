@@ -1,6 +1,7 @@
 import {
   getCashFlowDate,
   getFinancialSituation,
+  isToAssess,
   toISODate,
   todayISO,
   type FinancialEntry,
@@ -23,6 +24,10 @@ export type TotalsRow = Pick<
 > & {
   /** Only to tell a payment by InfinitePay link apart. */
   payment_charges?: Pick<PaymentChargeSummary, 'status'>[] | null
+  /** Only to count the success fees to assess (migration 89); the
+   * dashboard's narrow select leaves them out. */
+  percent?: number | null
+  base_amount?: number | null
 }
 
 /**
@@ -40,6 +45,8 @@ export interface OpenTotals {
   conditional: number
   /** How many are conditional — the amount alone does not say 1 or 12. */
   conditionalCount: number
+  /** Of those, the success fees still to assess — R$ 0 in every sum. */
+  toAssessCount: number
 }
 
 export interface EntryTotals {
@@ -62,7 +69,14 @@ export interface EntryTotals {
 }
 
 function emptyOpenTotals(): OpenTotals {
-  return { total: 0, upcoming: 0, overdue: 0, conditional: 0, conditionalCount: 0 }
+  return {
+    total: 0,
+    upcoming: 0,
+    overdue: 0,
+    conditional: 0,
+    conditionalCount: 0,
+    toAssessCount: 0,
+  }
 }
 
 export function summarizeEntries(rows: TotalsRow[], today: string = todayISO()): EntryTotals {
@@ -103,6 +117,7 @@ export function summarizeEntries(rows: TotalsRow[], today: string = todayISO()):
       case 'condicao_especial':
         open.conditional += amount
         open.conditionalCount += 1
+        if (isToAssess(row)) open.toAssessCount += 1
         break
     }
   }
