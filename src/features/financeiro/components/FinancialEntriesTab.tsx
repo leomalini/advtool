@@ -34,7 +34,9 @@ import {
 } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm, type FinancialEntrySubmitOptions } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
-import { AssessSuccessFeeDialog } from './AssessSuccessFeeDialog'
+import { useTriageStatedAmount } from '@/features/publicacoes/hooks/usePublications'
+import { STATED_AMOUNT_KIND_LABELS } from '@/types/publication.types'
+import { AssessSuccessFeeDialog, type AssessmentSuggestion } from './AssessSuccessFeeDialog'
 import { SUCCESS_FEE_FORM_DEFAULTS } from '../utils/successFees'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { AttachmentCountBadge } from './AttachmentCountBadge'
@@ -52,6 +54,12 @@ interface FinancialEntriesTabProps {
   lockedClientId?: string | null
   lockedContractId?: string | null
   itemLabel?: string
+  /** The bell's notice (migration 90): a success fee to open in "Apurar", and
+   * the publication whose value fills the base. */
+  initialAssessEntryId?: string | null
+  assessPublicationId?: string | null
+  /** Closed what the notice opened: the page takes it out of the URL. */
+  onInitialAssessClose?: () => void
 }
 
 /**
@@ -86,6 +94,9 @@ export function FinancialEntriesTab({
   lockedClientId,
   lockedContractId,
   itemLabel = 'item',
+  initialAssessEntryId = null,
+  assessPublicationId = null,
+  onInitialAssessClose,
 }: FinancialEntriesTabProps) {
   const { data: entries = [], isLoading, isError } = useFinancialEntriesForEntity({
     legalProcessId,
@@ -103,7 +114,20 @@ export function FinancialEntriesTab({
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FinancialEntryWithRelations | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [assessingId, setAssessingId] = useState<string | null>(null)
+  const [assessingId, setAssessingId] = useState<string | null>(initialAssessEntryId)
+  const fromNotice = assessingId !== null && assessingId === initialAssessEntryId
+  const { data: statedAmount } = useTriageStatedAmount(fromNotice ? assessPublicationId : null)
+  const suggestion: AssessmentSuggestion | null =
+    fromNotice && statedAmount && assessPublicationId
+      ? {
+          amount: statedAmount.amount,
+          source:
+            `${STATED_AMOUNT_KIND_LABELS[statedAmount.kind]} de ` +
+            `${formatCurrency(statedAmount.amount)} na publicação` +
+            (statedAmount.sequenceNumber ? ` #${statedAmount.sequenceNumber}` : ''),
+          href: `/publicacoes/${assessPublicationId}`,
+        }
+      : null
   const { can } = usePermissions()
   const { data: officeSettings } = useOfficeSettings()
   const offerPaymentLink = !!officeSettings?.infinitepay_handle && can('financeiro', 'create')
@@ -419,10 +443,16 @@ export function FinancialEntriesTab({
         </DialogContent>
       </Dialog>
 
+      {/* An old notice may point to one already assessed: then nothing opens. */}
       <AssessSuccessFeeDialog
         entry={assessing}
-        open={!!assessing}
-        onOpenChange={(open) => !open && setAssessingId(null)}
+        open={!!assessing && isToAssess(assessing)}
+        suggestion={suggestion}
+        onOpenChange={(open) => {
+          if (open) return
+          if (fromNotice) onInitialAssessClose?.()
+          setAssessingId(null)
+        }}
       />
 
       <FinancialEntryDetailModal

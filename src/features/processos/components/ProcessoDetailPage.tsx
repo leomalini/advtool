@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { z } from 'zod'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
@@ -177,6 +178,19 @@ const ENTITY_TABS: { id: EntityTab; label: string }[] = [
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** The tab a link asks for, if it exists. */
+function parseTab(value: string | null): Tab {
+  const known =
+    (TIMELINE_TABS as readonly string[]).includes(value ?? '') ||
+    ENTITY_TABS.some((entityTab) => entityTab.id === value)
+  return known ? (value as Tab) : 'tudo'
+}
+
+function parseLinkId(value: string | null): string | null {
+  const parsed = z.string().uuid().safeParse(value)
+  return parsed.success ? parsed.data : null
+}
 
 function formatCurrency(value: number | null): string {
   if (value == null) return '—'
@@ -474,8 +488,15 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
   const router = useRouter()
   const { data: processo, isLoading, error } = useLegalProcess(processoId)
   const { can } = usePermissions()
+  const searchParams = useSearchParams()
 
-  const [tab, setTab] = useState<Tab>('tudo')
+  // `?aba=` opens straight on a tab; `?apurar=&publicacao=` come from the bell's
+  // success fee notice (migration 90). Read once: the tabs are state from here.
+  const [tab, setTab] = useState<Tab>(() => parseTab(searchParams.get('aba')))
+  const [assessFromLink] = useState(() => ({
+    entryId: parseLinkId(searchParams.get('apurar')),
+    publicationId: parseLinkId(searchParams.get('publicacao')),
+  }))
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   /** Item da linha do tempo que uma referência do resumo por IA mandou abrir. */
@@ -1553,6 +1574,14 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
                   lockedLegalProcessId={processo.id}
                   lockedClientId={item?.client_id}
                   itemLabel="processo"
+                  initialAssessEntryId={assessFromLink.entryId}
+                  assessPublicationId={assessFromLink.publicationId}
+                  onInitialAssessClose={() =>
+                    // Through the router: the route's key changes and the page remounts
+                    // without the request, so the tabs and a reload do not reopen it,
+                    // and the same notice clicked again does.
+                    router.replace(`/processos/${processo.id}?aba=financeiro`, { scroll: false })
+                  }
                 />
               )}
               {tab === 'comentarios' &&

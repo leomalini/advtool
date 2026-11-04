@@ -43,6 +43,7 @@ import {
 import {
   FINANCIAL_SITUATION_LABELS,
   getFinancialSituation,
+  isToAssess,
   type FinancialEntry,
 } from '@/types/financialEntry.types'
 import type { OfficeSettings } from '@/types/officeSettings.types'
@@ -279,7 +280,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
             .from('financial_entries')
             .select(
               'id, description, type, amount, status, settlement_kind, due_date, ' +
-                'condition_description, paid_at',
+                'condition_description, paid_at, percent, base_description, base_amount',
             )
             .eq('contract_id', id)
             .order('due_date', { ascending: true, nullsFirst: false }),
@@ -299,6 +300,9 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           | 'due_date'
           | 'condition_description'
           | 'paid_at'
+          | 'percent'
+          | 'base_description'
+          | 'base_amount'
         >
 
         return {
@@ -331,7 +335,10 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
                 id: entry.id,
                 descricao: entry.description,
                 tipo: entry.type,
-                valor: Number(entry.amount),
+                // A success fee to assess has no amount yet: R$ 0 would read as nothing.
+                valor: isToAssess(entry) ? null : Number(entry.amount),
+                percentual: entry.percent,
+                base: entry.base_description,
                 situacao: FINANCIAL_SITUATION_LABELS[getFinancialSituation(entry)],
                 vencimento: entry.settlement_kind === 'scheduled' ? entry.due_date : null,
                 condicao: entry.condition_description,

@@ -216,6 +216,67 @@ export const screenActionTools = {
     outputSchema: actionOutputSchema,
   }),
 
+  registrar_exito: tool({
+    description:
+      'Propõe registrar um êxito (honorário que depende do resultado). Com percentual, fica a ' +
+      'apurar, em R$ 0, até o valor da base, e precisa de base; com valor_fixo, fica aguardando ' +
+      'a condição. Use um dos dois. Percentual, base e valor: só o que o usuário disse ou que ' +
+      'veio de um contrato ou documento lido e mostrado. Resolva os ids antes. O usuário confirma.',
+    inputSchema: z.object({
+      descricao: z.string().min(1).max(300).optional().describe('Padrão: "Honorários de êxito".'),
+      percentual: z.number().positive().max(100).optional(),
+      base: z
+        .string()
+        .min(1)
+        .max(300)
+        .optional()
+        .describe('Sobre o que incide, com o artigo: "o proveito econômico".'),
+      valor_fixo: z.number().positive().optional(),
+      estimativa_base: z
+        .number()
+        .positive()
+        .optional()
+        .describe('Estimativa da base, só se o usuário der. Não entra no A receber.'),
+      condicao: z.string().min(1).max(300).describe('O que precisa acontecer para receber.'),
+      previsao: dateSchema.optional(),
+      cliente_id: z.string().uuid().optional(),
+      processo_id: z.string().uuid().optional(),
+      cliente_nome: displayFields.cliente_nome,
+      processo_cnj: displayFields.processo_cnj,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+
+  apurar_exito: tool({
+    description:
+      'Propõe apurar um êxito a apurar (id de listar_lancamentos com so_a_apurar): informa o ' +
+      'valor da base, e ele ganha o valor. O valor da base vem do usuário ou do texto de uma ' +
+      'publicação mostrado a ele. forma: recebido (data = quando entrou), vencimento (data), ' +
+      'parcelado (data = 1º vencimento, parcelas), aguardando (condicao, data = previsão ' +
+      'opcional). parte: true quando foi só uma parte e o êxito segue a apurar. O usuário confirma.',
+    inputSchema: z.object({
+      lancamento_id: z.string().uuid(),
+      lancamento_descricao: z
+        .string()
+        .max(300)
+        .describe('A descrição exata, como veio de listar_lancamentos.'),
+      percentual: z.number().positive().max(100).describe('O percentual do lançamento.'),
+      valor_da_base: z.number().positive(),
+      honorario: z
+        .number()
+        .positive()
+        .optional()
+        .describe('Só se o usuário disser um valor diferente da conta (acordo, arredondamento).'),
+      forma: z.enum(['recebido', 'vencimento', 'parcelado', 'aguardando']),
+      data: dateSchema.optional(),
+      parcelas: z.number().int().min(2).max(120).optional(),
+      condicao: z.string().max(300).optional().describe('Em "aguardando": o que ainda falta.'),
+      parte: z.boolean().optional(),
+      parte_nome: z.string().max(300).optional().describe('O nome desta parte: "Êxito — RPV".'),
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+
   vincular_publicacao: tool({
     description:
       'Propõe ligar uma publicação a um processo cadastrado. Se o CNJ da publicação for ' +

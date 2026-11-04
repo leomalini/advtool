@@ -4,8 +4,9 @@
 > as "Decididas no plano", sem veto). **Fase 1** (períodos e dashboard) na
 > branch `feat/financeiro-periodos`, sem migration. **Fase 2** (êxitos e
 > percentuais) na branch `feat/financeiro-exitos`, empilhada na 1, com a
-> migration 89 aplicada no remoto em 2026-11-04. Ver "Como ficou" de cada fase.
-> Fase 3 por fazer.
+> migration 89 aplicada no remoto em 2026-11-04. **Fase 3** (Assistente) na
+> branch `feat/ia-exitos`, empilhada na 2, com a migration 90 ainda **não**
+> aplicada: ela vai antes do deploy. Ver "Como ficou" de cada fase.
 
 Pedido, em seis itens:
 
@@ -433,3 +434,66 @@ aplicada no remoto em 2026-11-04 (`db push`).
 - **Não conferido:** a tela com login; o formato em que a API devolve os ids
   (só afeta o histórico de atividades, e o service aceita as duas formas); um
   perfil com `financeiro:update` sem `create` (não existe na matriz atual).
+
+## Como ficou a fase 3
+
+Branch `feat/ia-exitos`, empilhada na fase 2 (`748e278`). **A migration 90 vai
+antes do deploy:** sem as colunas, a triagem em lote falha ao gravar.
+
+### No chat
+
+- `registrar_exito`: percentual com base (fica a apurar, em R$ 0) ou valor fixo
+  (aguardando a condição), um dos dois. Passa pelo mesmo zod do formulário.
+  `registrar_lancamento` continua com as quatro categorias de antes.
+- `apurar_exito`: as quatro formas da tela e "foi só uma parte", pelas mesmas
+  funções do diálogo (`assessmentError`, `buildAssessmentRows`) e pela mesma
+  `assess_success_fee`.
+- **O card é o que se grava.** Na confirmação o lançamento é lido de novo: se a
+  descrição ou o percentual mostrados não forem os dele, ou se já não estiver a
+  apurar, a ação é recusada com o motivo. O honorário do card sai do percentual
+  conferido; um valor diferente aparece ao lado da conta.
+- `listar_lancamentos` filtra por `categoria` e `so_a_apurar` e traz percentual,
+  base, estimativa e situação. Êxito a apurar sai com `valor: null`, aqui e em
+  `ver_contrato`: R$ 0 seria lido como "não há nada".
+- O prompt do sistema tem uma seção "Êxitos": percentual, base e valores só do
+  usuário ou de fonte lida e mostrada; estimativa não é dinheiro a receber.
+
+### Pelas publicações
+
+- Migration 90: `publication_triage.stated_amount` e `stated_amount_kind`.
+- A triagem lê o valor que o ato fixa (`valor_fixado`, `natureza_do_valor`;
+  `TRIAGE_PROMPT_VERSION = 2`). A faixa é conferida depois de arredondar: valor
+  que o banco recusaria é tratado como "sem valor", para não perder a triagem.
+- Com processo e êxito a apurar, sai um aviso `exito_apuravel` no sino por êxito,
+  com a conta pronta. Não repete, se a coleta rodar duas vezes. Aviso que falha
+  fica no log e não perde a triagem.
+- O clique abre `/processos/<id>?aba=financeiro&apurar=<êxito>&publicacao=<pub>`.
+  O valor não vai no link: o diálogo o lê da triagem, mostra de onde veio e dá o
+  link "Confira o texto". Nada é gravado sem clicar em Apurar.
+- Fechar tira o pedido da URL pelo router: a chave da rota muda, a página remonta
+  sem ele, e o mesmo aviso clicado de novo reabre. Aviso antigo de êxito já
+  apurado abre só a aba.
+
+### Limites conhecidos
+
+- Só avisa publicação **já ligada ao processo na hora da triagem**. A que for
+  vinculada depois guarda o valor e mostra no cartão da triagem, sem aviso.
+- Publicações triadas antes da 90 não têm valor: a triagem não roda de novo.
+- Movimentações não avisam (ver "Fora desta versão").
+- Quem vê o Financeiro mas não `processos` recebe o aviso e não abre a página. A
+  matriz atual não tem esse perfil.
+
+### Verificação
+
+- `tsc`, `pnpm lint` (0 erros, os 13 avisos de antes) e `pnpm build`.
+- **64 casos em Node, com os módulos reais e banco falso:** registrar (percentual,
+  fixo, recusas), apurar (as quatro formas, parte, honorário informado, descrição
+  ou percentual diferentes, já apurado, sem dados, conflito PT409, erro inesperado
+  sobe), aviso (conta, link, não repete) e triagem (grava, sem processo, valores
+  que arredondam para fora da faixa, aviso que falha). Os 52 da fase 2 seguem certos.
+- **Navegador, com página temporária já apagada:** os cards de registrar e apurar
+  em cada forma, o valor no cartão da triagem e o Apurar aberto pelo aviso, com
+  80.000,00 na base, 24.000,00 de honorário e o link para a publicação.
+- **Revisão automática** (`/auto-review`): as correções estão no texto acima.
+- **Não conferido:** a página do processo com login; um chat de verdade propondo
+  as ações; a triagem com a IA real e uma sentença com valor; o `db push` da 90.

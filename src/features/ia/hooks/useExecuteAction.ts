@@ -46,6 +46,7 @@ import { TEMPLATE_SCOPE_HREFS, templateScopeOf } from '@/types/documentTemplate.
 import { downloadAiFileAsFile } from '../services/aiFiles.service'
 import type { ActionInput, ActionOutput } from '../tools/actions'
 import {
+  assessSuccessFeeAction,
   completeTask,
   createHearingAction,
   createPaymentLinkAction,
@@ -53,6 +54,7 @@ import {
   linkPublication,
   reassignTask,
   registerFinancialEntry,
+  registerSuccessFee,
   rescheduleEvent,
   sendToSignature,
 } from '../actions/screenActions'
@@ -78,6 +80,8 @@ export type PendingAction =
   | { tool: 'remarcar_evento'; input: ActionInput<'remarcar_evento'> }
   | { tool: 'criar_audiencia'; input: ActionInput<'criar_audiencia'> }
   | { tool: 'registrar_lancamento'; input: ActionInput<'registrar_lancamento'> }
+  | { tool: 'registrar_exito'; input: ActionInput<'registrar_exito'> }
+  | { tool: 'apurar_exito'; input: ActionInput<'apurar_exito'> }
   | { tool: 'vincular_publicacao'; input: ActionInput<'vincular_publicacao'> }
   | { tool: 'tratar_publicacao'; input: ActionInput<'tratar_publicacao'> }
   | { tool: 'enviar_para_assinatura'; input: ActionInput<'enviar_para_assinatura'> }
@@ -328,6 +332,12 @@ export function useExecuteAction() {
 
         case 'registrar_lancamento':
           return afterOk(await registerFinancialEntry(action.input, userId), invalidateFinancial)
+
+        case 'registrar_exito':
+          return afterOk(await registerSuccessFee(action.input, userId), invalidateFinancial)
+
+        case 'apurar_exito':
+          return afterOk(await assessSuccessFeeAction(action.input, userId), invalidateFinancial)
 
         case 'vincular_publicacao':
           return afterOk(await linkPublication(action.input), () => {

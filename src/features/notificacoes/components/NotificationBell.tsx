@@ -18,6 +18,7 @@ import {
   MailWarning,
   Gavel,
   Newspaper,
+  Percent,
   TriangleAlert,
   UserPlus,
 } from 'lucide-react'
@@ -59,6 +60,7 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   assinatura_cancelada: FileX2,
   assinatura_email_falhou: MailWarning,
   cliente_cadastrado_auto: UserPlus,
+  exito_apuravel: Percent,
 }
 
 function relativeTime(iso: string): string {
