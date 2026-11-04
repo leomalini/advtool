@@ -420,5 +420,16 @@ aplicada no remoto em 2026-11-04 (`db push`).
   `public.can()`, é o mesmo caso da `retime_event_series`. Dados: os 8
   lançamentos seguem iguais, sem percentual, e o backfill não tinha o que
   converter.
-- **Não conferido:** a `assess_success_fee` executando contra o banco (nem a
-  RLS dela em execução) e a tela com login.
+- **Função no remoto (2026-11-04):** `assess_success_fee` executada como admin
+  logado, com a RLS valendo, num único bloco que termina em erro de propósito,
+  desfazendo tudo; a impressão digital da tabela ficou idêntica antes e depois.
+  Certos: parcelado (o êxito vira a 1ª, nascem as outras, e a estimativa sai),
+  só uma parte (o êxito segue a apurar, com estimativa e previsão), o restante
+  já recebido (a baixa passa pelo gatilho da migration 67), valor definido
+  aguardando, e tudo ou nada (a 2ª linha inválida desfaz a 1ª). Recusados:
+  apurar de novo e valor fixo (PT409), id inexistente (P0002), sem linhas
+  (22023) e os quatro CHECKs novos. Id sem perfil e `anon` não veem nada e
+  recebem P0002, sem mudar o êxito.
+- **Não conferido:** a tela com login; o formato em que a API devolve os ids
+  (só afeta o histórico de atividades, e o service aceita as duas formas); um
+  perfil com `financeiro:update` sem `create` (não existe na matriz atual).
