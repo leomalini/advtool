@@ -38,6 +38,17 @@ export const triageResultSchema = z.object({
     .string()
     .nullable()
     .describe('Por que esse candidato (partes, número de origem), ou null.'),
+  valor_fixado: z
+    .number()
+    .nullable()
+    .describe(
+      'Valor em reais que o ato fixa de forma certa e em favor de quem o escritório ' +
+        'representa, como o texto escreve. null se não há. Nunca deduza, some nem calcule.',
+    ),
+  natureza_do_valor: z
+    .enum(['condenacao', 'acordo', 'alvara', 'rpv_precatorio', 'venda', 'outro'])
+    .nullable()
+    .describe('De onde vem o valor_fixado; null quando ele é null.'),
 })
 
 export type TriageResult = z.infer<typeof triageResultSchema>

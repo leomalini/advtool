@@ -12,6 +12,7 @@ import {
   Gavel,
   Hourglass,
   Pencil,
+  Percent,
   Tag,
   Trash2,
   Undo2,
@@ -24,8 +25,11 @@ import { cn } from '@/lib/utils'
 import {
   FINANCIAL_CATEGORY_LABELS,
   describeEntryDeletion,
+  describePercentage,
+  estimatedFee,
   formatCurrency,
   getFinancialSituation,
+  isToAssess,
   needsAmountBeforePayment,
   ZERO_AMOUNT_PAYMENT_REASON,
   type FinancialEntryWithRelations,
@@ -46,6 +50,7 @@ import { useCancelPaymentLink } from '../hooks/usePaymentChargeMutations'
 import { FinancialEntryForm } from './FinancialEntryForm'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { PaymentLinkSection } from './PaymentLinkSection'
+import { AssessSuccessFeeDialog } from './AssessSuccessFeeDialog'
 import { Can } from '@/components/shared/Can'
 
 interface FinancialEntryDetailModalProps {
@@ -71,6 +76,7 @@ export function FinancialEntryDetailModal({
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmMarkPaid, setConfirmMarkPaid] = useState(false)
+  const [assessing, setAssessing] = useState(false)
   const updateEntry = useUpdateFinancialEntry()
   const deleteEntry = useDeleteFinancialEntry()
   const cancelLink = useCancelPaymentLink()
@@ -129,6 +135,10 @@ export function FinancialEntryDetailModal({
   const overdue = situation === 'vencido'
   const isConditional = entry.settlement_kind === 'conditional'
   const accent = isReceita ? 'var(--success)' : 'var(--destructive)'
+  // Migration 89: a percentage entry, and one still waiting for its base.
+  const percentage = describePercentage(entry)
+  const toAssess = isToAssess(entry)
+  const estimate = estimatedFee(entry)
 
   return (
     <>
@@ -168,6 +178,10 @@ export function FinancialEntryDetailModal({
                     due_date: entry.due_date ?? undefined,
                     condition_description: entry.condition_description ?? undefined,
                     paid_at: entry.paid_at ?? undefined,
+                    percent: entry.percent,
+                    base_description: entry.base_description,
+                    base_amount: entry.base_amount,
+                    estimated_base_amount: entry.estimated_base_amount,
                     client_id: entry.client_id ?? undefined,
                     crm_item_id: entry.crm_item_id ?? undefined,
                     legal_process_id: entry.legal_process_id ?? undefined,
@@ -211,13 +225,26 @@ export function FinancialEntryDetailModal({
                   {entry.description}
                 </DialogTitle>
 
-                <p
-                  className="text-2xl font-bold tabular-nums mt-2"
-                  style={{ color: accent }}
-                >
-                  {isReceita ? '+' : '−'}
-                  {formatCurrency(Number(entry.amount))}
-                </p>
+                {/* R$ 0,00 would read as nothing to receive: it is not
+                    known yet. */}
+                {toAssess ? (
+                  <div className="mt-2">
+                    <p className="text-2xl font-bold text-muted-foreground">A apurar</p>
+                    {estimate !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        Estimativa: {formatCurrency(estimate)}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p
+                    className="text-2xl font-bold tabular-nums mt-2"
+                    style={{ color: accent }}
+                  >
+                    {isReceita ? '+' : '−'}
+                    {formatCurrency(Number(entry.amount))}
+                  </p>
+                )}
               </div>
 
               {/* Corpo */}
@@ -264,6 +291,22 @@ export function FinancialEntryDetailModal({
                     </InfoRow>
                   )
                 })()}
+
+                {percentage && (
+                  <InfoRow icon={<Percent className="h-4 w-4 text-muted-foreground/60" />}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50">
+                      Percentual
+                    </p>
+                    <p className="text-sm">{percentage}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {entry.base_amount !== null
+                        ? `Base: ${formatCurrency(entry.base_amount)}`
+                        : entry.estimated_base_amount !== null
+                          ? `A apurar · base estimada em ${formatCurrency(entry.estimated_base_amount)}`
+                          : 'A apurar: o valor da base ainda não é conhecido'}
+                    </p>
+                  </InfoRow>
+                )}
 
                 <InfoRow icon={<Tag className="h-4 w-4 text-muted-foreground/60" />}>
                   <p className="text-sm">{FINANCIAL_CATEGORY_LABELS[entry.category]}</p>
@@ -355,48 +398,66 @@ export function FinancialEntryDetailModal({
                   </button>
                 </Can>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (reopenBlockedBy) {
-                        toast.info(reopenBlockedBy)
-                        return
-                      }
-                      if (!isPaid && charges.live) {
-                        setConfirmMarkPaid(true)
-                        return
-                      }
-                      // Êxito em R$ 0: a baixa passa pela edição, com o valor.
-                      if (needsAmountBeforePayment(entry)) {
-                        toast.info(ZERO_AMOUNT_PAYMENT_REASON)
-                        setEditing(true)
-                        return
-                      }
-                      updateEntry.mutate({
-                        id: entry.id,
-                        status: isPaid ? 'pendente' : 'pago',
-                      })
-                    }}
-                    aria-disabled={reopenBlockedBy !== null}
-                    title={reopenBlockedBy ?? undefined}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border',
-                      'text-xs font-medium hover:bg-muted/40 transition-colors',
-                      'aria-disabled:opacity-50 aria-disabled:hover:bg-transparent'
-                    )}
-                  >
-                    {isPaid ? (
-                      <>
-                        <Undo2 className="h-3.5 w-3.5" />
-                        Reabrir
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-3.5 w-3.5" />
-                        Marcar como pago
-                      </>
-                    )}
-                  </button>
+                  {/* A success fee to assess has no payment yet: "Apurar"
+                      gives it the amount (migration 89). */}
+                  {toAssess ? (
+                    <Can resource="financeiro" action="update">
+                      <button
+                        type="button"
+                        onClick={() => setAssessing(true)}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border',
+                          'text-xs font-medium hover:bg-muted/40 transition-colors'
+                        )}
+                      >
+                        <Percent className="h-3.5 w-3.5" />
+                        Apurar
+                      </button>
+                    </Can>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (reopenBlockedBy) {
+                          toast.info(reopenBlockedBy)
+                          return
+                        }
+                        if (!isPaid && charges.live) {
+                          setConfirmMarkPaid(true)
+                          return
+                        }
+                        // Êxito em R$ 0: a baixa passa pela edição, com o valor.
+                        if (needsAmountBeforePayment(entry)) {
+                          toast.info(ZERO_AMOUNT_PAYMENT_REASON)
+                          setEditing(true)
+                          return
+                        }
+                        updateEntry.mutate({
+                          id: entry.id,
+                          status: isPaid ? 'pendente' : 'pago',
+                        })
+                      }}
+                      aria-disabled={reopenBlockedBy !== null}
+                      title={reopenBlockedBy ?? undefined}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border',
+                        'text-xs font-medium hover:bg-muted/40 transition-colors',
+                        'aria-disabled:opacity-50 aria-disabled:hover:bg-transparent'
+                      )}
+                    >
+                      {isPaid ? (
+                        <>
+                          <Undo2 className="h-3.5 w-3.5" />
+                          Reabrir
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-3.5 w-3.5" />
+                          Marcar como pago
+                        </>
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setEditing(true)}
@@ -411,6 +472,13 @@ export function FinancialEntryDetailModal({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Closes by itself once assessed: the entry stops being to assess. */}
+      <AssessSuccessFeeDialog
+        entry={toAssess ? entry : null}
+        open={assessing && toAssess}
+        onOpenChange={setAssessing}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

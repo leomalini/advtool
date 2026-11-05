@@ -1,7 +1,16 @@
+import { Suspense } from 'react'
 import { requirePermission } from '@/lib/auth/requirePermission'
 import { FinanceiroContent } from '@/features/financeiro/components/FinanceiroContent'
-import { parseSituationFilter } from '@/features/financeiro/utils/filterFinancialEntries'
 
+/**
+ * The screen reads its filters and the open entry from the URL with
+ * `useSearchParams` (hence the `Suspense`), and rewrites the URL itself with
+ * `history.replaceState`, which never comes back here.
+ *
+ * The `key` is the query that reached the server: a link that brings other
+ * filters — the bell's `?id=`, a dashboard number, the Assistant — remounts
+ * the screen on them, instead of keeping the filters it had.
+ */
 export default async function FinanceiroPage({
   searchParams,
 }: {
@@ -9,17 +18,16 @@ export default async function FinanceiroPage({
 }) {
   await requirePermission('financeiro')
 
-  // `?id=` vem do aviso do sino (pagamento recebido pela InfinitePay): abre o
-  // lançamento direto. `?situacao=` vem do dashboard: abre a lista no recorte
-  // do número clicado. A `key` remonta a tela quando um dos dois muda.
-  const { id, situacao } = await searchParams
-  const entryId = typeof id === 'string' ? id : undefined
-  const situation = parseSituationFilter(situacao)
+  const params = await searchParams
+  const query = new URLSearchParams(
+    Object.entries(params).flatMap(([name, value]) =>
+      typeof value === 'string' ? [[name, value]] : []
+    )
+  ).toString()
+
   return (
-    <FinanceiroContent
-      key={`${entryId ?? 'lista'}:${situation ?? 'tudo'}`}
-      initialEntryId={entryId}
-      initialSituation={situation}
-    />
+    <Suspense fallback={null}>
+      <FinanceiroContent key={query} />
+    </Suspense>
   )
 }

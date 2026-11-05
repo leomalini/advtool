@@ -8,7 +8,6 @@ import {
 import type { PendingAttachments } from '@/types/document.types'
 import {
   getCashFlowDate,
-  getFinancialSituation,
   toISODate,
   todayISO,
   type FinancialEntry,
@@ -19,7 +18,15 @@ import type {
   FinancialEntryInput,
   UpdateFinancialEntryInput,
 } from '@/schemas/financialEntry.schema'
-import { summarizePaymentCharges, type PaymentChargeSummary } from '@/types/paymentCharge.types'
+import { isWithinPeriod, presetRange } from '../utils/periods'
+import type { AssessmentRow } from '../utils/successFees'
+import {
+  bucketCashFlow,
+  summarizeEntries,
+  type CashFlowResult,
+  type CashFlowRow,
+  type TotalsRow,
+} from '../utils/summarizeEntries'
 
 const supabase = createClient()
 
@@ -114,12 +121,35 @@ function reconcileSettlementFields(patch: Record<string, unknown>): void {
   if (kind === 'scheduled') patch.condition_description = null
 }
 
+/**
+ * The percentage fields go together (migration 89): no percentage, no base;
+ * a percentage with no base value is to assess, at R$ 0 (the form sets the
+ * status and the settlement itself, and the CHECK guards them). Only when the
+ * patch carries `percent` — a quick status toggle leaves them be.
+ */
+function reconcilePercentFields(patch: Record<string, unknown>): void {
+  if (!('percent' in patch)) return
+  if (patch.percent === null || patch.percent === undefined) {
+    patch.percent = null
+    patch.base_description = null
+    patch.base_amount = null
+    patch.estimated_base_amount = null
+  } else if (patch.base_amount === null || patch.base_amount === undefined) {
+    patch.base_amount = null
+    patch.amount = 0
+  } else {
+    // Assessed: the estimate no longer says anything.
+    patch.estimated_base_amount = null
+  }
+}
+
 export async function createFinancialEntry(
   input: FinancialEntryInput,
   userId: string
 ): Promise<FinancialEntry> {
   const payload = nullifyEmpty(input) as Record<string, unknown>
   reconcileSettlementFields(payload)
+  reconcilePercentFields(payload)
 
   const { data, error } = await supabase
     .from('financial_entries')
@@ -152,6 +182,7 @@ export async function createFinancialEntries(
   const rows = inputs.map((input) => {
     const payload = nullifyEmpty(input) as Record<string, unknown>
     reconcileSettlementFields(payload)
+    reconcilePercentFields(payload)
     return { ...payload, created_by: userId }
   })
 
@@ -186,6 +217,7 @@ export async function updateFinancialEntry(input: UpdateFinancialEntryInput): Pr
     patch.paid_at = null
   }
   reconcileSettlementFields(patch)
+  reconcilePercentFields(patch)
 
   const { error } = await supabase.from('financial_entries').update(patch).eq('id', id)
   if (error) throw error
@@ -230,6 +262,59 @@ export async function deleteFinancialEntry(id: string): Promise<void> {
   if (data.length > 0) await removeDocumentFiles(filePaths)
 }
 
+// ── Apurar um êxito ─────────────────────────────────────────────────────────
+
+/** PostgREST hands a `setof uuid` back as plain values; an object per row is
+ * accepted too, so a change on its side does not lose the ids. */
+function idsFromRpc(data: unknown): string[] {
+  if (!Array.isArray(data)) return []
+  return data.flatMap((item: unknown) => {
+    if (typeof item === 'string') return [item]
+    if (typeof item === 'object' && item !== null) {
+      const value = (item as Record<string, unknown>).assess_success_fee
+      return typeof value === 'string' ? [value] : []
+    }
+    return []
+  })
+}
+
+/**
+ * Assesses a success fee in one transaction (`assess_success_fee`, migration
+ * 89). Without `keepOpen`, the first row becomes the success fee itself —
+ * same id, attachments and history — and the rest are new installments; with
+ * it ("foi só uma parte"), every row is new and the success fee stays to
+ * assess. Returns the ids in row order.
+ */
+export async function assessSuccessFee(
+  entryId: string,
+  rows: AssessmentRow[],
+  keepOpen: boolean,
+  userId: string
+): Promise<string[]> {
+  const { data, error } = await supabase.rpc('assess_success_fee', {
+    p_entry_id: entryId,
+    p_rows: rows,
+    p_keep_open: keepOpen,
+  })
+  if (error) throw error
+
+  const ids = idsFromRpc(data)
+  // What was born here enters the activity feed like any new entry.
+  const firstNew = keepOpen ? 0 : 1
+  await Promise.all(
+    ids.slice(firstNew).map((id, index) =>
+      recordActivity({
+        type: 'financial_entry_created',
+        entity_type: 'financial_entry',
+        entity_id: id,
+        entity_title: rows[firstNew + index]?.description ?? 'Êxito',
+        actor_id: userId,
+      })
+    )
+  )
+  return ids
+}
+
 // ── Agregados ───────────────────────────────────────────────────────────────
 
 /**
@@ -265,94 +350,48 @@ export interface FinancialSummary {
   receivableConditionalCount: number
 }
 
-type AggregateRow = Pick<
-  FinancialEntry,
-  'type' | 'amount' | 'status' | 'settlement_kind' | 'due_date' | 'paid_at'
->
-
 const AGGREGATE_SELECT = 'type, amount, status, settlement_kind, due_date, paid_at'
 
 /** O resumo precisa saber se a baixa veio de um link — o fluxo de caixa, não. */
-type SummaryRow = AggregateRow & { payment_charges: Pick<PaymentChargeSummary, 'status'>[] | null }
-
 const SUMMARY_SELECT = `${AGGREGATE_SELECT}, payment_charges(status)`
 
+/**
+ * The dashboard's month (received, expenses) and everything still open
+ * (receivable), summed by `summarizeEntries` — the same sums the Financeiro
+ * screen shows for its period, so the two screens cannot disagree.
+ */
 export async function getFinancialSummary(): Promise<FinancialSummary> {
-  const now = new Date()
-  const monthStart = toISODate(new Date(now.getFullYear(), now.getMonth(), 1))
-  // Dia 0 do mês seguinte = último dia deste mês. Sem este limite superior, um
-  // vencimento de dezembro já entrava em "Despesas do mês" em agosto.
-  const monthEnd = toISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
   const today = todayISO()
+  // The whole month, upper bound included: without it a December due date
+  // already counted in August's "Despesas do mês".
+  const month = presetRange('mes', today)
 
   const { data, error } = await supabase.from('financial_entries').select(SUMMARY_SELECT)
 
   if (error) throw error
 
-  const summary: FinancialSummary = {
-    receivedThisMonth: 0,
-    receivedViaInfinitePay: 0,
-    receivedViaInfinitePayCount: 0,
-    expensesThisMonth: 0,
-    receivableTotal: 0,
-    receivableUpcoming: 0,
-    receivableOverdue: 0,
-    receivableConditional: 0,
-    receivableConditionalCount: 0,
+  const rows = (data ?? []) as unknown as TotalsRow[]
+  const thisMonth = summarizeEntries(
+    rows.filter((row) => isWithinPeriod(getCashFlowDate(row), month)),
+    today
+  )
+  const { receivable } = summarizeEntries(rows, today)
+
+  return {
+    receivedThisMonth: thisMonth.received,
+    receivedViaInfinitePay: thisMonth.receivedViaInfinitePay,
+    receivedViaInfinitePayCount: thisMonth.receivedViaInfinitePayCount,
+    expensesThisMonth: thisMonth.expenses,
+    receivableTotal: receivable.total,
+    receivableUpcoming: receivable.upcoming,
+    receivableOverdue: receivable.overdue,
+    receivableConditional: receivable.conditional,
+    receivableConditionalCount: receivable.conditionalCount,
   }
-
-  for (const row of (data ?? []) as unknown as SummaryRow[]) {
-    const amount = Number(row.amount)
-    const reference = getCashFlowDate(row)
-    const inThisMonth = reference !== null && reference >= monthStart && reference <= monthEnd
-
-    if (row.type === 'despesa') {
-      if (inThisMonth) summary.expensesThisMonth += amount
-      continue
-    }
-
-    switch (getFinancialSituation(row, today)) {
-      case 'pago':
-        if (!inThisMonth) break
-        summary.receivedThisMonth += amount
-        if (summarizePaymentCharges(row.payment_charges ?? []).paid) {
-          summary.receivedViaInfinitePay += amount
-          summary.receivedViaInfinitePayCount += 1
-        }
-        break
-      case 'a_vencer':
-        summary.receivableUpcoming += amount
-        summary.receivableTotal += amount
-        break
-      case 'vencido':
-        summary.receivableOverdue += amount
-        summary.receivableTotal += amount
-        break
-      case 'condicao_especial':
-        summary.receivableConditional += amount
-        summary.receivableConditionalCount += 1
-        summary.receivableTotal += amount
-        break
-    }
-  }
-
-  return summary
 }
 
-export interface MonthlyCashFlow {
-  /** 'yyyy-MM' */
-  month: string
-  receita: number
-  despesa: number
-}
-
-export interface CashFlowResult {
-  months: MonthlyCashFlow[]
-  /** O que não cabe em mês nenhum: condição especial sem previsão de data. */
-  undated: { receita: number; despesa: number; count: number }
-}
-
-/** Fluxo de caixa dos últimos N meses, agregado no cliente. */
+/** Cash flow of the last N months, grouped by `bucketCashFlow` — the same
+ * grouping as the chart on the Financeiro screen. */
 export async function getMonthlyCashFlow(months = 6): Promise<CashFlowResult> {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1)
@@ -368,37 +407,5 @@ export async function getMonthlyCashFlow(months = 6): Promise<CashFlowResult> {
 
   if (error) throw error
 
-  const buckets = new Map<string, MonthlyCashFlow>()
-  for (let i = 0; i < months; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1)
-    buckets.set(toISODate(d).slice(0, 7), {
-      month: toISODate(d).slice(0, 7),
-      receita: 0,
-      despesa: 0,
-    })
-  }
-
-  const undated: CashFlowResult['undated'] = { receita: 0, despesa: 0, count: 0 }
-
-  for (const row of (data ?? []) as AggregateRow[]) {
-    const amount = Number(row.amount)
-    // O mesmo critério do filtro da tabela — é o que faz o clique numa coluna
-    // mostrar exatamente os lançamentos somados nela.
-    const reference = getCashFlowDate(row)
-
-    // Sem quando: entra na coluna própria em vez de sumir.
-    if (reference === null) {
-      undated.count += 1
-      if (row.type === 'receita') undated.receita += amount
-      else undated.despesa += amount
-      continue
-    }
-
-    const bucket = buckets.get(reference.slice(0, 7))
-    if (!bucket) continue
-    if (row.type === 'receita') bucket.receita += amount
-    else bucket.despesa += amount
-  }
-
-  return { months: [...buckets.values()], undated }
+  return bucketCashFlow((data ?? []) as CashFlowRow[], months, now)
 }

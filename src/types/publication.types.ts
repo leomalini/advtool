@@ -83,6 +83,24 @@ export const TRIAGE_URGENCY_LABELS: Record<TriageUrgency, string> = {
   baixa: 'Rotina',
 }
 
+/** Where the value a publication fixes comes from (migration 90). */
+export type StatedAmountKind =
+  | 'condenacao'
+  | 'acordo'
+  | 'alvara'
+  | 'rpv_precatorio'
+  | 'venda'
+  | 'outro'
+
+export const STATED_AMOUNT_KIND_LABELS: Record<StatedAmountKind, string> = {
+  condenacao: 'Condenação',
+  acordo: 'Acordo',
+  alvara: 'Alvará',
+  rpv_precatorio: 'RPV ou precatório',
+  venda: 'Venda ou arrematação',
+  outro: 'Valor',
+}
+
 /** Uma linha de `publication_triage` (migration 85). */
 export interface PublicationTriage {
   publication_id: string
@@ -97,6 +115,10 @@ export interface PublicationTriage {
   deadline_counting: 'uteis' | 'corridos' | null
   probable_process_id: string | null
   probable_reason: string | null
+  /** The value the text fixes, as read by the AI — a suggestion, never written
+   * to the Financeiro without a click (migration 90). */
+  stated_amount: number | null
+  stated_amount_kind: StatedAmountKind | null
   model: string | null
   triaged_at: string
   suggestion_status: 'open' | 'task_created' | 'dismissed'

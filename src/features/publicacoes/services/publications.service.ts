@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 import type {
   PublicationWithRelations,
   PublicationFilters,
+  StatedAmountKind,
 } from '@/types/publication.types'
 
 const supabase = createClient()
@@ -199,4 +200,37 @@ export async function linkPublicationsToProcess(
 
   if (error) throw error
   return data?.length ?? 0
+}
+
+export interface TriageStatedAmount {
+  amount: number
+  kind: StatedAmountKind
+  sequenceNumber: number | null
+}
+
+/**
+ * The value a publication fixes, for the "Apurar" the bell opens (migration 90).
+ * Read here and not carried in the link. `null` without a value, or for a
+ * profile that does not see publications: the dialog then just opens empty.
+ */
+export async function getTriageStatedAmount(
+  publicationId: string
+): Promise<TriageStatedAmount | null> {
+  const { data, error } = await supabase
+    .from('publication_triage')
+    .select('stated_amount, stated_amount_kind, publication:publications(sequence_number)')
+    .eq('publication_id', publicationId)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as unknown as {
+    stated_amount: number | null
+    stated_amount_kind: StatedAmountKind | null
+    publication: { sequence_number: number | null } | null
+  } | null
+  if (!row || row.stated_amount === null) return null
+  return {
+    amount: Number(row.stated_amount),
+    kind: row.stated_amount_kind ?? 'outro',
+    sequenceNumber: row.publication?.sequence_number ?? null,
+  }
 }

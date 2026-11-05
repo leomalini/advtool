@@ -22,6 +22,9 @@ export type NotificationKind =
   // Parte representada por uma OAB do escritório, cadastrada (ou convertida de
   // pessoa) sozinha ao chegar publicação ou movimentação (migration 88).
   | 'cliente_cadastrado_auto'
+  // A publication fixed a value on a process with a success fee to assess
+  // (migration 90): the sum is ready, someone confirms it in "Apurar".
+  | 'exito_apuravel'
   | (string & {})
 
 export interface Notification {

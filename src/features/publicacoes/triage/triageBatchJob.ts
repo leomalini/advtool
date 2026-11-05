@@ -1,4 +1,5 @@
 import type { BatchJob } from '@/features/ia/batch/types'
+import { notifyAssessableSuccessFees } from './notifySuccessFees'
 import { buildTriageInput, loadTriageData, triageHash } from './triageInput'
 import { TRIAGE_SYSTEM_PROMPT } from './triagePrompt'
 import { triageResultSchema, type TriageResult } from './triageSchema'
@@ -56,6 +57,11 @@ export const triageBatchJob: BatchJob<TriageResult> = {
         : null
     const rounded = output.prazo_dias === null ? null : Math.round(output.prazo_dias)
     const days = rounded !== null && rounded >= 1 && rounded <= 365 ? rounded : null
+    // Checked after rounding: a value the CHECK or numeric(14,2) refuses would
+    // lose the whole triage, and it is no value anyway.
+    const cents = output.valor_fixado === null ? null : Math.round(output.valor_fixado * 100) / 100
+    const statedAmount = cents !== null && cents > 0 && cents < 1e12 ? cents : null
+    const statedKind = statedAmount !== null ? (output.natureza_do_valor ?? 'outro') : null
 
     const { error: saveError } = await admin.from('publication_triage').upsert(
       {
@@ -69,12 +75,28 @@ export const triageBatchJob: BatchJob<TriageResult> = {
         deadline_counting: days ? (output.prazo_contagem ?? 'uteis') : null,
         probable_process_id: probable,
         probable_reason: probable ? output.processo_provavel_motivo : null,
+        stated_amount: statedAmount,
+        stated_amount_kind: statedKind,
         model: meta.modelId,
         triaged_at: new Date().toISOString(),
       },
       { onConflict: 'publication_id' },
     )
     if (saveError) throw saveError
+
+    // A notice that fails does not cost the triage already saved.
+    if (statedAmount !== null && statedKind !== null && publication.legal_process_id) {
+      try {
+        await notifyAssessableSuccessFees(admin, {
+          publicationId,
+          legalProcessId: publication.legal_process_id,
+          amount: statedAmount,
+          kind: statedKind,
+        })
+      } catch (noticeError) {
+        console.error(`[ia-lote] aviso de êxito da publicação ${publicationId} falhou:`, noticeError)
+      }
+    }
     return 'applied'
   },
 }
