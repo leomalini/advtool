@@ -7,11 +7,23 @@ import {
   SignatureRouteError,
   sendForSignature,
 } from '@/features/assinaturas/services/signatures.service'
-import { createFinancialEntry } from '@/features/financeiro/services/financialEntries.service'
+import {
+  assessSuccessFee,
+  createFinancialEntry,
+  getFinancialEntryById,
+} from '@/features/financeiro/services/financialEntries.service'
 import {
   PaymentLinkError,
   createPaymentLink,
 } from '@/features/financeiro/services/paymentCharges.service'
+import {
+  SUCCESS_FEE_FORM_DEFAULTS,
+  assessmentError,
+  buildAssessmentRows,
+  type AssessmentPlan,
+} from '@/features/financeiro/utils/successFees'
+import { formatPercent, isToAssess } from '@/types/financialEntry.types'
+import { chargeGuardMessage } from '@/types/paymentCharge.types'
 import {
   linkPublicationToProcess,
   setPublicationHandled,
@@ -150,6 +162,83 @@ export async function registerFinancialEntry(
   // The entry itself: the screen opens on the current month, and an entry due
   // next month would not be in the list behind a bare '/financeiro'.
   return { ok: true, id: entry.id, link: `/financeiro?id=${entry.id}` }
+}
+
+export async function registerSuccessFee(
+  input: ActionInput<'registrar_exito'>,
+  userId: string,
+): Promise<ActionOutput> {
+  if ((input.percentual === undefined) === (input.valor_fixo === undefined)) {
+    return { ok: false, motivo: 'diga o percentual ou o valor fixo do êxito, um dos dois' }
+  }
+  // O mesmo zod do formulário.
+  const parsed = financialEntrySchema.safeParse({
+    type: 'receita',
+    category: 'exito',
+    description: input.descricao ?? SUCCESS_FEE_FORM_DEFAULTS.description,
+    amount: input.valor_fixo ?? 0,
+    status: 'pendente',
+    settlement_kind: 'conditional',
+    due_date: input.previsao ?? null,
+    condition_description: input.condicao,
+    percent: input.percentual ?? null,
+    base_description: input.percentual !== undefined ? (input.base ?? null) : null,
+    estimated_base_amount: input.percentual !== undefined ? (input.estimativa_base ?? null) : null,
+    client_id: input.cliente_id ?? null,
+    legal_process_id: input.processo_id ?? null,
+  })
+  if (!parsed.success) {
+    return { ok: false, motivo: parsed.error.issues[0]?.message ?? 'dados do êxito incompletos' }
+  }
+  const entry = await createFinancialEntry(parsed.data, userId)
+  return { ok: true, id: entry.id, link: `/financeiro?id=${entry.id}` }
+}
+
+/**
+ * Reads the entry again at confirmation. The description and the percentage in
+ * the input are what the card showed: if they are not the entry's, what the
+ * person confirmed is not what would be written, so it is refused.
+ */
+export async function assessSuccessFeeAction(
+  input: ActionInput<'apurar_exito'>,
+  userId: string,
+): Promise<ActionOutput> {
+  const entry = await getFinancialEntryById(input.lancamento_id)
+  if (!entry) return { ok: false, motivo: 'lançamento não encontrado ou sem acesso' }
+  if (!isToAssess(entry)) return { ok: false, motivo: 'este lançamento não está a apurar' }
+  if (entry.description.trim() !== input.lancamento_descricao.trim()) {
+    return { ok: false, motivo: `este lançamento se chama "${entry.description}"` }
+  }
+  if (Number(entry.percent) !== input.percentual) {
+    return {
+      ok: false,
+      motivo: `o lançamento é de ${formatPercent(Number(entry.percent))}, não de ${formatPercent(input.percentual)}`,
+    }
+  }
+
+  const plan: AssessmentPlan = {
+    baseAmount: input.valor_da_base,
+    feeOverride: input.honorario,
+    mode: input.forma,
+    date: input.data ?? '',
+    installments: input.parcelas ?? 0,
+    condition: input.condicao ?? entry.condition_description ?? '',
+    partial: input.parte === true,
+    partDescription: input.parte_nome ?? `${entry.description} — parte`.slice(0, 300),
+  }
+  const problem = assessmentError(entry, plan)
+  if (problem) return { ok: false, motivo: problem }
+
+  try {
+    const ids = await assessSuccessFee(entry.id, buildAssessmentRows(entry, plan), plan.partial, userId)
+    const id = ids[0] ?? entry.id
+    return { ok: true, id, link: `/financeiro?id=${id}` }
+  } catch (error) {
+    // PT409: alguém apurou antes — a mensagem explica.
+    const conflict = chargeGuardMessage(error)
+    if (conflict) return { ok: false, motivo: conflict }
+    throw error
+  }
 }
 
 export async function linkPublication(

@@ -7,8 +7,14 @@ import { CONTRACT_KIND_LABELS } from '@/types/contract.types'
 import {
   FINANCIAL_CATEGORY_LABELS,
   FINANCIAL_TYPE_LABELS,
+  feeFromBase,
   formatCurrency,
+  formatPercent,
 } from '@/types/financialEntry.types'
+import {
+  ASSESSMENT_MODE_LABELS,
+  SUCCESS_FEE_FORM_DEFAULTS,
+} from '@/features/financeiro/utils/successFees'
 import { HEARING_MODALITY_LABELS } from '@/types/hearing.types'
 import { personFieldValues } from '@/features/documentos/templates/partyFields'
 import {
@@ -35,6 +41,8 @@ const ACTION_TITLES: Record<PendingAction['tool'], string> = {
   remarcar_evento: 'Remarcar compromisso',
   criar_audiencia: 'Criar audiência',
   registrar_lancamento: 'Registrar lançamento',
+  registrar_exito: 'Registrar êxito',
+  apurar_exito: 'Apurar êxito',
   vincular_publicacao: 'Vincular publicação ao processo',
   tratar_publicacao: 'Marcar publicação como tratada',
   enviar_para_assinatura: 'Enviar para assinatura',
@@ -153,6 +161,44 @@ function specificRows(action: PendingAction): [string, string][] | null {
         ['Pago em', input.pago_em ? formatValue('data', input.pago_em) : undefined],
         ['Cliente', input.cliente_nome],
         ['Processo', input.processo_cnj],
+      ])
+    }
+    case 'registrar_exito': {
+      const { input } = action
+      const percent = input.percentual
+      return rows([
+        ['Descrição', input.descricao ?? SUCCESS_FEE_FORM_DEFAULTS.description],
+        ['Percentual', percent !== undefined ? `${formatPercent(percent)} sobre ${input.base ?? '—'}` : undefined],
+        ['Valor', input.valor_fixo !== undefined ? formatCurrency(input.valor_fixo) : 'a apurar, em R$ 0'],
+        [
+          'Estimativa',
+          percent !== undefined && input.estimativa_base !== undefined
+            ? `base de ${formatCurrency(input.estimativa_base)}, honorário de ${formatCurrency(feeFromBase(input.estimativa_base, percent))}; fora do A receber`
+            : undefined,
+        ],
+        ['Condição', input.condicao],
+        ['Previsão', input.previsao ? formatValue('data', input.previsao) : undefined],
+        ['Cliente', input.cliente_nome],
+        ['Processo', input.processo_cnj],
+      ])
+    }
+    case 'apurar_exito': {
+      const { input } = action
+      const computed = feeFromBase(input.valor_da_base, input.percentual)
+      return rows([
+        ['Êxito', input.lancamento_descricao],
+        ['Valor da base', formatCurrency(input.valor_da_base)],
+        [
+          'Honorário',
+          input.honorario !== undefined
+            ? `${formatCurrency(input.honorario)} (a conta daria ${formatCurrency(computed)})`
+            : `${formatPercent(input.percentual)} = ${formatCurrency(computed)}`,
+        ],
+        ['Como fica', ASSESSMENT_MODE_LABELS[input.forma]],
+        ['Data', input.data ? formatValue('data', input.data) : undefined],
+        ['Parcelas', input.parcelas !== undefined ? String(input.parcelas) : undefined],
+        ['O que falta', input.forma === 'aguardando' ? input.condicao : undefined],
+        ['Parte', input.parte ? `${input.parte_nome ?? 'sim'}; o êxito segue a apurar` : undefined],
       ])
     }
     case 'vincular_publicacao': {

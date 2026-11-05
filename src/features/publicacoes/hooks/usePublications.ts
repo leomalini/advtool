@@ -6,6 +6,7 @@ import {
   getPublications,
   getPublicationById,
   getPublicationQueue,
+  getTriageStatedAmount,
   countUnreadPublications,
   markPublicationRead,
   markPublicationUnread,
@@ -26,6 +27,15 @@ export function usePublications(filters: PublicationFilters = {}) {
   return useQuery({
     queryKey: publicationKeys.list(filters),
     queryFn: () => getPublications(filters),
+  })
+}
+
+/** The value a publication fixes, for the "Apurar" the bell opens. */
+export function useTriageStatedAmount(publicationId: string | null) {
+  return useQuery({
+    queryKey: ['publications', 'stated-amount', publicationId ?? '-'] as const,
+    queryFn: () => getTriageStatedAmount(publicationId as string),
+    enabled: !!publicationId,
   })
 }
 

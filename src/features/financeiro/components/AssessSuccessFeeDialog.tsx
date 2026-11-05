@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -54,8 +55,17 @@ interface AssessSuccessFeeDialogProps {
   entry: FinancialEntryWithRelations | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** A base read elsewhere — the value a publication fixed (phase 3). */
-  suggestedBase?: number | null
+  /** A base read elsewhere — the value a publication fixed. It only fills the
+   * field: whoever assesses reads the text and confirms. */
+  suggestion?: AssessmentSuggestion | null
+}
+
+export interface AssessmentSuggestion {
+  amount: number
+  /** Where it came from: "Condenação na publicação #115". */
+  source: string
+  /** Opens the text it came from. */
+  href: string
 }
 
 /**
@@ -69,19 +79,20 @@ export function AssessSuccessFeeDialog({
   entry,
   open,
   onOpenChange,
-  suggestedBase = null,
+  suggestion = null,
 }: AssessSuccessFeeDialogProps) {
   const assess = useAssessSuccessFee()
 
   return (
     <Dialog open={open} onOpenChange={(value) => !assess.isPending && onOpenChange(value)}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[540px]">
-        {/* Mounted on each opening: the plan starts from the entry as it is. */}
+        {/* Mounted on each opening: the plan starts from the entry as it is.
+            The suggestion in the key: it can arrive after the dialog opens. */}
         {open && entry && (
           <AssessForm
-            key={entry.id}
+            key={`${entry.id}:${suggestion?.amount ?? ''}`}
             entry={entry}
-            suggestedBase={suggestedBase}
+            suggestion={suggestion}
             isLoading={assess.isPending}
             onCancel={() => onOpenChange(false)}
             onConfirm={(rows, keepOpen) =>
@@ -99,19 +110,19 @@ export function AssessSuccessFeeDialog({
 
 function AssessForm({
   entry,
-  suggestedBase,
+  suggestion,
   isLoading,
   onCancel,
   onConfirm,
 }: {
   entry: FinancialEntryWithRelations
-  suggestedBase: number | null
+  suggestion: AssessmentSuggestion | null
   isLoading: boolean
   onCancel: () => void
   onConfirm: (rows: AssessmentRow[], keepOpen: boolean) => void
 }) {
   const [plan, setPlan] = useState<AssessmentPlan>(() => ({
-    baseAmount: suggestedBase ?? undefined,
+    baseAmount: suggestion?.amount,
     feeOverride: undefined,
     mode: 'recebido',
     date: todayISO(),
@@ -142,6 +153,16 @@ function AssessForm({
       </DialogHeader>
 
       <div className="space-y-4">
+        {suggestion && (
+          <p className="rounded-md border border-info/30 bg-info/5 px-3 py-2 text-xs text-info">
+            A base veio de: {suggestion.source}, lida pela IA.{' '}
+            <Link href={suggestion.href} target="_blank" className="font-medium underline">
+              Confira o texto
+            </Link>{' '}
+            antes de apurar.
+          </p>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label>Valor da base *</Label>

@@ -7,7 +7,9 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { calculatePrazo } from '@/lib/prazos'
 import { cn } from '@/lib/utils'
 import { officeToday } from '@/features/ia/tools/shared'
+import { formatCurrency } from '@/types/financialEntry.types'
 import {
+  STATED_AMOUNT_KIND_LABELS,
   TRIAGE_URGENCY_LABELS,
   type PublicationWithRelations,
   type TriageUrgency,
@@ -54,6 +56,7 @@ export function PublicationTriageCard({ publicacao }: { publicacao: PublicationW
       : null
   const open = triage.suggestion_status === 'open'
   const probable = !publicacao.legal_process_id ? triage.probable_process : null
+  const statedAmount = triage.stated_amount ?? null
 
   return (
     <div className="space-y-3 rounded-lg border bg-muted/30 p-4 text-sm">
@@ -82,6 +85,14 @@ export function PublicationTriageCard({ publicacao }: { publicacao: PublicationW
           <span className="font-semibold text-foreground">{formatDay(deadline.end)}</span>
           {deadline.expired ? ' (já venceu)' : ''}. Calculado pelo motor de prazos; feriados locais
           não entram.
+        </p>
+      )}
+
+      {statedAmount !== null && (
+        <p className="text-xs text-muted-foreground">
+          Valor no texto: {STATED_AMOUNT_KIND_LABELS[triage.stated_amount_kind ?? 'outro']} de{' '}
+          <span className="font-semibold text-foreground">{formatCurrency(statedAmount)}</span>.
+          Lido pela IA: confira antes de usar.
         </p>
       )}
 
