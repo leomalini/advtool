@@ -73,19 +73,35 @@ function entryHref(entryId: string | null | undefined): string {
 
 // ── Mês corrente ─────────────────────────────────────────────────────────────
 
+/** Each number of the month opens the Financeiro on the rows it adds up
+ * (docs/financeiro.md → Dashboard). `periodo=mes` is explicit: a link with a
+ * `situacao` and no period opens on every date. */
+const MONTH_LINKS = {
+  received: '/financeiro?periodo=mes&tipo=receita&situacao=pago',
+  expenses: '/financeiro?periodo=mes&tipo=despesa',
+  net: '/financeiro?periodo=mes',
+} as const
+
+/** The link covers the whole stat (`::after`); hover and focus show on it. */
+const STAT =
+  'relative -mx-2 min-w-0 rounded-lg px-2 py-1 transition-colors hover:bg-muted/50 ' +
+  'has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-ring'
+
 function Stat({
   label,
   value,
   tone,
   note,
+  href,
 }: {
   label: string
   value: string
   tone?: 'success' | 'danger'
   note?: string | null
+  href: string
 }) {
   return (
-    <div className="min-w-0">
+    <div className={STAT}>
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd
         className={cn(
@@ -94,7 +110,13 @@ function Stat({
           tone === 'danger' && 'text-destructive'
         )}
       >
-        {value}
+        <Link
+          href={href}
+          aria-label={`${label}: ${value}. Abrir no Financeiro`}
+          className="after:absolute after:inset-0 focus-visible:outline-none"
+        >
+          {value}
+        </Link>
       </dd>
       {note && <dd className="truncate text-xs text-muted-foreground">{note}</dd>}
     </div>
@@ -104,7 +126,7 @@ function Stat({
 /** The month in three numbers. What is still to be received lives in the
  * "A receber" indicator, with its parts — not repeated here. */
 function MonthBlock({ summary }: { summary: FinancialSummary }) {
-  const result = summary.receivedThisMonth - summary.expensesThisMonth
+  const net = summary.receivedThisMonth - summary.expensesThisMonth
 
   return (
     <section className="px-4 pb-4">
@@ -118,12 +140,18 @@ function MonthBlock({ summary }: { summary: FinancialSummary }) {
               ? `${formatWholeBRL(summary.receivedViaInfinitePay)} pela InfinitePay`
               : null
           }
+          href={MONTH_LINKS.received}
         />
-        <Stat label="Despesas" value={formatWholeBRL(summary.expensesThisMonth)} />
         <Stat
-          label="Resultado"
-          value={formatWholeBRL(result)}
-          tone={result < 0 ? 'danger' : undefined}
+          label="Despesas"
+          value={formatWholeBRL(summary.expensesThisMonth)}
+          href={MONTH_LINKS.expenses}
+        />
+        <Stat
+          label="Líquido"
+          value={formatWholeBRL(net)}
+          tone={net < 0 ? 'danger' : undefined}
+          href={MONTH_LINKS.net}
         />
       </dl>
     </section>
