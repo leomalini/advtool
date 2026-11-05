@@ -5,8 +5,8 @@
 > branch `feat/financeiro-periodos`, sem migration. **Fase 2** (êxitos e
 > percentuais) na branch `feat/financeiro-exitos`, empilhada na 1, com a
 > migration 89 aplicada no remoto em 2026-11-04. **Fase 3** (Assistente) na
-> branch `feat/ia-exitos`, empilhada na 2, com a migration 90 ainda **não**
-> aplicada: ela vai antes do deploy. Ver "Como ficou" de cada fase.
+> branch `feat/ia-exitos`, empilhada na 2, com a migration 90 aplicada no remoto
+> em 2026-11-04. Ver "Como ficou" de cada fase.
 
 Pedido, em seis itens:
 
@@ -437,8 +437,9 @@ aplicada no remoto em 2026-11-04 (`db push`).
 
 ## Como ficou a fase 3
 
-Branch `feat/ia-exitos`, empilhada na fase 2 (`748e278`). **A migration 90 vai
-antes do deploy:** sem as colunas, a triagem em lote falha ao gravar.
+Branch `feat/ia-exitos`, empilhada na fase 2 (`748e278`). Migration 90 aplicada no
+remoto em 2026-11-04 (`db push`). Ela tinha de ir antes do deploy: sem as colunas,
+a triagem em lote falha ao gravar.
 
 ### No chat
 
@@ -495,5 +496,10 @@ antes do deploy:** sem as colunas, a triagem em lote falha ao gravar.
   em cada forma, o valor no cartão da triagem e o Apurar aberto pelo aviso, com
   80.000,00 na base, 24.000,00 de honorário e o link para a publicação.
 - **Revisão automática** (`/auto-review`): as correções estão no texto acima.
+- **Remoto, só lendo (2026-11-04):** a 90 consta nos dois lados; `stated_amount`
+  em `numeric(14,2)` e `stated_amount_kind` em `text`, as duas aceitando nulo; os
+  dois CHECKs como na migration. Dados: as 48 triagens seguem, nenhuma com valor;
+  nenhum aviso `exito_apuravel`; nenhum lançamento de êxito ainda, então o aviso
+  só pode sair depois que houver um êxito a apurar.
 - **Não conferido:** a página do processo com login; um chat de verdade propondo
-  as ações; a triagem com a IA real e uma sentença com valor; o `db push` da 90.
+  as ações; a triagem com a IA real e uma sentença com valor.
