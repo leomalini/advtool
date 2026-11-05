@@ -105,11 +105,11 @@ export function isCurrentPeriod(
  * The previous (-1) or next (+1) period. A shortcut steps to the one before
  * its first day or after its last — which turns the 1st–15th into the 16th–end
  * and back. Dates picked by hand step their own length. `null` when there is
- * nowhere to go: every date, or an open end.
+ * nowhere to go: every date, an open end, or dates typed the wrong way round.
  */
 export function shiftPeriod(range: PeriodRange, direction: 1 | -1): ClosedPeriod | null {
   const { from, to } = range
-  if (!from || !to) return null
+  if (!from || !to || from > to) return null
 
   const start = parseISO(from)
   const end = parseISO(to)

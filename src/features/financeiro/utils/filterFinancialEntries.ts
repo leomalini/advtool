@@ -164,6 +164,7 @@ export function filterFinancialEntries(
       const haystack = [
         e.description,
         e.condition_description,
+        e.base_description,
         e.client ? getClientDisplayName(e.client as Parameters<typeof getClientDisplayName>[0]) : null,
         e.legal_process?.cnj_number,
       ]

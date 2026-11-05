@@ -4,15 +4,19 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Check, Plus, Scale, Trash2, Undo2 } from 'lucide-react'
+import { Check, Percent, Plus, Scale, Trash2, Undo2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import {
+  ASSESS_BEFORE_PAYMENT_REASON,
   FINANCIAL_CATEGORY_LABELS,
   describeEntryDeletion,
+  describePercentageNote,
+  estimatedFee,
   formatCurrency,
   getFinancialSituation,
+  isToAssess,
   needsAmountBeforePayment,
   ZERO_AMOUNT_PAYMENT_REASON,
   type FinancialEntryWithRelations,
@@ -30,6 +34,8 @@ import {
 } from '../hooks/useFinancialEntryMutations'
 import { FinancialEntryForm, type FinancialEntrySubmitOptions } from './FinancialEntryForm'
 import { FinancialEntryDetailModal } from './FinancialEntryDetailModal'
+import { AssessSuccessFeeDialog } from './AssessSuccessFeeDialog'
+import { SUCCESS_FEE_FORM_DEFAULTS } from '../utils/successFees'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { AttachmentCountBadge } from './AttachmentCountBadge'
 import { PaymentLinkBadge } from './PaymentLinkBadge'
@@ -91,15 +97,25 @@ export function FinancialEntriesTab({
   const updateEntry = useUpdateFinancialEntry()
   const deleteEntry = useDeleteFinancialEntry()
 
+  // "exito": the same form, opened on a success fee to assess (migration 89).
+  // Apart from `createOpen`: the title must not change during the closing fade.
+  const [createKind, setCreateKind] = useState<'lancamento' | 'exito'>('lancamento')
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FinancialEntryWithRelations | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [assessingId, setAssessingId] = useState<string | null>(null)
   const { can } = usePermissions()
   const { data: officeSettings } = useOfficeSettings()
   const offerPaymentLink = !!officeSettings?.infinitepay_handle && can('financeiro', 'create')
 
   // Lê da lista viva para o detalhe não congelar após uma edição.
   const selected = selectedId ? (entries.find((e) => e.id === selectedId) ?? null) : null
+  const assessing = assessingId ? (entries.find((e) => e.id === assessingId) ?? null) : null
+
+  function openCreate(kind: 'lancamento' | 'exito') {
+    setCreateKind(kind)
+    setCreateOpen(true)
+  }
 
   async function handleCreate(
     data: FinancialEntryInput,
@@ -154,6 +170,9 @@ export function FinancialEntriesTab({
   const condicionais = receitas.filter(
     (e) => getFinancialSituation(e) === 'condicao_especial'
   )
+  // R$ 0 until assessed: counted apart, with what their estimates would yield.
+  const aApurar = receitas.filter(isToAssess)
+  const aApurarEstimate = aApurar.reduce((s, e) => s + (estimatedFee(e) ?? 0), 0)
   const totalDespesas = sum(despesas)
 
   return (
@@ -168,14 +187,24 @@ export function FinancialEntriesTab({
           )}
         </div>
         <Can resource="financeiro" action="create">
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Novo lançamento
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openCreate('exito')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted/40"
+            >
+              <Percent className="w-3.5 h-3.5" />
+              Registrar êxito
+            </button>
+            <button
+              type="button"
+              onClick={() => openCreate('lancamento')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Novo lançamento
+            </button>
+          </div>
         </Can>
       </div>
 
@@ -203,6 +232,12 @@ export function FinancialEntriesTab({
                   {formatCurrency(sum(condicionais))} em condição especial
                 </p>
               )}
+              {aApurar.length > 0 && (
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  + {aApurar.length} êxito{aApurar.length === 1 ? '' : 's'} a apurar
+                  {aApurarEstimate > 0 && ` (est. ${formatCurrency(aApurarEstimate)})`}
+                </p>
+              )}
             </div>
             <div className="rounded-xl border border-border p-3">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Despesas</p>
@@ -218,6 +253,8 @@ export function FinancialEntriesTab({
               const isPaid = entry.status === 'pago'
               const situation = getFinancialSituation(entry)
               const overdue = situation === 'vencido'
+              const toAssess = isToAssess(entry)
+              const percentageNote = describePercentageNote(entry)
               // O que o banco recusaria (migration 67) vira aviso no clique.
               const charges = summarizePaymentCharges(entry.payment_charges)
               const toggleBlockedBy = isPaid
@@ -264,28 +301,45 @@ export function FinancialEntriesTab({
                         {describeWhen(entry)}
                       </span>
                     </div>
+                    {percentageNote && (
+                      <p className="mt-0.5 text-[11px] text-info/80">{percentageNote}</p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <p
-                      className={cn(
-                        'text-sm font-semibold tabular-nums',
-                        isReceita ? 'text-success' : 'text-destructive'
-                      )}
-                    >
-                      {isReceita ? '+' : '−'}
-                      {formatCurrency(Number(entry.amount))}
-                    </p>
+                    {toAssess ? (
+                      <p className="text-sm text-muted-foreground">a apurar</p>
+                    ) : (
+                      <p
+                        className={cn(
+                          'text-sm font-semibold tabular-nums',
+                          isReceita ? 'text-success' : 'text-destructive'
+                        )}
+                      >
+                        {isReceita ? '+' : '−'}
+                        {formatCurrency(Number(entry.amount))}
+                      </p>
+                    )}
 
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         type="button"
                         title={
-                          toggleBlockedBy ?? (isPaid ? 'Marcar como pendente' : 'Marcar como pago')
+                          toAssess
+                            ? 'Apurar'
+                            : (toggleBlockedBy ??
+                              (isPaid ? 'Marcar como pendente' : 'Marcar como pago'))
                         }
-                        aria-disabled={toggleBlockedBy !== null}
+                        aria-disabled={!toAssess && toggleBlockedBy !== null}
                         onClick={(e) => {
                           e.stopPropagation() // não abre o detalhe
+                          // A success fee to assess has no payment yet: the
+                          // gesture opens "Apurar" (migration 89).
+                          if (toAssess) {
+                            if (can('financeiro', 'update')) setAssessingId(entry.id)
+                            else toast.info(ASSESS_BEFORE_PAYMENT_REASON)
+                            return
+                          }
                           if (toggleBlockedBy) {
                             toast.info(toggleBlockedBy)
                             return
@@ -300,7 +354,13 @@ export function FinancialEntriesTab({
                           'transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed'
                         )}
                       >
-                        {isPaid ? <Undo2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                        {toAssess ? (
+                          <Percent className="w-3.5 h-3.5" />
+                        ) : isPaid ? (
+                          <Undo2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
                       </button>
                       <Can resource="financeiro" action="delete">
                         <button
@@ -337,19 +397,33 @@ export function FinancialEntriesTab({
         {/* Rola por dentro — com anexos o formulário passa da altura da tela. */}
         <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo Lançamento</DialogTitle>
+            <DialogTitle>{createKind === 'exito' ? 'Registrar êxito' : 'Novo Lançamento'}</DialogTitle>
           </DialogHeader>
           {/* hideLinks: aberto de dentro de um caso/processo/cliente, o vínculo
-              já vem travado pelas props. */}
+              já vem travado pelas props. The locked process goes along so a
+              percentage can offer its case value as the estimate. */}
           <FinancialEntryForm
+            key={createKind}
             onSubmit={handleCreate}
             isLoading={createEntry.isPending}
             hideLinks
             withAttachments
             offerPaymentLink={offerPaymentLink}
+            initialValueMode={createKind === 'exito' ? 'percentual' : undefined}
+            submitLabel={createKind === 'exito' ? 'Registrar êxito' : undefined}
+            defaultValues={{
+              ...(createKind === 'exito' && SUCCESS_FEE_FORM_DEFAULTS),
+              legal_process_id: lockedLegalProcessId ?? undefined,
+            }}
           />
         </DialogContent>
       </Dialog>
+
+      <AssessSuccessFeeDialog
+        entry={assessing}
+        open={!!assessing}
+        onOpenChange={(open) => !open && setAssessingId(null)}
+      />
 
       <FinancialEntryDetailModal
         entry={selected}

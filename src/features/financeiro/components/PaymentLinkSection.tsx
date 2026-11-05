@@ -78,7 +78,10 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
   // Despesa não se cobra; receita paga à mão, sem link nenhum, não tem o que
   // mostrar aqui. O resumo embutido na lista responde sem esperar a consulta.
   const hasCharges = (entry.payment_charges?.length ?? 0) > 0
-  if (entry.type !== 'receita' || (!isPending && !hasCharges)) return null
+  // Nor does one with no amount — a success fee to assess: without this the
+  // section would flash its loading state for nothing.
+  const chargeable = isPending && Number(entry.amount) > 0
+  if (entry.type !== 'receita' || (!chargeable && !hasCharges)) return null
 
   const live = charges.find((charge) => LIVE_CHARGE_STATUSES.includes(charge.status)) ?? null
   const withPayments = charges.filter((charge) => charge.transactions.length > 0)
@@ -89,7 +92,7 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
   const handle = settings?.infinitepay_handle ?? null
   // Oferecer o link (ou dizer que falta configurar a conta) só faz sentido para
   // quem pode gerar. Sem isso e sem cobrança nenhuma, a seção nem aparece.
-  const offersIssue = !live && isPending && can('financeiro', 'create')
+  const offersIssue = !live && chargeable && can('financeiro', 'create')
   if (!isLoading && !live && withPayments.length === 0 && history.length === 0 && !offersIssue) {
     return null
   }

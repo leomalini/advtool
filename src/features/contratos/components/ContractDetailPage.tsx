@@ -22,11 +22,10 @@ import { getClientDisplayName } from '@/types/cliente.types'
 import {
   CONTRACT_KIND_LABELS,
   CONTRACT_STATUS_LABELS,
-  formatPercent,
   getContractNoticeDate,
   type ContractWithRelations,
 } from '@/types/contract.types'
-import { formatCurrency } from '@/types/financialEntry.types'
+import { formatCurrency, formatPercent } from '@/types/financialEntry.types'
 import { formatDate, formatDateTime } from '@/utils/date'
 import { getDisplayName } from '@/utils/profile'
 import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'

@@ -2,8 +2,10 @@
 
 > **Status:** plano aprovado em 2026-10-30 (as quatro decisões com o usuário e
 > as "Decididas no plano", sem veto). **Fase 1** (períodos e dashboard) na
-> branch `feat/financeiro-periodos`, sem migration; ver "Como ficou a fase 1".
-> Fases 2 e 3 por fazer.
+> branch `feat/financeiro-periodos`, sem migration. **Fase 2** (êxitos e
+> percentuais) na branch `feat/financeiro-exitos`, empilhada na 1, com a
+> migration 89 aplicada no remoto em 2026-11-04. Ver "Como ficou" de cada fase.
+> Fase 3 por fazer.
 
 Pedido, em seis itens:
 
@@ -326,3 +328,108 @@ Branch `feat/financeiro-periodos`, a partir de `release/financeiro` (criada da
 - **Não conferido:** a tela real com login e dados do remoto. A página
   temporária renderiza só no navegador, então o caminho com renderização no
   servidor (o `useMounted`) não passou pelo navegador.
+
+## Como ficou a fase 2
+
+Branch `feat/financeiro-exitos`, empilhada na fase 1 (`e7d9c45`). Migration 89
+aplicada no remoto em 2026-11-04 (`db push`).
+
+### Banco — migration 89
+
+- `category` ganha `exito`. O nome do CHECK (`financial_entries_category_check`)
+  foi conferido no catálogo do remoto antes de trocá-lo.
+- Colunas `percent` (`numeric(5,2)`, de 0 a 100), `base_description`,
+  `base_amount` e `estimated_base_amount` (`numeric(14,2)`).
+- Três CHECKs: percentual sempre com a base descrita; base, estimativa e
+  descrição só com percentual; a apurar só em R$ 0, pendente e em condição
+  especial.
+- Backfill dos êxitos que a prévia do contrato lançou (descrição "… — êxito"):
+  viram categoria Êxito, e os que seguem a apurar ganham o % do contrato e a
+  base "o proveito econômico".
+- `assess_success_fee(p_entry_id, p_rows, p_keep_open)`, `security invoker`:
+  o êxito recebe o valor e as parcelas nascem na mesma transação; com
+  `p_keep_open`, só a parte nasce e o êxito segue a apurar. PT409 quando o
+  lançamento já não está a apurar. `execute` para `authenticated`.
+
+### Tela
+
+- **Formulário:** "Valor: Fixo | Percentual". O percentual pede o %, "sobre"
+  e o valor da base. Sem o valor da base, o lançamento fica a apurar — R$ 0,
+  com a situação e o "Com vencimento" travados —, com estimativa opcional e o
+  atalho "Estimar pelo valor da causa". Com o valor, o honorário sai da conta
+  e continua editável.
+- **Apurar** (no detalhe, na aba do processo, na tabela e na aba Êxitos; o
+  clique de baixa de um êxito a apurar abre o Apurar): valor da base (ou a
+  estimativa), honorário editável, "Já recebido", "Com vencimento",
+  "Parcelado", "Valor definido, ainda aguardando", "Foi só uma parte" e a
+  prévia do que vai ser gravado. Grava num passo só, pela função.
+- **Aba Êxitos** (`?aba=exitos`): cards A apurar (com a estimativa e quantos
+  estão sem), Aguardando, A receber (com o vencido) e Recebido, clicáveis;
+  filtros de cliente, processo e busca; a lista vem por situação, a apurar
+  primeiro; "Registrar êxito".
+- **Aba Financeiro do processo** (e do cliente, do caso e do contrato):
+  "Registrar êxito", a linha do percentual, "a apurar" no lugar de R$ 0 e
+  "+ N êxitos a apurar (est. …)" no resumo.
+- **Lançamentos:** "a apurar · est." na coluna Valor, a linha do percentual,
+  e o card Condição especial diz quantos estão a apurar. A busca também acha a
+  base ("venda do imóvel").
+- **Detalhe:** "A apurar" e a estimativa no topo, a linha Percentual e o botão
+  Apurar. Lançamento sem valor não oferece mais link de pagamento (a tela
+  oferecia e a rota recusava).
+- **Contrato:** a prévia lança o êxito na categoria Êxito, a apurar, com o %
+  do contrato e a base editável; a divergência ignora êxito.
+
+### Decidido na implementação
+
+| Tema | Escolha |
+|---|---|
+| Como se lê | "30% sobre o proveito econômico": a base é escrita com o artigo e vem depois de "sobre", sem adivinhar "do" ou "da" |
+| Parcela de êxito | Guarda a base inteira e só a sua parte do valor |
+| Estimativa | Sai ao apurar (o service e a função limpam) |
+| Êxito do contrato | Condição padrão "No êxito da ação"; base "o proveito econômico" |
+| Valor fixo | Lançamento novo nem escreve as colunas do percentual; só se limpa num que tinha |
+| Permissão para apurar | `financeiro:update` (a função trava o êxito com `for update`) e `financeiro:create` para as parcelas |
+| `formatPercent` | Mudou para `financialEntry.types` (o `contract.types` já importa de lá) |
+| Fixo depois de Percentual | Trocar para Fixo limpa o % digitado; sem isso o zod seguia tratando o lançamento como a apurar e o salvar travava |
+| Percentual sem o % | O formulário pede o percentual; o zod sozinho falaria de um valor que nem está na tela |
+| Banco sem a 89 | As linhas sem as colunas novas não quebram a tela: um preview contra o banco de produção segue abrindo antes do `db push` |
+| Previsão ao apurar | "Valor definido, ainda aguardando" mantém a previsão que o êxito já tinha |
+
+### Verificação
+
+- `tsc`, lint (0 erros; os 13 avisos são de arquivos que a fase não muda — o
+  do `watch()` no formulário já existia) e build ok.
+- **Node:** 52 conferências — honorário, situação do êxito, a linha do
+  percentual, parcelas, apuração, carteira, prévia do contrato, regras do zod,
+  a aba na URL e linhas sem as colunas da 89. As 72 da fase 1 seguem passando.
+- **Navegador** (página temporária com êxitos fictícios, já apagada): aba
+  Êxitos com cards e ordem; Apurar com a estimativa em 3 parcelas — a chamada
+  capturada saiu no formato que a função lê; Apurar de dentro do detalhe com
+  "foi só uma parte" (`p_keep_open`); apurar pela edição (o update leva base,
+  valor e a estimativa limpa); "Registrar êxito" na aba do processo (o insert
+  sai a apurar, com a estimativa pelo valor da causa); de Percentual para Fixo
+  (o insert sai sem as colunas novas); Percentual sem o %; tela sem as colunas
+  da 89; detalhe; prévia do contrato; 375 px sem rolagem lateral.
+- **Revisão automática** das fases 1 e 2 (`/auto-review`): sem bloqueios; as
+  correções estão na tabela acima.
+- **Remoto, só lendo (2026-11-04):** a 89 consta nos dois lados; as quatro
+  colunas com os tipos do plano; os CHECKs novos e o de `category` com `exito`;
+  `assess_success_fee` em plpgsql, `security invoker`, com
+  `search_path=public`. `authenticated` executa, e `anon` também, pelo padrão
+  do Supabase: como a função é `security invoker` e as policies pedem
+  `public.can()`, é o mesmo caso da `retime_event_series`. Dados: os 8
+  lançamentos seguem iguais, sem percentual, e o backfill não tinha o que
+  converter.
+- **Função no remoto (2026-11-04):** `assess_success_fee` executada como admin
+  logado, com a RLS valendo, num único bloco que termina em erro de propósito,
+  desfazendo tudo; a impressão digital da tabela ficou idêntica antes e depois.
+  Certos: parcelado (o êxito vira a 1ª, nascem as outras, e a estimativa sai),
+  só uma parte (o êxito segue a apurar, com estimativa e previsão), o restante
+  já recebido (a baixa passa pelo gatilho da migration 67), valor definido
+  aguardando, e tudo ou nada (a 2ª linha inválida desfaz a 1ª). Recusados:
+  apurar de novo e valor fixo (PT409), id inexistente (P0002), sem linhas
+  (22023) e os quatro CHECKs novos. Id sem perfil e `anon` não veem nada e
+  recebem P0002, sem mudar o êxito.
+- **Não conferido:** a tela com login; o formato em que a API devolve os ids
+  (só afeta o histórico de atividades, e o service aceita as duas formas); um
+  perfil com `financeiro:update` sem `create` (não existe na matriz atual).

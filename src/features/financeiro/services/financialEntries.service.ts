@@ -19,6 +19,7 @@ import type {
   UpdateFinancialEntryInput,
 } from '@/schemas/financialEntry.schema'
 import { isWithinPeriod, presetRange } from '../utils/periods'
+import type { AssessmentRow } from '../utils/successFees'
 import {
   bucketCashFlow,
   summarizeEntries,
@@ -120,12 +121,35 @@ function reconcileSettlementFields(patch: Record<string, unknown>): void {
   if (kind === 'scheduled') patch.condition_description = null
 }
 
+/**
+ * The percentage fields go together (migration 89): no percentage, no base;
+ * a percentage with no base value is to assess, at R$ 0 (the form sets the
+ * status and the settlement itself, and the CHECK guards them). Only when the
+ * patch carries `percent` — a quick status toggle leaves them be.
+ */
+function reconcilePercentFields(patch: Record<string, unknown>): void {
+  if (!('percent' in patch)) return
+  if (patch.percent === null || patch.percent === undefined) {
+    patch.percent = null
+    patch.base_description = null
+    patch.base_amount = null
+    patch.estimated_base_amount = null
+  } else if (patch.base_amount === null || patch.base_amount === undefined) {
+    patch.base_amount = null
+    patch.amount = 0
+  } else {
+    // Assessed: the estimate no longer says anything.
+    patch.estimated_base_amount = null
+  }
+}
+
 export async function createFinancialEntry(
   input: FinancialEntryInput,
   userId: string
 ): Promise<FinancialEntry> {
   const payload = nullifyEmpty(input) as Record<string, unknown>
   reconcileSettlementFields(payload)
+  reconcilePercentFields(payload)
 
   const { data, error } = await supabase
     .from('financial_entries')
@@ -158,6 +182,7 @@ export async function createFinancialEntries(
   const rows = inputs.map((input) => {
     const payload = nullifyEmpty(input) as Record<string, unknown>
     reconcileSettlementFields(payload)
+    reconcilePercentFields(payload)
     return { ...payload, created_by: userId }
   })
 
@@ -192,6 +217,7 @@ export async function updateFinancialEntry(input: UpdateFinancialEntryInput): Pr
     patch.paid_at = null
   }
   reconcileSettlementFields(patch)
+  reconcilePercentFields(patch)
 
   const { error } = await supabase.from('financial_entries').update(patch).eq('id', id)
   if (error) throw error
@@ -234,6 +260,59 @@ export async function deleteFinancialEntry(id: string): Promise<void> {
   if (error) throw error
 
   if (data.length > 0) await removeDocumentFiles(filePaths)
+}
+
+// ── Apurar um êxito ─────────────────────────────────────────────────────────
+
+/** PostgREST hands a `setof uuid` back as plain values; an object per row is
+ * accepted too, so a change on its side does not lose the ids. */
+function idsFromRpc(data: unknown): string[] {
+  if (!Array.isArray(data)) return []
+  return data.flatMap((item: unknown) => {
+    if (typeof item === 'string') return [item]
+    if (typeof item === 'object' && item !== null) {
+      const value = (item as Record<string, unknown>).assess_success_fee
+      return typeof value === 'string' ? [value] : []
+    }
+    return []
+  })
+}
+
+/**
+ * Assesses a success fee in one transaction (`assess_success_fee`, migration
+ * 89). Without `keepOpen`, the first row becomes the success fee itself —
+ * same id, attachments and history — and the rest are new installments; with
+ * it ("foi só uma parte"), every row is new and the success fee stays to
+ * assess. Returns the ids in row order.
+ */
+export async function assessSuccessFee(
+  entryId: string,
+  rows: AssessmentRow[],
+  keepOpen: boolean,
+  userId: string
+): Promise<string[]> {
+  const { data, error } = await supabase.rpc('assess_success_fee', {
+    p_entry_id: entryId,
+    p_rows: rows,
+    p_keep_open: keepOpen,
+  })
+  if (error) throw error
+
+  const ids = idsFromRpc(data)
+  // What was born here enters the activity feed like any new entry.
+  const firstNew = keepOpen ? 0 : 1
+  await Promise.all(
+    ids.slice(firstNew).map((id, index) =>
+      recordActivity({
+        type: 'financial_entry_created',
+        entity_type: 'financial_entry',
+        entity_id: id,
+        entity_title: rows[firstNew + index]?.description ?? 'Êxito',
+        actor_id: userId,
+      })
+    )
+  )
+  return ids
 }
 
 // ── Agregados ───────────────────────────────────────────────────────────────

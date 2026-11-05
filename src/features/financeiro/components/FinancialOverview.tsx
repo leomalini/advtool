@@ -329,7 +329,11 @@ export function FinancialOverview({
                 label="Condição especial"
                 value={open.conditional}
                 sublabel={
-                  open.conditionalCount ? pluralizeEntries(open.conditionalCount) : 'Nenhum'
+                  open.conditionalCount
+                    ? open.toAssessCount
+                      ? `${pluralizeEntries(open.conditionalCount)} · ${open.toAssessCount} a apurar`
+                      : pluralizeEntries(open.conditionalCount)
+                    : 'Nenhum'
                 }
                 colorClass={open.conditional ? 'text-info' : 'text-muted-foreground'}
                 active={filters.situation === 'condicao_especial' && filters.type === side}

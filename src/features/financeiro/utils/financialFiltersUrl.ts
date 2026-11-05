@@ -29,6 +29,7 @@ import {
  *     ?semdata=1                       only date-less entries (the chart's "Sem data")
  *     ?tipo=receita&situacao=pago&cliente=<id>&processo=<id>
  *     ?id=<id>                         the entry open in the detail
+ *     ?aba=exitos                      the Êxitos tab
  *
  * With no period at all the screen opens on the current month — except a link
  * with `situacao`, written before the period existed (the Assistant's chat
@@ -82,9 +83,14 @@ function parsePeriod(params: ParamReader, today: string, hasSituation: boolean):
   return hasSituation ? ALL_DATES : presetRange('mes', today)
 }
 
+/** The screen's tabs (`?aba=exitos`). The filters belong to Lançamentos; the
+ * Êxitos tab has its own. */
+export type FinanceiroTab = 'lancamentos' | 'exitos'
+
 export interface FinancialUrlState {
   filters: FinancialFilters
   entryId: string | null
+  tab: FinanceiroTab
 }
 
 export function parseFinancialUrl(
@@ -109,17 +115,20 @@ export function parseFinancialUrl(
       undatedOnly,
     },
     entryId: parseId(params.get('id')),
+    tab: params.get('aba') === 'exitos' ? 'exitos' : 'lancamentos',
   }
 }
 
 /** The query string, without '?'. The current period of a shortcut is written
  * as the shortcut, so a saved link to "this week" keeps meaning this week. */
 export function serializeFinancialUrl(
-  { filters, entryId }: FinancialUrlState,
+  { filters, entryId, tab }: FinancialUrlState,
   today: string = todayISO()
 ): string {
   const params = new URLSearchParams()
   const period = periodOf(filters)
+
+  if (tab === 'exitos') params.set('aba', 'exitos')
 
   if (filters.undatedOnly) {
     params.set('periodo', ALL_DATES_PARAM)
