@@ -5,6 +5,10 @@
 > #27); Fase 4 (portal) implementada em 2026-10-07. Pendente: o webhook não
 > chegou no teste em produção — ver "Teste em produção".
 > **Referência:** https://www.infinitepay.io/checkout-documentacao (lida em 2026-10-06).
+> **Atenção:** a documentação mudou depois disso. Em 2026-11-05 ela já traz API Key,
+> `options` (`single_payment`, `valid_until`, `discounts`) e o objeto `webhook` com
+> eventos. O que segue descreve a API de outubro; o estado atual está em
+> `docs/cobrancas.md`, seção "A API hoje".
 
 Cobrar uma receita do Financeiro por link de pagamento da InfinitePay (Pix ou
 cartão em até 12x) e dar baixa no lançamento sozinho quando o cliente pagar.
