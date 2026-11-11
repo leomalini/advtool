@@ -74,6 +74,7 @@ import {
 } from '@/types/cliente.types'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import { formatCPF, formatCNPJ, formatPhone, formatCEP } from '@/utils/format'
+import { fetchCpfPerson } from '@/features/clientes/services/cpfLookup.service'
 import { DuplicateDocumentWarning } from './DuplicateDocumentWarning'
 
 type ClientType = 'individual' | 'company'
@@ -718,18 +719,46 @@ function PFForm({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const addressArray = useFieldArray({ control: form.control as any, name: 'addresses' })
 
+  function applySex(sex: ClientSex | null) {
+    form.setValue('sex', sex, { shouldDirty: true })
+    // A nacionalidade é o adjetivo literal da petição, então segue o sexo —
+    // enquanto o usuário não escrever outra.
+    const nationality = form.getValues('nationality')
+    if (!nationality || nationality === 'brasileiro' || nationality === 'brasileira') {
+      form.setValue(
+        'nationality',
+        sex === 'feminino' ? 'brasileira' : sex ? 'brasileiro' : '',
+        { shouldDirty: true },
+      )
+    }
+  }
+
   async function handleCpfSearch() {
     const cpf = form.getValues('cpf')?.replace(/\D/g, '') ?? ''
     if (cpf.length !== 11) {
-      toast.error('Digite um CPF válido antes de buscar.')
+      toast.error('Digite um CPF com 11 dígitos antes de buscar.')
       return
     }
     setIsFetchingCpf(true)
     try {
-      // CPF lookup requires a paid API (Serpro/Netlex).
-      // For now, only validates the format and informs the user.
-      await new Promise((r) => setTimeout(r, 400))
-      toast.info('Busca automática por CPF requer integração com Serpro ou Netlex (paga). CPF validado localmente.')
+      const result = await fetchCpfPerson(cpf)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      const { person } = result
+      // Quem clicou em "Buscar" pediu os dados oficiais: o nome é trocado
+      // mesmo se já houver um digitado, como faz a busca por CNPJ.
+      const options = { shouldDirty: true, shouldValidate: form.formState.isSubmitted }
+      form.setValue('name', person.name, options)
+      if (person.birth_date) form.setValue('birth_date', person.birth_date, options)
+      if (person.sex) applySex(person.sex)
+      toast.success('Dados preenchidos pelo CPF.', {
+        description:
+          person.credits_remaining === null
+            ? undefined
+            : `Créditos restantes na apicpf: ${person.credits_remaining}`,
+      })
     } finally {
       setIsFetchingCpf(false)
     }
@@ -809,19 +838,9 @@ function PFForm({
                 <FieldLabel>Sexo</FieldLabel>
                 <Select
                   value={toSelectValue(form.watch('sex'))}
-                  onValueChange={(v) => {
-                    const sex = fromSelectValue(v) as ClientSex | undefined
-                    form.setValue('sex', sex ?? null)
-                    // A nacionalidade é o adjetivo literal da petição, então
-                    // segue o sexo — enquanto o usuário não escrever outra.
-                    const nationality = form.getValues('nationality')
-                    if (!nationality || nationality === 'brasileiro' || nationality === 'brasileira') {
-                      form.setValue(
-                        'nationality',
-                        sex === 'feminino' ? 'brasileira' : sex ? 'brasileiro' : ''
-                      )
-                    }
-                  }}
+                  onValueChange={(v) =>
+                    applySex((fromSelectValue(v) as ClientSex | undefined) ?? null)
+                  }
                 >
                   <SelectTrigger className="w-full text-sm">
                     <span className="truncate text-sm">
