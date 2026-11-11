@@ -56,6 +56,11 @@ export interface PublicationIngestRow {
   subject?: string | null
   external_url?: string | null
   raw_data?: unknown
+  /** Só a importação em lote preenche: publicação antiga entra já lida e
+   * tratada. Vale apenas para linha NOVA — o upsert ignora as que já existem,
+   * então nunca apaga o estado que alguém deu a uma publicação. */
+  read_at?: string | null
+  handled_at?: string | null
   /** NÃO é coluna de `publications`: vai para a tabela filha depois do insert. */
   parties?: PublicationIngestParty[]
 }

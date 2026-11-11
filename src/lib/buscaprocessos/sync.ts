@@ -86,11 +86,28 @@ interface SyncInput {
   /** `true` força todos; uma lista força só os blocos citados. Cada bloco
    * forçado é uma consulta cobrada. */
   force?: boolean | readonly SyncBlock[]
+  /**
+   * Publicações de diário que as movimentações trouxerem entram já lidas e
+   * tratadas.
+   *
+   * Para a importação em lote pela OAB: ela traz o histórico inteiro de cada
+   * processo, e essas publicações não são novidade. Sem isto entrariam na
+   * caixa como não lidas, e o cron diário mandaria até 50 por dia para a
+   * triagem da IA. Só afeta linha nova (ver `PublicationIngestRow.handled_at`).
+   */
+  markPublicationsHandled?: boolean
 }
 
 export async function syncProcessoFromBp(
   supabase: SupabaseClient,
-  { legalProcessId, cnj, blocks = DEFAULT_SYNC_BLOCKS, force = false, assumeFresh = [] }: SyncInput,
+  {
+    legalProcessId,
+    cnj,
+    blocks = DEFAULT_SYNC_BLOCKS,
+    force = false,
+    assumeFresh = [],
+    markPublicationsHandled = false,
+  }: SyncInput,
 ): Promise<SyncResult> {
   const result: SyncResult = {
     synced: [],
@@ -128,7 +145,7 @@ export async function syncProcessoFromBp(
     }
 
     try {
-      await runBlock(supabase, block, legalProcessId, cnj)
+      await runBlock(supabase, block, legalProcessId, cnj, markPublicationsHandled)
       result.synced.push(block)
       result.estimatedCost += BLOCK_COST[block]
     } catch (err) {
@@ -155,9 +172,12 @@ async function runBlock(
   block: SyncBlock,
   legalProcessId: string,
   cnj: string,
+  markPublicationsHandled: boolean,
 ): Promise<void> {
   if (block === 'capa') return syncCapa(supabase, legalProcessId, cnj)
-  if (block === 'movimentacoes') return syncMovimentacoes(supabase, legalProcessId, cnj)
+  if (block === 'movimentacoes') {
+    return syncMovimentacoes(supabase, legalProcessId, cnj, markPublicationsHandled)
+  }
   if (block === 'documentos') return syncDocumentos(supabase, legalProcessId, cnj)
   return syncResumoIa(supabase, legalProcessId, cnj)
 }
@@ -226,6 +246,7 @@ async function syncMovimentacoes(
   supabase: SupabaseClient,
   legalProcessId: string,
   cnj: string,
+  markPublicationsHandled: boolean,
 ): Promise<void> {
   const { data } = await getMovimentacoesByCnj(cnj, 100)
   const movimentacoes = data.movimentacoes ?? []
@@ -266,7 +287,13 @@ async function syncMovimentacoes(
   }
 
   if (publicacoes.length > 0) {
-    await savePublicacoesFromMovimentacoes(supabase, legalProcessId, cnj, publicacoes)
+    await savePublicacoesFromMovimentacoes(
+      supabase,
+      legalProcessId,
+      cnj,
+      publicacoes,
+      markPublicationsHandled,
+    )
   }
 
   await stamp(supabase, legalProcessId, 'movimentacoes')
@@ -285,12 +312,17 @@ async function savePublicacoesFromMovimentacoes(
   legalProcessId: string,
   cnj: string,
   movimentacoes: BpMovimentacao[],
+  markHandled: boolean,
 ): Promise<void> {
   const rows = await Promise.all(
     movimentacoes.map((mov) => movimentacaoToPublicationRow(mov, { legalProcessId, cnj })),
   )
 
-  await ingestPublications(supabase, rows)
+  const handledAt = new Date().toISOString()
+  await ingestPublications(
+    supabase,
+    markHandled ? rows.map((row) => ({ ...row, read_at: handledAt, handled_at: handledAt })) : rows,
+  )
 }
 
 // ── Documentos públicos ───────────────────────────────────────────────────────

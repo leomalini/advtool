@@ -40,6 +40,9 @@ export interface OfficeLawyer {
   name: string | null
   /** 'OAB/ES 9591', para o aviso e a observação do cadastro. */
   label: string
+  /** Perfil desativado continua identificando a parte, mas não é advogado em
+   * atuação — a importação pela OAB só consulta os ativos. */
+  isActive: boolean
 }
 
 /** Chave de `oabKey` → advogado. */
@@ -80,6 +83,10 @@ export interface OfficeClientsOptions {
   cnj?: string | null
   /** Já carregadas por quem chama, para não reler os perfis. */
   officeOabs?: OfficeOabs
+  /** Aviso do sino para cada cadastro novo ou convertido. Ausente = avisa,
+   * como sempre foi. A importação em lote desliga: dezenas de avisos de uma
+   * vez viram ruído, e o relatório do script já lista quem entrou. */
+  notify?: boolean
 }
 
 /** Parte da publicação, na forma de `PublicationIngestParty`. */
@@ -133,6 +140,7 @@ export async function loadOfficeOabs(supabase: SupabaseClient): Promise<OfficeOa
       profileId: row.id as string,
       name: (row.full_name as string | null) ?? null,
       label: `OAB/${state} ${number}`,
+      isActive: row.is_active === true,
     })
   }
   return oabs
@@ -312,7 +320,7 @@ async function registerCandidates(
     result.reason = `Sem CPF/CNPJ na capa do processo: ${withoutDocument.join(', ')}.`
   }
 
-  if (!dryRun) await notify(supabase, result.clients, options)
+  if (!dryRun && options.notify !== false) await notify(supabase, result.clients, options)
 
   return result
 }

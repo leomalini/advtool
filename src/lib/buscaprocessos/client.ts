@@ -8,6 +8,7 @@ import type {
   BpResumoIaData,
   BpDocumentSearchData,
   BpOabSearchData,
+  BpOabListingStatus,
   BpRequestId,
   BpMonitoramento,
   BpMonitoramentosListData,
@@ -270,7 +271,11 @@ export interface OabSearchInput {
   oab_estado: string;
   oab_numero: string;
   oab_tipo?: string;
+  /** Recorte da consulta por OAB. A API avisa que não é o mesmo que processo
+   * ativo/arquivado confirmado pelo tribunal. */
+  status?: BpOabListingStatus;
   page?: number;
+  /** A documentação aceita 50 ou 100; padrão 50. */
   limit?: number;
 }
 
@@ -278,13 +283,18 @@ export interface OabSearchInput {
  *
  * O caminho anterior (`/v1/processos/oab/{oab}`) não existe na API e sempre
  * respondia 404. O endpoint real é `/v1/advogados/processos`, e a inscrição
- * vai partida em UF + número, não como string única. */
+ * vai partida em UF + número, não como string única.
+ *
+ * Cobrança: cada chamada com `page=1` é uma consulta nova e pode cobrar; as
+ * páginas seguintes saem sem custo adicional. O valor não é publicado — vem em
+ * `meta.creditsCharged`. Não repita a página 1 em intervalo curto. */
 export function searchProcessosByOab(input: OabSearchInput) {
   const params = new URLSearchParams({
     oab_estado: input.oab_estado,
     oab_numero: input.oab_numero,
   });
   if (input.oab_tipo) params.set("oab_tipo", input.oab_tipo);
+  if (input.status) params.set("status", input.status);
   if (input.page) params.set("page", String(input.page));
   if (input.limit) params.set("limit", String(input.limit));
   return request<BpOabSearchData>(`/v1/advogados/processos?${params}`);

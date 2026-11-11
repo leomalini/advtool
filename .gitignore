@@ -38,6 +38,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# listagens e relatórios de `pnpm import:oab` — têm nomes de partes
+/.import-oab/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

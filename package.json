@@ -16,6 +16,7 @@
     "db:status": "supabase migration list",
     "db:verify": "supabase migration list --linked",
     "verify:fingerprint": "node scripts/verify-fingerprint.mjs",
+    "import:oab": "tsx --env-file=.env scripts/import-oab-processes.ts",
     "webhook:send": "node scripts/send-webhook.mjs",
     "webhook:replay": "node scripts/replay-webhooks.mjs"
   },
@@ -74,6 +75,7 @@
     "eslint-config-next": "16.2.7",
     "supabase": "^2.117.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

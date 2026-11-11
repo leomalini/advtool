@@ -80,6 +80,9 @@ export async function enqueueUntriagedPublications(options: {
     .from('publications')
     .select('id, triage:publication_triage(publication_id)')
     .is('duplicate_of_id', null)
+    // Já tratada não pede triagem: alguém já decidiu o que fazer com ela, e a
+    // importação pela OAB grava o histórico antigo assim (docs/importacao-oab.md).
+    .is('handled_at', null)
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(options.limit)

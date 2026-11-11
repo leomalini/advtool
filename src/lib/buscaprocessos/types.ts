@@ -365,8 +365,18 @@ export interface BpDocumentSearchData {
 // ── GET /v1/advogados/processos?oab_estado=…&oab_numero=… ─────────────────────
 // (não existe `/v1/processos/oab/{oab}`: a inscrição vai partida em UF + número)
 
+// ⚠️ Os campos opcionais abaixo vieram da DOCUMENTAÇÃO (openapi.json e exemplos,
+// lidos em 2026-11-10), não de uma resposta real — e o schema de resposta da
+// operação nem chegou a ser lido por inteiro. Conferir contra o primeiro
+// payload real (docs/importacao-oab.md, fase 2) antes de confiar neles.
+
+/** Filtro `status` da consulta por OAB. Não equivale a ativo/arquivado
+ * confirmado pelo tribunal — é a classificação da própria BuscaProcessos. */
+export type BpOabListingStatus = 'RECENTE' | 'HISTORICO'
+
 /** O resumo por OAB tem forma própria (camelCase, sem `fontes[].capa`) — não
- * reaproveite `BpProcessoCapa` aqui. */
+ * reaproveite `BpProcessoCapa` aqui. Não traz CPF/CNPJ das partes: para
+ * cadastrar, cada processo ainda precisa da capa. */
 export interface BpOabProcessoResumo {
   numeroCnj: string
   poloAtivo: string | null
@@ -376,11 +386,53 @@ export interface BpOabProcessoResumo {
   orgaoJulgador: string | null
   classificacao: string | null
   statusProcessual: string | null
+  ativo?: boolean | null
+  dataUltimaPublicacao?: string | null
+  quantidadePublicacoes?: number | null
+  fontes?: unknown[]
+  evidencia?: unknown
+  /** Cópia do item na origem — descartada antes de gravar a listagem. */
+  raw?: unknown
+}
+
+export interface BpOabAdvogado {
+  nome?: string | null
+  tipo?: string | null
+  quantidadeProcessos?: number | null
+  quantidadeRecentes?: number | null
+  quantidadeHistoricos?: number | null
+  quantidadeAtivosConfirmados?: number | null
+}
+
+/** Quanto do acervo da OAB a consulta já cobriu. A documentação pede para só
+ * tratar a importação como definitiva com `completa: true`. */
+export interface BpOabCobertura {
+  completa?: boolean | null
+  parcial?: boolean | null
+  motivoParcial?: string | null
+  paginasConsultadas?: number | null
+  totalPaginasFonte?: number | null
+  atualizadoEm?: string | null
+  servidoDoCache?: boolean | null
 }
 
 export interface BpOabSearchData {
-  advogado?: Record<string, unknown>
+  advogado?: BpOabAdvogado
   processos: BpOabProcessoResumo[]
+  /** A documentação diz que a mesma coleção vem também aqui. */
+  items?: BpOabProcessoResumo[]
+  total?: number | null
+  totalDisponivel?: number | null
+  totalPortfolio?: number | null
+  pagination?: {
+    currentPage?: number | null
+    perPage?: number | null
+    totalPages?: number | null
+    total?: number | null
+  }
+  /** Paginação por página: segue `next` até vir nulo. */
+  links?: { next?: { href?: string | null; page?: number | null } | null }
+  cobertura?: BpOabCobertura
 }
 
 // ── GET /v1/intimacoes?oabs=UF:NÚMERO,… ───────────────────────────────────────
