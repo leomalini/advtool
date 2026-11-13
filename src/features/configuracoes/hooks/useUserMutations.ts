@@ -38,6 +38,7 @@ export function useUpdateUser() {
 
       if (variables.is_active === false) toast.success('Acesso desativado.')
       else if (variables.is_active === true) toast.success('Acesso reativado.')
+      else if (variables.full_name !== undefined) toast.success('Nome atualizado.')
       else toast.success('Perfil atualizado.')
     },
     onError: (err: Error) => toast.error(err.message),

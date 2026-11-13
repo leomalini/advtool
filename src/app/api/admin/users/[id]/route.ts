@@ -5,7 +5,8 @@ import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { updateUserSchema } from '@/schemas/user.schema'
 
 /**
- * PATCH /api/admin/users/[id] — troca o perfil e/ou ativa/desativa a conta.
+ * PATCH /api/admin/users/[id] — troca nome, perfil e OAB, e ativa/desativa a
+ * conta.
  *
  * Não existe DELETE, e não é omissão: `created_by`, `author_id`, `actor_id` e
  * `uploaded_by` referenciam `profiles` em quase todas as tabelas. Apagar um
