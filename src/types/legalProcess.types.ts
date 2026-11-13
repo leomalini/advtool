@@ -221,6 +221,40 @@ export interface LegalProcessPublicDocument {
   created_at: string
 }
 
+/**
+ * Uma linha da lista de Processos: a view `legal_process_list` (migration 92),
+ * com o card mestre achatado. Os campos `crm_item_id` em diante são nulos
+ * quando o processo não tem card nenhum — a anomalia que a tabela sinaliza
+ * com "Sem caso vinculado".
+ */
+export interface LegalProcessListRow {
+  id: string
+  cnj_number: string | null
+  court: string | null
+  court_division: string | null
+  plaintiff: string | null
+  defendant: string | null
+  opposing_counsel: string | null
+  monitoring_frequency: string | null
+  created_at: string
+  updated_at: string
+  crm_item_id: string | null
+  title: string | null
+  legal_area: string | null
+  column_id: string | null
+  assigned_to: string | null
+  /** `date` no banco: 'yyyy-MM-dd'. */
+  next_deadline: string | null
+  next_task_summary: string | null
+  crm_updated_at: string | null
+  client_id: string | null
+  client_type: 'individual' | 'company' | null
+  client_name: string | null
+  client_company_name: string | null
+  client_trade_name: string | null
+  assigned_name: string | null
+}
+
 export interface LegalProcessWithRelations extends LegalProcess {
   /** The master crm_item (wf-processos), or null when the processo has no
    * linked item left — an integrity anomaly the delete guard in

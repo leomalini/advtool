@@ -1,11 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflow } from '@/features/crm/hooks/useWorkflows'
-import { useLegalProcesses } from '../hooks/useLegalProcesses'
+import { useDebounce } from '@/hooks/useDebounce'
+import { useListPagination } from '@/hooks/useListPagination'
+import { useSearchParamsMirror } from '@/hooks/useSearchParamsMirror'
+import {
+  useFetchLegalProcessSelection,
+  useLegalProcessPage,
+  usePrefetchLegalProcessPage,
+} from '../hooks/useLegalProcesses'
 import {
   useCreateLegalProcess,
   type CreateProcessStep,
@@ -14,23 +21,53 @@ import { ProcessoTableView } from './ProcessoTableView'
 import { ProcessoForm, type ProcessoFormSubmitMeta } from './ProcessoForm'
 import { MovimentacoesFeed } from './MovimentacoesFeed'
 import { ProcessoFilterBar } from './ProcessoFilterBar'
+import type { ProcessoFilters } from '../utils/filterLegalProcesses'
 import {
-  filterLegalProcesses,
-  emptyProcessoFilters,
-  type ProcessoFilters,
-} from '../utils/filterLegalProcesses'
+  parseProcessoFilters,
+  parseProcessoSort,
+  serializeProcessoListState,
+  type ProcessoSort,
+} from '../utils/processoListUrl'
+import type { LegalProcessPageQuery } from '../services/legalProcesses.service'
 import type { LegalProcessInput } from '@/schemas/legalProcess.schema'
-import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
 import { Can } from '@/components/shared/Can'
 
 export function ProcessosContent() {
   const workflow = useWorkflow('wf-processos')
-  const { data: processos = [], isLoading } = useLegalProcesses()
-  const [filters, setFilters] = useState<ProcessoFilters>(emptyProcessoFilters)
 
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
+
+  // Filtros e ordem partem da URL uma vez, ao montar; daí em diante a URL só
+  // os espelha (useSearchParamsMirror). A busca nunca vai para a URL.
+  const [filters, setFilters] = useState<ProcessoFilters>(() => parseProcessoFilters(searchParams))
+  const [sort, setSort] = useState<ProcessoSort | null>(() => parseProcessoSort(searchParams))
+  const debouncedSearch = useDebounce(filters.search, 300)
+  const queryFilters: ProcessoFilters = { ...filters, search: debouncedSearch.trim() }
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Paginada no servidor (docs/paginacao.md): busca, filtros, ordem e página
+  // vão na consulta, e só a página atual chega.
+  const listKey = JSON.stringify([queryFilters, sort])
+  const pagination = useListPagination({
+    listKey: 'processos',
+    resetKey: listKey,
+    scrollContainerRef: scrollRef,
+  })
+  const pageQuery: LegalProcessPageQuery = {
+    filters: queryFilters,
+    sort,
+    pageIndex: pagination.pageIndex,
+    pageSize: pagination.pageSize,
+  }
+  const page = useLegalProcessPage(pageQuery)
+  pagination.clampToTotal(page.isPlaceholderData ? undefined : page.data?.total)
+  const prefetchPage = usePrefetchLegalProcessPage()
+  const fetchSelection = useFetchLegalProcessSelection()
+
+  // `create`, `clientId` e `cnj` (deep links do formulário) não são tocados.
+  useSearchParamsMirror({ ...serializeProcessoListState(filters, sort), ...pagination.urlParams })
 
   const createOpen = searchParams.get('create') === '1'
   const deepLinkClientId = searchParams.get('clientId')
@@ -38,20 +75,30 @@ export function ProcessosContent() {
   // formulário já com o número, e a consulta automática preenche o resto.
   const deepLinkCnj = searchParams.get('cnj')
 
-  function openDetail(processo: LegalProcessWithRelations) {
-    router.push(`/processos/${processo.id}`)
-  }
-
   function openDetailById(id: string) {
     router.push(`/processos/${id}`)
   }
 
+  /** Abrir e fechar o formulário mexe só em `create`: página e filtros, que o
+   * espelho guarda na URL, continuam lá. */
+  function setCreateParam(open: boolean) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (open) params.set('create', '1')
+    else {
+      params.delete('create')
+      params.delete('clientId')
+      params.delete('cnj')
+    }
+    const query = params.toString()
+    return query ? `${pathname}?${query}` : pathname
+  }
+
   function openCreate() {
-    router.push(`${pathname}?create=1`)
+    router.push(setCreateParam(true))
   }
 
   function closeCreate() {
-    router.replace(pathname)
+    router.replace(setCreateParam(false))
   }
 
   const createProcess = useCreateLegalProcess()
@@ -75,8 +122,6 @@ export function ProcessosContent() {
   }
 
   if (!workflow) return null
-
-  const filtered = filterLegalProcesses(processos, filters)
 
   return (
     <div className="flex flex-col h-full -m-6">
@@ -102,22 +147,40 @@ export function ProcessosContent() {
           workflow={workflow}
           filters={filters}
           onChange={setFilters}
-          resultCount={filtered.length}
+          resultCount={page.isSuccess ? page.data.total : undefined}
         />
       </div>
 
       {/* Body: table + movements feed */}
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-hidden">
-          {isLoading ? (
+          {page.isLoading ? (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
               Carregando processos...
             </div>
+          ) : page.isError ? (
+            <div className="flex flex-col items-center justify-center gap-3 h-full text-sm text-muted-foreground">
+              Não foi possível carregar os processos.
+              <Button size="sm" variant="outline" onClick={() => page.refetch()}>
+                Tentar de novo
+              </Button>
+            </div>
           ) : (
+            // `key`: filtro ou ordem novos remontam a tabela, e a seleção
+            // recomeça — nenhuma ação em massa cai em processo fora da tela.
             <ProcessoTableView
+              key={listKey}
               workflow={workflow}
-              processos={filtered}
-              onRowClick={openDetail}
+              rows={page.data?.rows ?? []}
+              total={page.data?.total ?? 0}
+              isStale={page.isPlaceholderData}
+              sort={sort}
+              onSortChange={setSort}
+              onRowClick={openDetailById}
+              pagination={pagination}
+              onPrefetchPage={(index) => prefetchPage({ ...pageQuery, pageIndex: index })}
+              onLoadAllSelection={() => fetchSelection(queryFilters)}
+              scrollRef={scrollRef}
             />
           )}
         </div>
