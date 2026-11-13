@@ -59,6 +59,32 @@ function useStoredPageSize(listKey: string): PageSize {
   )
 }
 
+function scrollsItself(element: HTMLElement): boolean {
+  return (
+    /(auto|scroll)/.test(getComputedStyle(element).overflowY) &&
+    element.scrollHeight > element.clientHeight
+  )
+}
+
+/**
+ * Depois de trocar de página, o começo da lista volta à vista.
+ *
+ *  · A lista rola sozinha (Movimentações, Publicações): vai para o topo dela.
+ *  · A lista rola junto com a tela (Contratos, Financeiro): só sobe quando o
+ *    começo dela saiu por cima. Quem troca de página com a lista inteira à
+ *    vista não perde os cartões e filtros do topo num salto.
+ */
+function scrollListIntoView(element: HTMLElement): void {
+  if (scrollsItself(element)) {
+    element.scrollTo({ top: 0 })
+    return
+  }
+  let scroller = element.parentElement
+  while (scroller && !scrollsItself(scroller)) scroller = scroller.parentElement
+  const visibleTop = scroller ? scroller.getBoundingClientRect().top : 0
+  if (element.getBoundingClientRect().top < visibleTop) element.scrollIntoView({ block: 'start' })
+}
+
 interface UseListPaginationOptions {
   /** Identifica a listagem para lembrar o tamanho: 'movimentacoes', 'processos'… */
   listKey: string
@@ -67,7 +93,11 @@ interface UseListPaginationOptions {
    * página 4 de um recorte não tem relação com a página 4 do próximo.
    */
   resetKey: string
-  /** O contêiner com scroll da lista: volta ao topo a cada troca de página. */
+  /**
+   * A lista, para trazer o começo dela de volta à vista a cada troca de
+   * página. Pode ser o contêiner que rola (Movimentações) ou só o bloco da
+   * lista numa tela que rola inteira (Contratos) — ver `scrollListIntoView`.
+   */
   scrollContainerRef?: RefObject<HTMLElement | null>
 }
 
@@ -132,7 +162,8 @@ export function useListPagination({
   }
 
   function scrollToTop() {
-    scrollContainerRef?.current?.scrollTo({ top: 0 })
+    const element = scrollContainerRef?.current
+    if (element) scrollListIntoView(element)
   }
 
   function setPageIndex(index: number) {

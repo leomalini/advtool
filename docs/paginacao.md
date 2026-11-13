@@ -2,7 +2,8 @@
 
 Status: decisões fechadas em 2026-11-13. Fase 1 (peças compartilhadas e
 Movimentações) em `feat/paginacao-base`; fase 2 (Publicações) em
-`feat/paginacao-publicacoes`; fases 3 a 5 pendentes.
+`feat/paginacao-publicacoes`; fase 3 (Contratos, Documentos, Financeiro) em
+`feat/paginacao-fatiadas`; fases 4 e 5 pendentes.
 
 **Regra do projeto: toda listagem tem paginação.** Uma tela nova que mostra uma
 lista usa o componente `Pagination` e o hook de parâmetros descritos abaixo.
@@ -73,9 +74,17 @@ quando está desligado), `sem_processo`. A fila de anterior/próxima do detalhe
 ### Contratos, Documentos, Financeiro (fase 3), fatiados no navegador
 A carga e o cálculo continuam como estão. Só a lista exibida passa por
 `slicePage`. Cartões, totais e gráfico continuam somando o filtro inteiro, não a
-página. No Financeiro, `pagina`/`por_pagina` entram em `financialFiltersUrl.ts`
-ao lado dos parâmetros atuais. Em Contratos e Documentos, os filtros que hoje
-estão em `useState` vão para a URL.
+página. No Financeiro, `pagina`/`por_pagina` são mesclados (`mergeSearchParams`)
+na query que o próprio `serializeFinancialUrl` já escreve inteira — um segundo
+espelho brigaria com ele. Em Contratos (`situacao`, `tipo`) e Documentos
+(`categoria`, `formato`, `vinculo`, `origem`, `assinatura`, `cliente`,
+`processo`, `enviado_por`, `de`, `ate`), os filtros saem do `useState` para a
+URL; os validadores comuns ficam em `src/lib/urlParams.ts`. O detalhe do
+contrato volta para a lista por `useListHref`.
+
+Nessas telas a lista rola junto com a página, então a troca de página só
+traz o começo da lista de volta quando ele saiu da vista por cima — quem troca
+de página com a lista inteira à vista não perde os cartões do topo num salto.
 
 ### Clientes e Pessoas (fase 4), no servidor, migration nova
 Uma tela só (`ClientesContent` com `scope`). View `client_list`
