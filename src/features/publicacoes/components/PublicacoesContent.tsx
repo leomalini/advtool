@@ -1,15 +1,26 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { FileWarning, Loader2, Newspaper, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Pagination } from '@/components/shared/Pagination'
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
-import { usePublications, useSyncIntimacoes } from '../hooks/usePublications'
+import { useListPagination } from '@/hooks/useListPagination'
+import { useSearchParamsMirror } from '@/hooks/useSearchParamsMirror'
+import {
+  usePrefetchPublications,
+  usePublications,
+  useSyncIntimacoes,
+} from '../hooks/usePublications'
+import {
+  parsePublicationToggles,
+  serializePublicationToggles,
+} from '../utils/publicationFiltersUrl'
 import { useCollectAiBatches } from '@/features/ia/hooks/useCollectAiBatches'
 import {
   TRIAGE_URGENCY_LABELS,
@@ -119,19 +130,44 @@ function PublicacaoRow({
   )
 }
 
+const ITEM_LABEL = { singular: 'publicação', plural: 'publicações' }
+
 export function PublicacoesContent() {
   const router = useRouter()
-  const [onlyUnread, setOnlyUnread] = useState(true)
-  const [onlyOrphans, setOnlyOrphans] = useState(false)
+  const searchParams = useSearchParams()
+  // Os filtros partem da URL uma vez, ao montar; daí em diante a URL só os
+  // espelha (useSearchParamsMirror).
+  const [initialToggles] = useState(() => parsePublicationToggles(searchParams))
+  const [onlyUnread, setOnlyUnread] = useState(initialToggles.onlyUnread)
+  const [onlyOrphans, setOnlyOrphans] = useState(initialToggles.onlyOrphans)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const filters = useMemo(
     () => ({ onlyUnread, onlyOrphans, search: debouncedSearch }),
     [onlyUnread, onlyOrphans, debouncedSearch],
   )
 
-  const { data: publicacoes = [], isLoading } = usePublications(filters)
+  const pagination = useListPagination({
+    listKey: 'publicacoes',
+    resetKey: JSON.stringify(filters),
+    scrollContainerRef: listRef,
+  })
+  const { pageIndex, pageSize } = pagination
+
+  const publications = usePublications(filters, pageIndex, pageSize)
+  pagination.clampToTotal(publications.isPlaceholderData ? undefined : publications.data?.total)
+  const prefetchPublications = usePrefetchPublications()
+  const publicacoes = publications.data?.rows ?? []
+  const total = publications.data?.total ?? 0
+  const isLoading = publications.isLoading
+
+  useSearchParamsMirror({
+    ...serializePublicationToggles({ onlyUnread, onlyOrphans }),
+    ...pagination.urlParams,
+  })
+
   const sync = useSyncIntimacoes()
   // A triagem roda em lote: abrir a fila recolhe o que ficou pronto.
   useCollectAiBatches()
@@ -187,12 +223,14 @@ export function PublicacoesContent() {
           Sem processo cadastrado
         </label>
 
-        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-          {publicacoes.length} publicação(ões)
-        </span>
+        {publications.isSuccess && (
+          <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+            {total} {total === 1 ? ITEM_LABEL.singular : ITEM_LABEL.plural}
+          </span>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={listRef} className="flex-1 overflow-y-auto">
         {isLoading && (
           <div className="space-y-2 p-6">
             {[0, 1, 2, 3].map((i) => (
@@ -217,7 +255,12 @@ export function PublicacoesContent() {
         )}
 
         {!isLoading && publicacoes.length > 0 && (
-          <div className="divide-y divide-border">
+          <div
+            className={cn(
+              'divide-y divide-border transition-opacity',
+              publications.isPlaceholderData && 'opacity-60',
+            )}
+          >
             {publicacoes.map((publicacao) => (
               <PublicacaoRow
                 key={publicacao.id}
@@ -228,6 +271,18 @@ export function PublicacoesContent() {
           </div>
         )}
       </div>
+
+      {publications.isSuccess && total > 0 && (
+        <Pagination
+          pageIndex={pageIndex}
+          pageSize={pageSize}
+          total={total}
+          itemLabel={ITEM_LABEL}
+          onPageChange={pagination.setPageIndex}
+          onPageSizeChange={pagination.setPageSize}
+          onPrefetchPage={(index) => prefetchPublications(filters, index, pageSize)}
+        />
+      )}
     </div>
   )
 }

@@ -1,7 +1,8 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import type { PageSize } from '@/lib/pagination'
 import {
   getPublications,
   getPublicationById,
@@ -17,17 +18,33 @@ import type { PublicationFilters } from '@/types/publication.types'
 
 export const publicationKeys = {
   all: ['publications'] as const,
-  list: (filters: PublicationFilters) => ['publications', 'list', filters] as const,
+  list: (filters: PublicationFilters, pageIndex: number, pageSize: PageSize) =>
+    ['publications', 'list', filters, pageIndex, pageSize] as const,
   detail: (id: string) => ['publications', 'detail', id] as const,
   queue: (onlyUnread: boolean) => ['publications', 'queue', onlyUnread] as const,
   unreadCount: () => ['publications', 'unread-count'] as const,
 }
 
-export function usePublications(filters: PublicationFilters = {}) {
+/** `keepPreviousData` mantém a página anterior visível enquanto a próxima
+ * carrega, sem piscar a lista vazia. */
+export function usePublications(filters: PublicationFilters, pageIndex: number, pageSize: PageSize) {
   return useQuery({
-    queryKey: publicationKeys.list(filters),
-    queryFn: () => getPublications(filters),
+    queryKey: publicationKeys.list(filters, pageIndex, pageSize),
+    queryFn: () => getPublications(filters, pageIndex, pageSize),
+    placeholderData: keepPreviousData,
   })
+}
+
+/** Pré-carrega a página em que o cursor parou: o clique já a encontra pronta. */
+export function usePrefetchPublications() {
+  const queryClient = useQueryClient()
+  return (filters: PublicationFilters, pageIndex: number, pageSize: PageSize) => {
+    void queryClient.prefetchQuery({
+      queryKey: publicationKeys.list(filters, pageIndex, pageSize),
+      queryFn: () => getPublications(filters, pageIndex, pageSize),
+      staleTime: 30_000,
+    })
+  }
 }
 
 /** The value a publication fixes, for the "Apurar" the bell opens. */
