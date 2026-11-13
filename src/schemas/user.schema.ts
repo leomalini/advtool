@@ -31,9 +31,13 @@ export const inviteUserSchema = z.object({
 
 export type InviteUserInput = z.input<typeof inviteUserSchema>
 
-/** Atualização parcial: trocar o perfil, ativar/desativar, ou ambos. */
+/** Atualização parcial: nome, perfil, status de acesso e OAB, em qualquer
+ * combinação. */
 export const updateUserSchema = z
   .object({
+    /** Mesma regra do convite: o nome aparece como responsável e autor em toda
+     * a app, então vazio não é aceito. */
+    full_name: z.string().trim().min(2, 'Informe o nome completo').max(120).optional(),
     role: appRoleSchema.optional(),
     is_active: z.boolean().optional(),
     oab_number: z

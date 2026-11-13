@@ -1,7 +1,16 @@
 'use client'
 
-import { useState } from 'react'
-import { Copy, Link2, Loader2, MailCheck, ShieldOff, UserPlus, Users } from 'lucide-react'
+import { useRef, useState } from 'react'
+import {
+  Copy,
+  Link2,
+  Loader2,
+  MailCheck,
+  Pencil,
+  ShieldOff,
+  UserPlus,
+  Users,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -332,6 +341,95 @@ function OabCell({
   )
 }
 
+/**
+ * Nome editável no lugar, pelo lápis ao lado.
+ *
+ * Começa pelo nome exibido, não pelo `full_name` cru: contas antigas guardam o
+ * e-mail ali, e editar a partir de "joao.silva@..." obrigaria a apagar tudo.
+ * Enter ou sair do campo salva; Esc desiste.
+ */
+function NameCell({
+  displayName,
+  fullName,
+  isSelf,
+  disabled,
+  onSave,
+}: {
+  displayName: string
+  fullName: string
+  isSelf: boolean
+  disabled: boolean
+  onSave: (fullName: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(displayName)
+  // Enter e Esc encerram a edição e desmontam o campo, e alguns navegadores
+  // disparam blur nessa desmontagem. A trava faz só o primeiro desfecho valer:
+  // sem ela, o Esc salvaria mesmo assim e o Enter salvaria duas vezes.
+  const finishedRef = useRef(false)
+
+  function startEditing() {
+    finishedRef.current = false
+    setDraft(displayName)
+    setEditing(true)
+  }
+
+  function finish(save: boolean) {
+    if (finishedRef.current) return
+    finishedRef.current = true
+    setEditing(false)
+    if (!save) return
+
+    const next = draft.trim().replace(/\s+/g, ' ')
+    if (next === fullName) return
+    if (next.length < 2) {
+      toast.error('Informe o nome completo.')
+      return
+    }
+    onSave(next)
+  }
+
+  if (editing) {
+    return (
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => finish(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            finish(true)
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            finish(false)
+          }
+        }}
+        maxLength={120}
+        aria-label="Nome completo"
+        autoFocus
+        className="h-7 px-2 text-sm"
+      />
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className="text-sm font-medium truncate">{displayName}</span>
+      {isSelf && <span className="text-[10px] text-muted-foreground shrink-0">(você)</span>}
+      <button
+        type="button"
+        onClick={startEditing}
+        disabled={disabled}
+        title="Editar nome"
+        aria-label={`Editar o nome de ${displayName}`}
+        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:pointer-events-none"
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
 function UserRow({
   user,
   isSelf,
@@ -351,7 +449,7 @@ function UserRow({
     <>
       <div
         className={cn(
-          'grid grid-cols-[auto_1fr_170px_160px_250px] gap-4 px-5 py-3.5 items-center transition-colors hover:bg-muted/20',
+          'group grid grid-cols-[auto_1fr_170px_160px_250px] gap-4 px-5 py-3.5 items-center transition-colors hover:bg-muted/20',
           !user.is_active && 'opacity-55'
         )}
       >
@@ -365,10 +463,13 @@ function UserRow({
         </div>
 
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">{nome}</span>
-            {isSelf && <span className="text-[10px] text-muted-foreground">(você)</span>}
-          </div>
+          <NameCell
+            displayName={nome}
+            fullName={user.full_name}
+            isSelf={isSelf}
+            disabled={updateUser.isPending}
+            onSave={(fullName) => updateUser.mutate({ id: user.id, full_name: fullName })}
+          />
           <p className="text-xs text-muted-foreground truncate">{user.email}</p>
         </div>
 
