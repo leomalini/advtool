@@ -1,11 +1,15 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Pagination } from '@/components/shared/Pagination'
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/useDebounce'
+import { useListPagination } from '@/hooks/useListPagination'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useSearchParamsMirror } from '@/hooks/useSearchParamsMirror'
 import { useCreateTask } from '@/features/tarefas/hooks/useTaskMutations'
 import {
   STALE_MOVEMENT_DAYS,
@@ -16,40 +20,33 @@ import {
   useDailyActivity,
   useMovementCourts,
   useMovements,
+  usePrefetchMovements,
   useProcessSilence,
   useSetMovementHandled,
   useSetMovementVisibility,
 } from '../hooks/useMovements'
-import { PAGE_SIZE } from '../services/movements.service'
 import { MOVEMENT_GROUPS, type MovementGroup } from '../utils/categories'
 import {
-  defaultMovementFilters,
   isoDaysAgo,
   isoToday,
   withoutQueueFilters,
   type MovementFilters,
 } from '../utils/movementFilters'
+import { parseMovementFilters, serializeMovementFilters } from '../utils/movementFiltersUrl'
 import { MovimentacaoRow } from './MovimentacaoRow'
 import { MovimentacoesFilterBar } from './MovimentacoesFilterBar'
 import { MovimentacoesPulso, type PulseWindow } from './MovimentacoesPulso'
 import { ProcessosEmSilencio } from './ProcessosEmSilencio'
 
-/** Quantos números de página mostrar em volta da atual. */
-const PAGER_RADIUS = 2
-
-function pagesAround(current: number, count: number): number[] {
-  const first = Math.max(0, Math.min(current - PAGER_RADIUS, count - PAGER_RADIUS * 2 - 1))
-  const last = Math.min(count - 1, first + PAGER_RADIUS * 2)
-  const pages: number[] = []
-  for (let page = first; page <= last; page++) pages.push(page)
-  return pages
-}
+const ITEM_LABEL = { singular: 'movimentação', plural: 'movimentações' }
 
 export function MovimentacoesContent() {
   const { can, isLoading: loadingPermissions } = usePermissions()
+  const searchParams = useSearchParams()
 
-  const [filters, setFilters] = useState<MovementFilters>(defaultMovementFilters)
-  const [page, setPage] = useState(0)
+  // Os filtros partem da URL uma vez, ao montar; daí em diante a URL só os
+  // espelha (useSearchParamsMirror).
+  const [filters, setFilters] = useState<MovementFilters>(() => parseMovementFilters(searchParams))
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [focusedIndex, setFocusedIndex] = useState(0)
 
@@ -69,31 +66,40 @@ export function MovimentacoesContent() {
     [filters, debouncedSearch],
   )
 
+  const listRef = useRef<HTMLDivElement>(null)
+
   /**
-   * A página volta ao início sempre que o recorte muda: a página 4 de um
-   * filtro não tem relação com a página 4 do próximo.
+   * Quando o recorte muda, a página volta ao início (dentro de
+   * `useListPagination`) e a linha aberta e o foco do teclado também.
    *
    * Ajuste DURANTE O RENDER, e não num efeito — é o padrão que a doc do React
    * indica para "adaptar estado quando um valor muda" ("You Might Not Need an
    * Effect"). Num `useEffect` isto dispara render em cascata, e o
-   * `react-hooks/set-state-in-effect` reprova. Não dá para resolver só
-   * limitando a página na leitura: a consulta usa `page`, então a página 7 de
-   * um resultado de 1 página voltaria vazia do servidor antes de qualquer
-   * ajuste.
+   * `react-hooks/set-state-in-effect` reprova.
    */
   const filtersKey = JSON.stringify(queryFilters)
   const [lastFiltersKey, setLastFiltersKey] = useState(filtersKey)
   if (lastFiltersKey !== filtersKey) {
     setLastFiltersKey(filtersKey)
-    setPage(0)
     setExpandedId(null)
     setFocusedIndex(0)
   }
 
+  const pagination = useListPagination({
+    listKey: 'movimentacoes',
+    resetKey: filtersKey,
+    scrollContainerRef: listRef,
+  })
+  const { pageIndex, pageSize } = pagination
+
   const pulseFrom = isoDaysAgo(Number(pulseWindow) - 1)
   const pulseTo = isoToday()
 
-  const movements = useMovements(queryFilters, page)
+  const movements = useMovements(queryFilters, pageIndex, pageSize)
+  pagination.clampToTotal(movements.isPlaceholderData ? undefined : movements.data?.total)
+  const prefetchMovements = usePrefetchMovements()
+
+  useSearchParamsMirror({ ...serializeMovementFilters(filters), ...pagination.urlParams })
   const activity = useDailyActivity(pulseFrom, pulseTo)
   const silence = useProcessSilence()
   const { data: courts = [] } = useMovementCourts()
@@ -115,7 +121,6 @@ export function MovimentacoesContent() {
 
   const rows = movements.data?.rows ?? []
   const total = movements.data?.total ?? 0
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const isMutating = setHandled.isPending || setVisibility.isPending
 
   const canUpdate = can('processos', 'update')
@@ -144,6 +149,13 @@ export function MovimentacoesContent() {
   function handleCreateTask(movimentacao: LegalProcessMovementWithContext, title: string) {
     if (!title) return
     createTask.mutate({ title, legal_process_id: movimentacao.legal_process_id })
+  }
+
+  /** Outra página: a linha aberta e o foco do teclado eram da anterior. */
+  function handlePageChange(index: number) {
+    pagination.setPageIndex(index)
+    setExpandedId(null)
+    setFocusedIndex(0)
   }
 
   /** Clique na coluna do pulso: recorta a lista para aquele dia. */
@@ -237,7 +249,7 @@ export function MovimentacoesContent() {
 
         {/* O listener fica aqui e não no documento: os botões de linha estão
             dentro, o evento sobe, e o atalho não vaza para outras telas. */}
-        <div className="flex-1 overflow-y-auto" onKeyDown={handleListKeyDown}>
+        <div ref={listRef} className="flex-1 overflow-y-auto" onKeyDown={handleListKeyDown}>
           {movements.isError && (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center">
               <Activity className="h-7 w-7 text-muted-foreground" />
@@ -318,43 +330,16 @@ export function MovimentacoesContent() {
           )}
         </div>
 
-        {total > PAGE_SIZE && (
-          <div className="flex shrink-0 items-center justify-between gap-4 border-t bg-card px-6 py-2.5">
-            <span className="text-xs tabular-nums text-muted-foreground">
-              Mostrando {page * PAGE_SIZE + 1} a {Math.min((page + 1) * PAGE_SIZE, total)} de{' '}
-              {total}
-            </span>
-
-            <div className="flex items-center gap-1">
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={page === 0}
-                onClick={() => setPage(page - 1)}
-              >
-                Anterior
-              </Button>
-              {pagesAround(page, pageCount).map((candidate) => (
-                <Button
-                  key={candidate}
-                  size="xs"
-                  variant={candidate === page ? 'default' : 'ghost'}
-                  className="tabular-nums"
-                  onClick={() => setPage(candidate)}
-                >
-                  {candidate + 1}
-                </Button>
-              ))}
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={page >= pageCount - 1}
-                onClick={() => setPage(page + 1)}
-              >
-                Próxima
-              </Button>
-            </div>
-          </div>
+        {movements.isSuccess && total > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            pageSize={pageSize}
+            total={total}
+            itemLabel={ITEM_LABEL}
+            onPageChange={handlePageChange}
+            onPageSizeChange={pagination.setPageSize}
+            onPrefetchPage={(index) => prefetchMovements(queryFilters, index, pageSize)}
+          />
         )}
       </div>
 
