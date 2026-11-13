@@ -3,7 +3,8 @@
 Status: decisões fechadas em 2026-11-13. Fase 1 (peças compartilhadas e
 Movimentações) em `feat/paginacao-base`; fase 2 (Publicações) em
 `feat/paginacao-publicacoes`; fase 3 (Contratos, Documentos, Financeiro) em
-`feat/paginacao-fatiadas`; fases 4 e 5 pendentes.
+`feat/paginacao-fatiadas`; fase 4 (Clientes e Pessoas, migration 91) em
+`feat/paginacao-clientes`; fase 5 pendente.
 
 **Regra do projeto: toda listagem tem paginação.** Uma tela nova que mostra uma
 lista usa o componente `Pagination` e o hook de parâmetros descritos abaixo.
@@ -86,13 +87,19 @@ Nessas telas a lista rola junto com a página, então a troca de página só
 traz o começo da lista de volta quando ele saiu da vista por cima — quem troca
 de página com a lista inteira à vista não perde os cartões do topo num salto.
 
-### Clientes e Pessoas (fase 4), no servidor, migration nova
-Uma tela só (`ClientesContent` com `scope`). View `client_list`
-(`security_invoker = true`) com os campos que a linha mostra, o contato
-principal e uma coluna de busca (nome, razão social, nome fantasia, e-mail,
-telefone, documento só com dígitos, valores dos contatos). Filtros na URL:
-`area`, `tipo` (em Pessoas). O selo de pendência continua vindo de
-`useClientesPendencies`. `useClientes`/`usePessoas` (comboboxes) não mudam.
+### Clientes e Pessoas (fase 4), no servidor, migration 91
+Uma tela só (`ClientesContent` com `scope`). Em vez da view prevista, uma
+função `search_clients(p_search) returns setof clients` (`security invoker`):
+a busca olha os contatos, e o PostgREST não faz OR entre a tabela e um
+recurso embutido; uma função que devolve o tipo da tabela continua aceitando
+os embeds (`contacts`, `addresses`), então a linha e o modal de edição
+recebem o mesmo cadastro de antes. A busca cobre nome, razão social, nome
+fantasia, e-mail, telefone, documento (como gravado e só com dígitos) e o
+valor de qualquer contato, com `strpos` (sem curinga). Tipo, área, ordem
+(`created_at`, desempate por `id`) e página são encadeados sobre ela.
+Filtros na URL: `area`, `tipo` (só em Pessoas). O selo de pendência continua
+vindo de `useClientesPendencies`. `useCadastroList` (combobox) não muda. Os
+detalhes de cliente e de pessoa voltam para a lista por `useListHref`.
 
 ### Processos (fase 5), no servidor, migration nova
 View `legal_process_list` (`security_invoker = true`) com uma linha por

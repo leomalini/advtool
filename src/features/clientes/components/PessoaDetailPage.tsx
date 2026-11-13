@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Pencil, UserCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useListHref } from '@/hooks/useSearchParamsMirror'
 import { Button } from '@/components/ui/button'
 import { Can } from '@/components/shared/Can'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
@@ -43,6 +44,8 @@ const TABS: { id: Tab; label: string }[] = [
  */
 export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
   const router = useRouter()
+  // A lista como a pessoa a deixou (página, filtros) — docs/paginacao.md.
+  const listHref = useListHref('/pessoas')
   const { data: pessoa, isLoading, error } = useCliente(pessoaId)
   const { can } = usePermissions()
 
@@ -75,7 +78,7 @@ export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <p className="text-sm text-muted-foreground">Pessoa não encontrada</p>
-        <Button variant="outline" onClick={() => router.push('/pessoas')}>
+        <Button variant="outline" onClick={() => router.push(listHref)}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Voltar
         </Button>
@@ -94,7 +97,7 @@ export function PessoaDetailPage({ pessoaId }: { pessoaId: string }) {
             Início
           </Link>
           <span className="text-border">/</span>
-          <Link href="/pessoas" className="hover:text-foreground transition-colors">
+          <Link href={listHref} className="hover:text-foreground transition-colors">
             Pessoas
           </Link>
           <span className="text-border">/</span>

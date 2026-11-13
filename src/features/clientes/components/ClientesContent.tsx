@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus,
   Search,
@@ -19,6 +19,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { Pagination } from '@/components/shared/Pagination'
+import { useDebounce } from '@/hooks/useDebounce'
+import { useListPagination } from '@/hooks/useListPagination'
+import { useSearchParamsMirror } from '@/hooks/useSearchParamsMirror'
 import { ClienteForm } from './ClienteForm'
 import { LegalAreaBadges } from './LegalAreaBadges'
 import { ConvertToClientDialog } from './ConvertToClientDialog'
@@ -32,10 +36,17 @@ import { cn } from '@/lib/utils'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import { formatRelative } from '@/utils/date'
 import {
-  useCadastroList,
+  useCadastroPage,
   useClientesPendencies,
+  usePrefetchCadastroPage,
   type CadastroListScope,
 } from '../hooks/useClientes'
+import {
+  isClientFilter,
+  parseCadastroListFilters,
+  serializeCadastroListFilters,
+  type CadastroKindFilter as KindFilter,
+} from '../utils/cadastroListUrl'
 import {
   useCreateCliente,
   useCreatePessoa,
@@ -44,6 +55,7 @@ import {
 } from '../hooks/useClienteMutations'
 import type { ClientWithRelations, LegalArea, RecordKind } from '@/types/cliente.types'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
+import type { CadastroPageQuery } from '../services/clientes.service'
 import { getClientDisplayName, getClientDocument } from '@/types/cliente.types'
 import { Can } from '@/components/shared/Can'
 
@@ -55,9 +67,6 @@ const AREA_FILTRO_ITEMS: { id: LegalArea | 'todas'; label: string }[] = [
   })),
 ]
 
-/** Só na lista de Pessoas, que mostra todo mundo (migration 78). */
-type KindFilter = 'todas' | 'clientes' | 'pessoas'
-
 const KIND_FILTER_ITEMS: { id: KindFilter; label: string }[] = [
   { id: 'todas', label: 'Todas' },
   { id: 'clientes', label: 'Clientes' },
@@ -67,26 +76,32 @@ const KIND_FILTER_ITEMS: { id: KindFilter; label: string }[] = [
 interface ScopeText {
   title: string
   count: (n: number) => string
+  found: (n: number) => string
   create: string
   empty: string
   noun: string
+  itemLabel: { singular: string; plural: string }
 }
 
 /** Os textos das duas telas. A lista é a mesma — muda o recorte e o nome. */
 const SCOPE_TEXT: Record<CadastroListScope, ScopeText> = {
   clients: {
     title: 'Clientes',
-    count: (n) => `${n} clientes cadastrados`,
+    count: (n) => (n === 1 ? '1 cliente cadastrado' : `${n} clientes cadastrados`),
+    found: (n) => (n === 1 ? '1 cliente encontrado' : `${n} clientes encontrados`),
     create: 'Novo Cliente',
     empty: 'Nenhum cliente encontrado',
     noun: 'clientes',
+    itemLabel: { singular: 'cliente', plural: 'clientes' },
   },
   people: {
     title: 'Pessoas',
-    count: (n) => `${n} pessoas cadastradas`,
+    count: (n) => (n === 1 ? '1 pessoa cadastrada' : `${n} pessoas cadastradas`),
+    found: (n) => (n === 1 ? '1 pessoa encontrada' : `${n} pessoas encontradas`),
     create: 'Nova Pessoa',
     empty: 'Nenhuma pessoa encontrada',
     noun: 'pessoas',
+    itemLabel: { singular: 'pessoa', plural: 'pessoas' },
   },
 }
 
@@ -341,20 +356,58 @@ function ClienteRow({
  * mostra todo mundo, com selo e filtro; Clientes, só quem é cliente.
  */
 export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListScope }) {
+  const searchParams = useSearchParams()
+  // Os filtros partem da URL uma vez, ao montar; daí em diante a URL só os
+  // espelha (useSearchParamsMirror). A busca nunca vai para a URL.
+  const [initialFilters] = useState(() => parseCadastroListFilters(searchParams))
   const [search, setSearch] = useState('')
-  const [areaFiltro, setAreaFiltro] = useState<LegalArea | 'todas'>('todas')
-  const [kindFilter, setKindFilter] = useState<KindFilter>('todas')
+  const debouncedSearch = useDebounce(search, 300)
+  const [areaFiltro, setAreaFiltro] = useState<LegalArea | 'todas'>(
+    initialFilters.area ?? 'todas'
+  )
+  const [kindFilter, setKindFilter] = useState<KindFilter>(initialFilters.kind)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const router = useRouter()
   const text = SCOPE_TEXT[scope]
   const isPeople = scope === 'people'
+  // Em Clientes o tipo não existe na tela: um `?tipo=` que sobrou de Pessoas
+  // não pode filtrar uma lista que não mostra o filtro.
+  const effectiveKind: KindFilter = isPeople ? kindFilter : 'todas'
+  const legalArea = areaFiltro === 'todas' ? null : areaFiltro
+
+  // Paginada no servidor (docs/paginacao.md): busca, área e tipo vão na
+  // consulta, e só a página atual chega.
+  const pagination = useListPagination({
+    listKey: isPeople ? 'pessoas' : 'clientes',
+    resetKey: JSON.stringify([effectiveKind, legalArea, debouncedSearch.trim()]),
+    scrollContainerRef: listRef,
+  })
+  const pageQuery: CadastroPageQuery = {
+    scope,
+    isClient: isClientFilter(effectiveKind),
+    legalArea,
+    search: debouncedSearch,
+    pageIndex: pagination.pageIndex,
+    pageSize: pagination.pageSize,
+  }
+  const page = useCadastroPage(pageQuery)
+  pagination.clampToTotal(page.isPlaceholderData ? undefined : page.data?.total)
+  const prefetchPage = usePrefetchCadastroPage()
+  const clientes = page.data?.rows ?? []
+  const total = page.data?.total ?? 0
+  const { isLoading, isError } = page
+
+  useSearchParamsMirror({
+    ...serializeCadastroListFilters({ area: legalArea, kind: effectiveKind }),
+    ...pagination.urlParams,
+  })
 
   const [editClient, setEditClient] = useState<ClientWithRelations | null>(null)
   const [deleteClient, setDeleteClient] = useState<ClientWithRelations | null>(null)
   const [convertClient, setConvertClient] = useState<ClientWithRelations | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
-  const { data: clientes = [], isLoading, isError } = useCadastroList(scope)
   const { data: pendencias = [] } = useClientesPendencies()
   const createClientMutation = useCreateCliente()
   const createPersonMutation = useCreatePessoa()
@@ -374,36 +427,6 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
     () => new Set(pendencias.map((p) => p.clientId)),
     [pendencias]
   )
-
-  const clientesFiltrados = useMemo(() => {
-    const q = search.toLowerCase()
-    const qDigits = q.replace(/\D/g, '')
-    return clientes.filter((c) => {
-      const name = getClientDisplayName(c).toLowerCase()
-      const doc = getClientDocument(c)
-      const docDigits = doc.replace(/\D/g, '')
-      const phone = c.phone ?? ''
-      const email = c.email ?? ''
-
-      const matchSearch =
-        !q ||
-        name.includes(q) ||
-        email.toLowerCase().includes(q) ||
-        doc.includes(q) ||
-        phone.includes(q) ||
-        (qDigits.length > 0 && docDigits.includes(qDigits)) ||
-        c.contacts?.some((ct) => ct.value.toLowerCase().includes(q))
-
-      const matchArea = areaFiltro === 'todas' || (c.legal_areas ?? []).includes(areaFiltro)
-
-      const matchKind =
-        kindFilter === 'todas' ||
-        (kindFilter === 'clientes' && c.is_client) ||
-        (kindFilter === 'pessoas' && !c.is_client)
-
-      return matchSearch && matchArea && matchKind
-    })
-  }, [clientes, search, areaFiltro, kindFilter])
 
   function handleCreate(data: CreateClientInput) {
     createMutation.mutate(data, {
@@ -425,7 +448,7 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
     })
   }
 
-  const hasFilters = search || areaFiltro !== 'todas' || kindFilter !== 'todas'
+  const hasFilters = search.trim() !== '' || legalArea !== null || effectiveKind !== 'todas'
 
   return (
     <div className="space-y-4">
@@ -434,7 +457,8 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
         <div>
           <h2 className="text-lg font-semibold">{text.title}</h2>
           <p className="text-sm text-muted-foreground">
-            {isLoading ? '...' : text.count(clientes.length)}
+            {/* Com filtro, o total é o do recorte — "cadastrados" mentiria. */}
+            {isLoading ? '...' : hasFilters ? text.found(total) : text.count(total)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -502,7 +526,7 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
           title={`Erro ao carregar ${text.noun}`}
           description="Tente recarregar a página."
         />
-      ) : clientesFiltrados.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState
           icon={Users}
           title={text.empty}
@@ -513,8 +537,13 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
           }
         />
       ) : (
-        <div className="rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+        <div ref={listRef} className="rounded-xl border overflow-hidden">
+          <table
+            className={cn(
+              'w-full text-sm transition-opacity',
+              page.isPlaceholderData && 'opacity-60'
+            )}
+          >
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Nome</th>
@@ -526,7 +555,7 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
               </tr>
             </thead>
             <tbody className="bg-card">
-              {clientesFiltrados.map((cliente) => (
+              {clientes.map((cliente) => (
                 <ClienteRow
                   key={cliente.id}
                   cliente={cliente}
@@ -540,9 +569,16 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
               ))}
             </tbody>
           </table>
-          <div className="border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
-            Exibindo {clientesFiltrados.length} de {clientes.length} {text.noun}
-          </div>
+          <Pagination
+            className="px-4"
+            pageIndex={pagination.pageIndex}
+            pageSize={pagination.pageSize}
+            total={total}
+            itemLabel={text.itemLabel}
+            onPageChange={pagination.setPageIndex}
+            onPageSizeChange={pagination.setPageSize}
+            onPrefetchPage={(index) => prefetchPage({ ...pageQuery, pageIndex: index })}
+          />
         </div>
       )}
 
