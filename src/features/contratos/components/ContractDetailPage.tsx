@@ -28,6 +28,7 @@ import {
 import { formatCurrency, formatPercent } from '@/types/financialEntry.types'
 import { formatDate, formatDateTime } from '@/utils/date'
 import { getDisplayName } from '@/utils/profile'
+import { useListHref } from '@/hooks/useSearchParamsMirror'
 import { GenerateDocumentDialog } from '@/features/documentos/components/GenerateDocumentDialog'
 import { useDocumentsForEntity } from '@/features/documentos/hooks/useDocuments'
 import { useDocumentTemplates } from '@/features/documentos/hooks/useDocumentTemplates'
@@ -98,6 +99,8 @@ export function ContractDetailPage({
   signatureReady: boolean
 }) {
   const router = useRouter()
+  // A lista como a pessoa a deixou (página, filtros) — docs/paginacao.md.
+  const listHref = useListHref('/contratos')
   const { data: contract, isLoading, error } = useContract(contractId)
   useAssistantScreen(
     contract
@@ -148,7 +151,7 @@ export function ContractDetailPage({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-sm text-muted-foreground">Contrato não encontrado</p>
-        <Button variant="outline" onClick={() => router.push('/contratos')}>
+        <Button variant="outline" onClick={() => router.push(listHref)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar
         </Button>
@@ -235,7 +238,7 @@ export function ContractDetailPage({
             Início
           </Link>
           <span className="text-border">/</span>
-          <Link href="/contratos" className="transition-colors hover:text-foreground">
+          <Link href={listHref} className="transition-colors hover:text-foreground">
             Contratos
           </Link>
           <span className="text-border">/</span>
@@ -503,7 +506,7 @@ export function ContractDetailPage({
           deleteContract.mutate(contract.id, {
             onSuccess: () => {
               setConfirmDelete(false)
-              router.push('/contratos')
+              router.push(listHref)
             },
           })
         }

@@ -6,8 +6,15 @@ import type {
   ClientComment,
   ClientIssue,
   ClientType,
+  LegalArea,
 } from '@/types/cliente.types'
 import type { CreateClientInput, ContactInput, AddressInput } from '@/schemas/cliente.schema'
+import {
+  getPageRange,
+  isRangeNotSatisfiable,
+  type PageResult,
+  type PageSize,
+} from '@/lib/pagination'
 
 const supabase = createClient()
 
@@ -157,6 +164,53 @@ export async function getPeople(): Promise<ClientWithRelations[]> {
 
   if (error) throw error
   return (data as ClientWithRelations[]).map(sortAddresses)
+}
+
+/** O recorte da lista de Clientes ou de Pessoas. */
+export interface CadastroPageQuery {
+  /** Clientes mostra só clientes; Pessoas mostra todo mundo (migration 78). */
+  scope: 'clients' | 'people'
+  /** Só em Pessoas: cliente ou não. `null` = todos. */
+  isClient: boolean | null
+  legalArea: LegalArea | null
+  search: string
+  pageIndex: number
+  pageSize: PageSize
+}
+
+/**
+ * Uma página da lista de Clientes ou de Pessoas (docs/paginacao.md). A busca
+ * vem de `search_clients` (migration 91), que olha também os contatos; o
+ * resto é encadeado sobre ela. Desempate por `id`: dois cadastros no mesmo
+ * instante não repetem nem somem entre páginas.
+ */
+export async function getCadastroPage(
+  query: CadastroPageQuery
+): Promise<PageResult<ClientWithRelations>> {
+  let request = supabase
+    .rpc('search_clients', { p_search: query.search.trim() }, { count: 'exact' })
+    .select(CLIENT_SELECT)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+
+  const isClient = query.scope === 'clients' ? true : query.isClient
+  if (isClient !== null) request = request.eq('is_client', isClient)
+  if (query.legalArea) request = request.contains('legal_areas', [query.legalArea])
+
+  const { from, to } = getPageRange(query.pageIndex, query.pageSize)
+  const { data, error, count } = await request.range(from, to)
+  if (isRangeNotSatisfiable(error) && query.pageIndex > 0) {
+    // Página além do fim (cadastros excluídos ou convertidos): a primeira traz
+    // o total, e a paginação corrige para a última.
+    const firstPage = await getCadastroPage({ ...query, pageIndex: 0 })
+    return { rows: [], total: firstPage.total }
+  }
+  if (error) throw error
+
+  return {
+    rows: ((data ?? []) as ClientWithRelations[]).map(sortAddresses),
+    total: count ?? 0,
+  }
 }
 
 export async function getClientById(id: string): Promise<ClientWithRelations> {

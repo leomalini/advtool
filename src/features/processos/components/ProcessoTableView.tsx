@@ -1,12 +1,14 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState, type RefObject } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   ArrowUp,
   ArrowUpDown,
   Clock,
   Ellipsis,
+  Loader2,
   SlidersHorizontal,
   TriangleAlert,
 } from 'lucide-react'
@@ -23,6 +25,7 @@ import {
 import { CrmBulkActionBar } from '@/features/crm/components/CrmBulkActionBar'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DeletionImpactNotice } from '@/components/shared/DeletionImpactNotice'
+import { Pagination } from '@/components/shared/Pagination'
 import { useLegalProcessDeletionImpact } from '../hooks/useLegalProcesses'
 import { AREAS_JURIDICAS } from '@/data/mock'
 import type { AreaJuridica } from '@/data/mock'
@@ -31,14 +34,17 @@ import { useBulkUpdateCrmItems } from '@/features/crm/hooks/useCrmItemMutations'
 import { crmItemKeys } from '@/features/crm/hooks/useCrmItems'
 import { useDeleteLegalProcess, useInvalidateLegalProcesses } from '../hooks/useLegalProcessMutations'
 import { useColumnPrefs, type ColumnConfig } from '@/hooks/useColumnPrefs'
+import type { ListPagination } from '@/hooks/useListPagination'
 import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
-import { getCrmItemClientName } from '@/types/crmItem.types'
-import type { LegalProcessWithRelations } from '@/types/legalProcess.types'
+import type { LegalProcessListRow } from '@/types/legalProcess.types'
 import type { Workflow } from '@/types/workflow.types'
+import type { LegalProcessSelectionEntry } from '../services/legalProcesses.service'
+import type { ProcessoSort, ProcessoSortField } from '../utils/processoListUrl'
 import { Can } from '@/components/shared/Can'
 
 const CHECKBOX_COL_WIDTH = 38
 const MENU_COL_WIDTH = 38
+const ITEM_LABEL = { singular: 'processo', plural: 'processos' }
 
 const PROCESSO_COLUMNS: ColumnConfig[] = [
   { key: 'cliente', label: 'Cliente / CNJ', defaultWidth: 240, minWidth: 180 },
@@ -51,6 +57,15 @@ const PROCESSO_COLUMNS: ColumnConfig[] = [
 ]
 
 const COLUMN_STORAGE_KEY = 'advtool.processos-table-columns.v1'
+
+/** O cliente do card mestre como a tabela sempre mostrou (o nome de exibição
+ * de `getCrmItemClientName`); `null` sem cliente vinculado — ou um que a RLS
+ * não deixa ver, como o embed de antes. */
+function clientDisplayName(row: LegalProcessListRow): string | null {
+  if (!row.client_type) return null
+  if (row.client_type === 'individual') return row.client_name ?? '(sem nome)'
+  return row.client_trade_name ?? row.client_company_name ?? '(sem nome)'
+}
 
 interface ResizeHandleProps {
   startWidth: number
@@ -86,16 +101,48 @@ function ResizeHandle({ startWidth, minWidth, onChange }: ResizeHandleProps) {
 
 interface ProcessoTableViewProps {
   workflow: Workflow
-  processos: LegalProcessWithRelations[]
-  onRowClick: (processo: LegalProcessWithRelations) => void
+  /** A página atual — não a lista inteira (docs/paginacao.md). */
+  rows: LegalProcessListRow[]
+  /** Total do filtro, não da página. */
+  total: number
+  /** A página anterior ainda na tela enquanto a nova carrega. */
+  isStale: boolean
+  sort: ProcessoSort | null
+  onSortChange: (sort: ProcessoSort) => void
+  onRowClick: (processoId: string) => void
+  pagination: ListPagination
+  onPrefetchPage: (index: number) => void
+  /** Todos os processos do filtro com card, para "Selecionar todos". */
+  onLoadAllSelection: () => Promise<LegalProcessSelectionEntry[]>
+  /** O contêiner que rola: volta ao topo a cada troca de página. */
+  scrollRef: RefObject<HTMLDivElement | null>
 }
 
-type SortField = 'prazo' | 'atualizacao'
-
-export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoTableViewProps) {
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [sortField, setSortField] = useState<SortField | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
+/**
+ * A tabela de Processos. A seleção sobrevive à troca de página (as ações em
+ * massa agem em tudo o que foi marcado, de qualquer página); um filtro novo
+ * remonta a tabela — quem a usa passa o filtro como `key` —, e a seleção
+ * recomeça, para nenhuma ação cair em processos que já não estão na tela.
+ */
+export function ProcessoTableView({
+  workflow,
+  rows,
+  total,
+  isStale,
+  sort,
+  onSortChange,
+  onRowClick,
+  pagination,
+  onPrefetchPage,
+  onLoadAllSelection,
+  scrollRef,
+}: ProcessoTableViewProps) {
+  /** crm_item → processo: as ações em massa agem no card, a exclusão no processo. */
+  const [selected, setSelected] = useState<Map<string, string>>(new Map())
+  /** Quantos o "Selecionar todos" trouxe — enquanto a seleção for exatamente
+   * essa, o aviso diz que o filtro inteiro está marcado. */
+  const [allMatchingCount, setAllMatchingCount] = useState<number | null>(null)
+  const [loadingAll, setLoadingAll] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<
     { mode: 'bulk' } | { mode: 'one'; processoId: string } | null
   >(null)
@@ -119,60 +166,64 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     `${MENU_COL_WIDTH}px`,
   ].join(' ')
 
-  // Processos with no linked crm_item sort last on either field (Infinity),
-  // instead of throwing while the comparator runs.
-  function sortTime(p: LegalProcessWithRelations, field: SortField): number {
-    if (!p.crm_item) return Infinity
-    if (field === 'prazo') {
-      return p.crm_item.next_deadline ? new Date(p.crm_item.next_deadline).getTime() : Infinity
-    }
-    return new Date(p.crm_item.updated_at).getTime()
-  }
-
-  const sorted = useMemo(() => {
-    if (!sortField || !sortDir) return processos
-    return [...processos].sort((a, b) => {
-      const aTime = sortTime(a, sortField)
-      const bTime = sortTime(b, sortField)
-      return sortDir === 'asc' ? aTime - bTime : bTime - aTime
-    })
-  }, [processos, sortField, sortDir])
-
-  function toggleSort(field: SortField) {
-    if (sortField !== field) {
-      setSortField(field)
-      setSortDir('asc')
-    } else {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    }
+  function toggleSort(field: ProcessoSortField) {
+    onSortChange(
+      sort?.field === field
+        ? { field, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+        : { field, direction: 'asc' }
+    )
   }
 
   // Bulk actions operate on crm_items, so a processo with no linked item can't
   // take part in the selection — it stays visible but not selectable.
-  const selectableIds = sorted.map((p) => p.crm_item?.id).filter((id): id is string => !!id)
-  const allVisibleSelected =
-    selectableIds.length > 0 && selectableIds.every((id) => selected.has(id))
-  const selectedIds = Array.from(selected)
+  const pageSelectable = rows.flatMap((row) =>
+    row.crm_item_id ? [[row.crm_item_id, row.id] as const] : []
+  )
+  const allPageSelected =
+    pageSelectable.length > 0 && pageSelectable.every(([crmItemId]) => selected.has(crmItemId))
+  const allMatchingSelected = allMatchingCount !== null && selected.size === allMatchingCount
+  const selectedIds = Array.from(selected.keys())
 
-  function toggleAll() {
-    if (allVisibleSelected) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(selectableIds))
-    }
+  /** Sempre a partir do estado mais recente: dois cliques seguidos, antes de
+   * um render, não podem se sobrescrever. */
+  function updateSelection(update: (previous: Map<string, string>) => Map<string, string>) {
+    setSelected((previous) => update(new Map(previous)))
+    setAllMatchingCount(null)
   }
 
-  function toggleOne(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+  /** O cabeçalho age só na página: marca o que falta nela, ou desmarca a
+   * página inteira — o que foi marcado em outras páginas fica. */
+  function toggleAll() {
+    updateSelection((next) => {
+      if (allPageSelected) pageSelectable.forEach(([crmItemId]) => next.delete(crmItemId))
+      else pageSelectable.forEach(([crmItemId, processoId]) => next.set(crmItemId, processoId))
+      return next
+    })
+  }
+
+  function toggleOne(crmItemId: string, processoId: string) {
+    updateSelection((next) => {
+      if (next.has(crmItemId)) next.delete(crmItemId)
+      else next.set(crmItemId, processoId)
       return next
     })
   }
 
   function clearSelection() {
-    setSelected(new Set())
+    updateSelection(() => new Map())
+  }
+
+  async function selectAllMatching() {
+    setLoadingAll(true)
+    try {
+      const entries = await onLoadAllSelection()
+      setSelected(new Map(entries.map((entry) => [entry.crmItemId, entry.processoId])))
+      setAllMatchingCount(entries.length)
+    } catch {
+      toast.error('Não foi possível selecionar todos os processos do filtro.')
+    } finally {
+      setLoadingAll(false)
+    }
   }
 
   function handleMoveColumn(targetWorkflowId: string, columnId: string) {
@@ -206,10 +257,6 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     )
   }
 
-  const crmItemIdToProcessoId = new Map(
-    processos.filter((p) => p.crm_item).map((p) => [p.crm_item!.id, p.id])
-  )
-
   function handleDelete() {
     setPendingDelete({ mode: 'bulk' })
   }
@@ -222,10 +269,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     if (!pendingDelete) return
     if (pendingDelete.mode === 'bulk') {
       Promise.all(
-        selectedIds
-          .map((crmItemId) => crmItemIdToProcessoId.get(crmItemId))
-          .filter((id): id is string => !!id)
-          .map((processoId) => deleteProcess.mutateAsync(processoId))
+        Array.from(selected.values()).map((processoId) => deleteProcess.mutateAsync(processoId))
       ).then(() => {
         clearSelection()
         setPendingDelete(null)
@@ -235,17 +279,15 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
     }
   }
 
-  function renderCell(colKey: string, processo: LegalProcessWithRelations) {
-    const item = processo.crm_item
-
+  function renderCell(colKey: string, row: LegalProcessListRow) {
     // Tribunal reads only from the processo row itself, so it renders even
     // when no crm_item is linked.
     if (colKey === 'tribunal') {
       return (
         <div className="min-w-0">
-          <p className="text-xs text-foreground/80 truncate">{processo.court ?? '—'}</p>
-          {processo.court_division && (
-            <p className="text-[10.5px] text-muted-foreground truncate">{processo.court_division}</p>
+          <p className="text-xs text-foreground/80 truncate">{row.court ?? '—'}</p>
+          {row.court_division && (
+            <p className="text-[10.5px] text-muted-foreground truncate">{row.court_division}</p>
           )}
         </div>
       )
@@ -253,17 +295,17 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
 
     // Every other column comes from the crm_item — flag the anomaly in the
     // identifying column and blank the rest, instead of throwing.
-    if (!item) {
+    if (!row.crm_item_id) {
       if (colKey === 'cliente') {
         return (
           <div className="min-w-0 pr-2">
             <div
               className={cn(
                 'truncate font-semibold text-foreground',
-                processo.cnj_number ? 'font-mono text-[12px]' : 'text-[13px]',
+                row.cnj_number ? 'font-mono text-[12px]' : 'text-[13px]',
               )}
             >
-              {processo.cnj_number ?? 'Sem CNJ cadastrado'}
+              {row.cnj_number ?? 'Sem CNJ cadastrado'}
             </div>
             <div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-muted-foreground truncate">
               <TriangleAlert className="w-3 h-3 shrink-0" />
@@ -281,11 +323,11 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         // há número. O cliente desce para a linha de apoio e é omitido quando
         // não existe — antes o destaque era dele, e um processo sem cliente
         // aparecia como '(sem cliente)' em negrito.
-        const clienteVinculado = item.client ? getCrmItemClientName(item) : null
-        const titulo = item.title?.trim() || null
+        const clienteVinculado = clientDisplayName(row)
+        const titulo = row.title?.trim() || null
         // Sem CNJ o título sobe para o destaque; nesse caso ele não se repete
         // embaixo.
-        const apoio = [processo.cnj_number ? titulo : null, clienteVinculado]
+        const apoio = [row.cnj_number ? titulo : null, clienteVinculado]
           .filter(Boolean)
           .join(' · ')
 
@@ -294,10 +336,10 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
             <div
               className={cn(
                 'truncate font-semibold text-foreground',
-                processo.cnj_number ? 'font-mono text-[12px]' : 'text-[13px]',
+                row.cnj_number ? 'font-mono text-[12px]' : 'text-[13px]',
               )}
             >
-              {processo.cnj_number ?? titulo ?? 'Sem CNJ cadastrado'}
+              {row.cnj_number ?? titulo ?? 'Sem CNJ cadastrado'}
             </div>
             {apoio && (
               <div className="text-[10.5px] text-muted-foreground mt-0.5 truncate">{apoio}</div>
@@ -306,7 +348,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         )
       }
       case 'area': {
-        const legalArea = item.legal_area ? AREAS_JURIDICAS[item.legal_area as AreaJuridica] : null
+        const legalArea = row.legal_area ? AREAS_JURIDICAS[row.legal_area as AreaJuridica] : null
         return legalArea ? (
           <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium', legalArea.bg, legalArea.color)}>
             {legalArea.label}
@@ -314,7 +356,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         ) : null
       }
       case 'etapa': {
-        const coluna = workflow.colunas.find((c) => c.id === item.column_id)
+        const coluna = workflow.colunas.find((c) => c.id === row.column_id)
         return (
           <div className="flex items-center gap-1.5 text-xs text-foreground/80 min-w-0">
             {coluna && (
@@ -327,7 +369,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         )
       }
       case 'responsavel': {
-        const assignedName = item.assigned_profile?.full_name ?? ''
+        const assignedName = row.assigned_name ?? ''
         return (
           <div className="flex items-center gap-2 min-w-0">
             {assignedName && (
@@ -340,7 +382,7 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         )
       }
       case 'prazo': {
-        const prazoInfo = item.next_deadline ? formatPrazo(item.next_deadline) : null
+        const prazoInfo = row.next_deadline ? formatPrazo(row.next_deadline) : null
         return prazoInfo ? (
           <span
             className={cn(
@@ -362,12 +404,19 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         )
       }
       case 'atualizacao': {
-        return <div className="text-[11px] text-muted-foreground">{formatRelativeDate(item.updated_at)}</div>
+        return (
+          <div className="text-[11px] text-muted-foreground">
+            {formatRelativeDate(row.crm_updated_at ?? row.updated_at)}
+          </div>
+        )
       }
       default:
         return null
     }
   }
+
+  // O aviso do "selecionar todos" só faz sentido com mais de uma página.
+  const hasMorePages = total > rows.length
 
   return (
     <div className="flex flex-col h-full">
@@ -406,27 +455,64 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
         </DropdownMenu>
       </div>
 
+      {/* "Selecionar todos": a página inteira marcada abre a opção do filtro
+          inteiro, como no Gmail. */}
+      {hasMorePages && (allPageSelected || allMatchingSelected) && (
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border bg-accent/40 px-4 py-1.5 text-[11.5px] text-foreground/80 shrink-0">
+          {allMatchingSelected ? (
+            <>
+              <span>
+                Todos os <strong>{selected.size}</strong> processos do filtro estão selecionados.
+              </span>
+              <button type="button" onClick={clearSelection} className="font-medium text-primary hover:underline">
+                Limpar seleção
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                Os <strong>{pageSelectable.length}</strong> processos desta página estão
+                selecionados.
+              </span>
+              <button
+                type="button"
+                onClick={selectAllMatching}
+                disabled={loadingAll}
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline disabled:opacity-60"
+              >
+                {loadingAll && <Loader2 className="h-3 w-3 animate-spin" />}
+                Selecionar todos os {total} processos do filtro
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollRef} className="flex-1 overflow-auto">
         <div
           className="grid items-center px-4 h-9 border-b border-border bg-muted/40 sticky top-0 z-10"
           style={{ gridTemplateColumns }}
         >
-          <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} />
+          <Checkbox
+            checked={allPageSelected}
+            onCheckedChange={toggleAll}
+            aria-label="Selecionar os processos desta página"
+          />
           {visibleColumns.map((col) =>
             col.key === 'prazo' || col.key === 'atualizacao' ? (
               <button
                 key={col.key}
                 className={cn(
                   'relative flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide pr-2',
-                  sortField === col.key ? 'text-accent-foreground' : 'text-muted-foreground'
+                  sort?.field === col.key ? 'text-accent-foreground' : 'text-muted-foreground'
                 )}
-                onClick={() => toggleSort(col.key as SortField)}
+                onClick={() => toggleSort(col.key as ProcessoSortField)}
               >
                 {col.label}
-                {sortField === col.key && sortDir === 'asc' && <ArrowUp className="w-3 h-3" />}
-                {sortField === col.key && sortDir === 'desc' && <ArrowUp className="w-3 h-3 rotate-180" />}
-                {sortField !== col.key && <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                {sort?.field === col.key && sort.direction === 'asc' && <ArrowUp className="w-3 h-3" />}
+                {sort?.field === col.key && sort.direction === 'desc' && <ArrowUp className="w-3 h-3 rotate-180" />}
+                {sort?.field !== col.key && <ArrowUpDown className="w-3 h-3 opacity-40" />}
                 <ResizeHandle startWidth={widths[col.key]} minWidth={col.minWidth} onChange={(w) => setWidth(col.key, w)} />
               </button>
             ) : (
@@ -442,75 +528,90 @@ export function ProcessoTableView({ workflow, processos, onRowClick }: ProcessoT
           <div />
         </div>
 
-        {sorted.map((processo) => {
-          const item = processo.crm_item
-          const isSelected = !!item && selected.has(item.id)
-          const prazoInfo = item?.next_deadline ? formatPrazo(item.next_deadline) : null
-          const isCritical = prazoInfo?.tone === 'critical'
+        <div className={cn('transition-opacity', isStale && 'opacity-60')}>
+          {rows.map((row) => {
+            const crmItemId = row.crm_item_id
+            const isSelected = !!crmItemId && selected.has(crmItemId)
+            const prazoInfo = row.next_deadline ? formatPrazo(row.next_deadline) : null
+            const isCritical = prazoInfo?.tone === 'critical'
 
-          return (
-            <div
-              key={processo.id}
-              className={cn(
-                'grid items-center px-4 min-h-[52px] border-b border-border/70 transition-colors cursor-pointer',
-                isSelected && 'bg-accent/50',
-                !isSelected && isCritical && 'bg-destructive/[0.04]',
-                !isSelected && !isCritical && 'hover:bg-muted/40'
-              )}
-              style={{ gridTemplateColumns }}
-              onClick={() => onRowClick(processo)}
-            >
-              <div onClick={(e) => e.stopPropagation()}>
-                {item && <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(item.id)} />}
+            return (
+              <div
+                key={row.id}
+                className={cn(
+                  'grid items-center px-4 min-h-[52px] border-b border-border/70 transition-colors cursor-pointer',
+                  isSelected && 'bg-accent/50',
+                  !isSelected && isCritical && 'bg-destructive/[0.04]',
+                  !isSelected && !isCritical && 'hover:bg-muted/40'
+                )}
+                style={{ gridTemplateColumns }}
+                onClick={() => onRowClick(row.id)}
+              >
+                <div onClick={(e) => e.stopPropagation()}>
+                  {crmItemId && (
+                    <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(crmItemId, row.id)} />
+                  )}
+                </div>
+
+                {visibleColumns.map((col) => (
+                  <div key={col.key}>{renderCell(col.key, row)}</div>
+                ))}
+
+                <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="flex items-center justify-center w-6 h-6 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                      <Ellipsis className="w-4 h-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onRowClick(row.id)}>Abrir processo</DropdownMenuItem>
+                      <Can resource="processos" action="delete">
+                        <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(row.id)}>
+                          Excluir
+                        </DropdownMenuItem>
+                      </Can>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
+            )
+          })}
+        </div>
 
-              {visibleColumns.map((col) => (
-                <div key={col.key}>{renderCell(col.key, processo)}</div>
-              ))}
-
-              <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="flex items-center justify-center w-6 h-6 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <Ellipsis className="w-4 h-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => onRowClick(processo)}>Abrir processo</DropdownMenuItem>
-                    <Can resource="processos" action="delete">
-                      <DropdownMenuItem variant="destructive" onClick={() => handleDeleteOne(processo.id)}>
-                        Excluir
-                      </DropdownMenuItem>
-                    </Can>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          )
-        })}
-
-        {sorted.length === 0 && (
+        {rows.length === 0 && (
           <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
             Nenhum processo encontrado.
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center px-6 py-2 border-t border-border bg-card text-[11.5px] text-muted-foreground shrink-0">
-        {processos.length} processo{processos.length !== 1 ? 's' : ''}
-        {selected.size > 0 && <> · {selected.size} selecionado{selected.size > 1 ? 's' : ''}</>}
-      </div>
+      {total > 0 && (
+        <Pagination
+          pageIndex={pagination.pageIndex}
+          pageSize={pagination.pageSize}
+          total={total}
+          itemLabel={ITEM_LABEL}
+          onPageChange={pagination.setPageIndex}
+          onPageSizeChange={pagination.setPageSize}
+          onPrefetchPage={onPrefetchPage}
+          summaryExtra={
+            selected.size > 0
+              ? `${selected.size} selecionado${selected.size > 1 ? 's' : ''}`
+              : undefined
+          }
+        />
+      )}
 
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(open) => !open && setPendingDelete(null)}
         title={
           pendingDelete?.mode === 'bulk'
-            ? `Excluir ${selectedIds.length} processo${selectedIds.length > 1 ? 's' : ''}?`
+            ? `Excluir ${selected.size} processo${selected.size > 1 ? 's' : ''}?`
             : 'Excluir processo?'
         }
         description={
           pendingDelete?.mode === 'bulk'
-            ? `Os ${selectedIds.length} processos selecionados serão removidos permanentemente. Esta ação não pode ser desfeita.`
+            ? `Os ${selected.size} processos selecionados serão removidos permanentemente. Esta ação não pode ser desfeita.`
             : 'Este processo será removido permanentemente, junto com suas movimentações. Esta ação não pode ser desfeita.'
         }
         isLoading={deleteProcess.isPending}

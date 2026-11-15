@@ -1,7 +1,11 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { ProcessoFilters } from '../utils/filterLegalProcesses'
 import {
+  getLegalProcessPage,
+  getLegalProcessSelection,
+  type LegalProcessPageQuery,
   getLegalProcesses,
   getLegalProcessById,
   getLegalProcessesByClient,
@@ -14,6 +18,11 @@ import {
 export const legalProcessKeys = {
   all: ['legal_processes'] as const,
   list: () => ['legal_processes', 'list'] as const,
+  /** Uma página da tela de Processos (docs/paginacao.md). Sob a raiz, então
+   * mutações e o realtime de notificações já a invalidam. */
+  page: (query: LegalProcessPageQuery) => ['legal_processes', 'page', query] as const,
+  /** Os ids do filtro inteiro, para "Selecionar todos os N do filtro". */
+  selection: (filters: ProcessoFilters) => ['legal_processes', 'selection', filters] as const,
   detail: (id: string) => ['legal_processes', id] as const,
   byClient: (clientId: string) => ['legal_processes', 'client', clientId] as const,
   /** Processos em que o cadastro aparece como parte (migration 78). */
@@ -46,6 +55,40 @@ export function useLegalProcesses() {
     queryKey: legalProcessKeys.list(),
     queryFn: getLegalProcesses,
   })
+}
+
+/** A página atual da tela de Processos. `keepPreviousData` mantém a página
+ * anterior visível enquanto a próxima carrega, sem piscar. */
+export function useLegalProcessPage(query: LegalProcessPageQuery) {
+  return useQuery({
+    queryKey: legalProcessKeys.page(query),
+    queryFn: () => getLegalProcessPage(query),
+    placeholderData: keepPreviousData,
+  })
+}
+
+/** Pré-carrega a página em que o cursor parou: o clique já a encontra pronta. */
+export function usePrefetchLegalProcessPage() {
+  const queryClient = useQueryClient()
+  return (query: LegalProcessPageQuery) => {
+    void queryClient.prefetchQuery({
+      queryKey: legalProcessKeys.page(query),
+      queryFn: () => getLegalProcessPage(query),
+      staleTime: 30_000,
+    })
+  }
+}
+
+/** Busca, sob demanda, todos os processos do filtro — o clique em "Selecionar
+ * todos". Pelo cache do React Query, e não num efeito. */
+export function useFetchLegalProcessSelection() {
+  const queryClient = useQueryClient()
+  return (filters: ProcessoFilters) =>
+    queryClient.fetchQuery({
+      queryKey: legalProcessKeys.selection(filters),
+      queryFn: () => getLegalProcessSelection(filters),
+      staleTime: 0,
+    })
 }
 
 /** Legal processes linked to a client — used by the client detail modal's "Casos" tab. */

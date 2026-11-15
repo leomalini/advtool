@@ -4,6 +4,12 @@ import type {
   PublicationFilters,
   StatedAmountKind,
 } from '@/types/publication.types'
+import {
+  getPageRange,
+  isRangeNotSatisfiable,
+  type PageResult,
+  type PageSize,
+} from '@/lib/pagination'
 
 const supabase = createClient()
 
@@ -32,12 +38,18 @@ function normalize(row: Record<string, unknown>): PublicationWithRelations {
   }
 }
 
+export type PublicationPage = PageResult<PublicationWithRelations>
+
+/** Uma página da fila. A ordem é total — `sequence_number` é identity — então
+ * o `.range()` não repete nem pula publicação entre páginas. */
 export async function getPublications(
-  filters: PublicationFilters = {},
-): Promise<PublicationWithRelations[]> {
+  filters: PublicationFilters,
+  pageIndex: number,
+  pageSize: PageSize,
+): Promise<PublicationPage> {
   let query = supabase
     .from('publications')
-    .select(PUBLICATION_SELECT)
+    .select(PUBLICATION_SELECT, { count: 'exact' })
     // A mesma publicação chega por até três portas (cadastro do processo,
     // busca por OAB, webhook). A que entrou primeiro representa as demais.
     .is('duplicate_of_id', null)
@@ -51,16 +63,28 @@ export async function getPublications(
   if (filters.court) query = query.eq('court', filters.court)
 
   if (filters.search?.trim()) {
-    const term = `%${filters.search.trim()}%`
+    // Vírgula e parêntese são a sintaxe do `or=()` do PostgREST — num termo de
+    // busca eles quebrariam o filtro inteiro (igual a Movimentações).
+    const term = `%${filters.search.trim().replace(/[,()]/g, ' ')}%`
     query = query.or(
       `title.ilike.${term},content_text.ilike.${term},cnj_number.ilike.${term}`,
     )
   }
 
-  const { data, error } = await query
+  const { from, to } = getPageRange(pageIndex, pageSize)
+  const { data, error, count } = await query.range(from, to)
+  if (isRangeNotSatisfiable(error) && pageIndex > 0) {
+    // Página além do fim (as lidas saem da fila "não lidas"): a primeira traz
+    // o total, e a paginação corrige para a última.
+    const firstPage = await getPublications(filters, 0, pageSize)
+    return { rows: [], total: firstPage.total }
+  }
   if (error) throw error
 
-  return (data ?? []).map((row) => normalize(row as Record<string, unknown>))
+  return {
+    rows: (data ?? []).map((row) => normalize(row as Record<string, unknown>)),
+    total: count ?? 0,
+  }
 }
 
 export async function getPublicationById(id: string): Promise<PublicationWithRelations | null> {

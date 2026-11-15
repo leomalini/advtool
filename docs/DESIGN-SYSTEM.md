@@ -126,6 +126,13 @@ Cores de feedback e categoria (azul, verde, âmbar, vermelho) são **hardcoded e
 - Border: `border border-border` + `shadow-sm`
 - Radius: `rounded-lg` (0.5rem)
 
+### Listagens: sempre paginadas
+Toda tela que mostra uma lista tem paginação (detalhes em `docs/paginacao.md`).
+- Rodapé: `Pagination` (`src/components/shared/Pagination.tsx`) — "51–100 de 213 processos", seletor 25 / 50 / 100 e `‹ 1 … 4 5 6 … 12 ›`
+- Estado: `useListPagination` (página e tamanho; o tamanho fica lembrado por tela) + `useSearchParamsMirror` (página, tamanho, filtros e ordem na URL, nunca a busca por texto)
+- Lista grande ou que cresce sozinha: paginar no servidor (`.range()` + `count: 'exact'`, com desempate total na ordem). Lista cujos totais e cartões somam tudo: carregar inteira e fatiar com `slicePage`
+- Fora da regra: kanban, calendário e listas agrupadas por dia
+
 ---
 
 ## Decisões Registradas

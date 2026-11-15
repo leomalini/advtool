@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { FileCheck2, FileSignature, FileUp, Plus, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,6 +17,10 @@ import {
 } from '@/components/ui/select'
 import { Can } from '@/components/shared/Can'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { Pagination } from '@/components/shared/Pagination'
+import { useListPagination } from '@/hooks/useListPagination'
+import { useSearchParamsMirror } from '@/hooks/useSearchParamsMirror'
+import { slicePage } from '@/lib/pagination'
 import { cn } from '@/lib/utils'
 import { getClientDisplayName } from '@/types/cliente.types'
 import {
@@ -30,6 +35,11 @@ import {
 import { formatCurrency } from '@/types/financialEntry.types'
 import { formatDate } from '@/utils/date'
 import { useContracts } from '../hooks/useContracts'
+import {
+  parseContractListFilters,
+  serializeContractListFilters,
+  type ContractSituationFilter as SituationFilter,
+} from '../utils/contractListUrl'
 import { ContractFormDialog } from './ContractFormDialog'
 import { ImportContractDialog } from './ImportContractDialog'
 import { ContractSituationBadge } from './ContractSituationBadge'
@@ -37,10 +47,7 @@ import { ContractSituationBadge } from './ContractSituationBadge'
 const ALL = '__all__'
 const SITUATIONS = Object.keys(CONTRACT_SITUATION_LABELS) as ContractSituation[]
 const TABLE_GRID = 'md:grid md:grid-cols-[minmax(0,1fr)_200px_130px_170px_120px]'
-
-/** "Em vigor" junta vigente e vencendo: os dois ainda valem, e o número do
- * topo não pode deixar de contar justamente o que está para vencer. */
-type SituationFilter = ContractSituation | 'em_vigor'
+const ITEM_LABEL = { singular: 'contrato', plural: 'contratos' }
 
 const SITUATION_FILTERS: SituationFilter[] = ['em_vigor', ...SITUATIONS]
 
@@ -82,8 +89,15 @@ export function ContractsContent() {
   const [createOpen, setCreateOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [situationFilter, setSituationFilter] = useState<SituationFilter | null>(null)
-  const [kindFilter, setKindFilter] = useState<ContractKind | null>(null)
+  const searchParams = useSearchParams()
+  // Os filtros partem da URL uma vez, ao montar; daí em diante a URL só os
+  // espelha (useSearchParamsMirror).
+  const [initialFilters] = useState(() => parseContractListFilters(searchParams))
+  const [situationFilter, setSituationFilter] = useState<SituationFilter | null>(
+    initialFilters.situation
+  )
+  const [kindFilter, setKindFilter] = useState<ContractKind | null>(initialFilters.kind)
+  const listRef = useRef<HTMLDivElement>(null)
 
   // Uma passada só: a situação de cada contrato alimenta os números e o filtro.
   const situations = useMemo(
@@ -117,6 +131,21 @@ export function ContractsContent() {
       return haystack.includes(query) || matchesDigits
     })
   }, [contracts, situations, search, situationFilter, kindFilter])
+
+  // Fatiada no navegador (docs/paginacao.md): a lista inteira já está aqui,
+  // porque os números do topo contam todos os contratos.
+  const pagination = useListPagination({
+    listKey: 'contratos',
+    resetKey: JSON.stringify([search.trim(), situationFilter, kindFilter]),
+    scrollContainerRef: listRef,
+  })
+  pagination.clampToTotal(isLoading ? undefined : filtered.length)
+  const pageRows = slicePage(filtered, pagination.pageIndex, pagination.pageSize)
+
+  useSearchParamsMirror({
+    ...serializeContractListFilters({ situation: situationFilter, kind: kindFilter }),
+    ...pagination.urlParams,
+  })
 
   const hasFilters = search.trim() !== '' || situationFilter !== null || kindFilter !== null
 
@@ -247,7 +276,7 @@ export function ContractsContent() {
         )}
       </div>
 
-      <Card>
+      <Card ref={listRef}>
         <CardContent className="p-0 pb-1">
           {isLoading ? (
             <div className="space-y-2 p-4">
@@ -283,7 +312,7 @@ export function ContractsContent() {
                   </p>
                 )}
 
-                {filtered.map((contract) => {
+                {pageRows.map((contract) => {
                   const signed = contract.documents?.some(
                     (document) => document.contract_file_role === 'assinado'
                   )
@@ -327,6 +356,18 @@ export function ContractsContent() {
                   )
                 })}
               </div>
+
+              {filtered.length > 0 && (
+                <Pagination
+                  className="mt-1 px-4"
+                  pageIndex={pagination.pageIndex}
+                  pageSize={pagination.pageSize}
+                  total={filtered.length}
+                  itemLabel={ITEM_LABEL}
+                  onPageChange={pagination.setPageIndex}
+                  onPageSizeChange={pagination.setPageSize}
+                />
+              )}
             </div>
           )}
         </CardContent>

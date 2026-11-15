@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -31,6 +31,10 @@ import type { FinancialEntryInput } from '@/schemas/financialEntry.schema'
 import { CHARGE_BLOCK_REASONS, summarizePaymentCharges } from '@/types/paymentCharge.types'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMounted } from '@/hooks/useMounted'
+import { useListPagination } from '@/hooks/useListPagination'
+import { mergeSearchParams } from '@/hooks/useSearchParamsMirror'
+import { Pagination } from '@/components/shared/Pagination'
+import { slicePage } from '@/lib/pagination'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import { useFinancialEntries } from '../hooks/useFinancialEntries'
 import {
@@ -66,6 +70,7 @@ import { Can } from '@/components/shared/Can'
 
 /** Uma constante só para cabeçalho e linhas não saírem de sincronia. */
 const TABLE_GRID = 'grid grid-cols-[1fr_150px_150px_100px_120px_100px_44px]'
+const ITEM_LABEL = { singular: 'lançamento', plural: 'lançamentos' }
 
 /** 'yyyy-MM-dd' → 'dd/MM/yyyy'. */
 function formatDay(iso: string): string {
@@ -117,7 +122,22 @@ export function FinanceiroContent() {
   // An id that is not in the list (deleted, or not visible to this profile)
   // leaves the URL once the list arrives; while it loads, it stays.
   const urlEntryId = isLoading ? selectedId : (selected?.id ?? null)
-  const query = serializeFinancialUrl({ filters, entryId: urlEntryId, tab })
+
+  // A tabela é fatiada no navegador (docs/paginacao.md): cartões e gráfico
+  // somam o período inteiro, então a lista inteira já está aqui.
+  const tableRef = useRef<HTMLDivElement>(null)
+  const pagination = useListPagination({
+    listKey: 'financeiro',
+    resetKey: JSON.stringify(filters),
+    scrollContainerRef: tableRef,
+  })
+
+  // `pagina`/`por_pagina` entram na mesma query que este espelho já escreve
+  // inteira — um segundo espelho brigaria com ele.
+  const query = mergeSearchParams(
+    serializeFinancialUrl({ filters, entryId: urlEntryId, tab }),
+    pagination.urlParams
+  )
   const currentQuery = searchParams.toString()
   useEffect(() => {
     // Also when the URL changed under the screen (a link to /financeiro while
@@ -131,6 +151,8 @@ export function FinanceiroContent() {
     () => sortByCashFlowDate(filterFinancialEntries(entries, filters)),
     [entries, filters]
   )
+  pagination.clampToTotal(isLoading ? undefined : filtered.length)
+  const pageRows = slicePage(filtered, pagination.pageIndex, pagination.pageSize)
   // The cards: every filter but the situation — their own slice, which would
   // otherwise zero the cards beside the one clicked.
   const cardRows = useMemo(
@@ -217,7 +239,7 @@ export function FinanceiroContent() {
             />
 
             {/* ── Tabela de lançamentos ── */}
-            <Card>
+            <Card ref={tableRef}>
               <CardHeader className="pb-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <CardTitle className="text-sm font-semibold">Lançamentos</CardTitle>
@@ -246,7 +268,9 @@ export function FinanceiroContent() {
                   </div>
                 ) : (
                   // As colunas fixas somam ~736px + gaps; abaixo disso a tabela rola
-                  // dentro do próprio card, em vez de empurrar a página.
+                  // dentro do próprio card, em vez de empurrar a página. O rodapé
+                  // da paginação fica fora dela, sempre à vista.
+                  <>
                   <div className="overflow-x-auto">
                     <div className={cn(TABLE_GRID, 'min-w-[820px] gap-3 px-4 py-2 bg-muted/30 border-y text-xs font-medium text-muted-foreground')}>
                       <span>Descrição</span>
@@ -292,7 +316,7 @@ export function FinanceiroContent() {
                           </div>
                         </div>
                       )}
-                      {filtered.map((entry) => {
+                      {pageRows.map((entry) => {
                         const isReceita = entry.type === 'receita'
                         const isPaid = entry.status === 'pago'
                         const situation = getFinancialSituation(entry)
@@ -508,6 +532,19 @@ export function FinanceiroContent() {
                       })}
                     </div>
                   </div>
+
+                  {filtered.length > 0 && (
+                    <Pagination
+                      className="mt-1 px-4"
+                      pageIndex={pagination.pageIndex}
+                      pageSize={pagination.pageSize}
+                      total={filtered.length}
+                      itemLabel={ITEM_LABEL}
+                      onPageChange={pagination.setPageIndex}
+                      onPageSizeChange={pagination.setPageSize}
+                    />
+                  )}
+                  </>
                 )}
               </CardContent>
             </Card>

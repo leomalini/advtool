@@ -11,12 +11,14 @@ import {
   type MovementGroup,
 } from '../utils/categories'
 import type { MovementFilters } from '../utils/movementFilters'
+import {
+  getPageRange,
+  isRangeNotSatisfiable,
+  type PageResult,
+  type PageSize,
+} from '@/lib/pagination'
 
 const supabase = createClient()
-
-/** Quantas linhas por página. Diferente de Publicações, que traz a tabela
- * inteira: um escritório com 200 processos passa de 20 mil movimentações. */
-export const PAGE_SIZE = 50
 
 /**
  * `!inner` no processo é o que permite filtrar por tribunal, que é coluna de
@@ -58,15 +60,14 @@ function looksLikeCaseNumber(term: string): boolean {
   return /^[\d.\-/\s]+$/.test(term) && /\d{4,}/.test(term)
 }
 
-export interface MovementPage {
-  rows: LegalProcessMovementWithContext[]
-  /** Total que casa o filtro, do `count: 'exact'` — não o tamanho de `rows`. */
-  total: number
-}
+export type MovementPage = PageResult<LegalProcessMovementWithContext>
 
+/** Uma página da lista. Um escritório com 200 processos passa de 20 mil
+ * movimentações: a tela nunca traz a tabela inteira. */
 export async function getMovements(
   filters: MovementFilters,
-  page: number,
+  pageIndex: number,
+  pageSize: PageSize,
 ): Promise<MovementPage> {
   let query = supabase
     .from('legal_process_movements')
@@ -112,8 +113,14 @@ export async function getMovements(
     }
   }
 
-  const from = page * PAGE_SIZE
-  const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1)
+  const { from, to } = getPageRange(pageIndex, pageSize)
+  const { data, error, count } = await query.range(from, to)
+  if (isRangeNotSatisfiable(error) && pageIndex > 0) {
+    // Página além do fim (URL antiga, linhas tratadas desde então): a
+    // primeira página traz o total, e a paginação corrige para a última.
+    const firstPage = await getMovements(filters, 0, pageSize)
+    return { rows: [], total: firstPage.total }
+  }
   if (error) throw error
 
   return {
