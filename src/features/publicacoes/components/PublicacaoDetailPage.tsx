@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useListHref } from '@/hooks/useSearchParamsMirror'
 import { PublicacaoAtividades } from './PublicacaoAtividades'
 import { PublicationTriageCard } from './PublicationTriageCard'
 import { useCollectAiBatches } from '@/features/ia/hooks/useCollectAiBatches'
@@ -168,6 +169,9 @@ function EditableField({
 
 export function PublicacaoDetailPage({ publicacaoId }: { publicacaoId: string }) {
   const router = useRouter()
+  // A lista como a pessoa a deixou (página, filtros): o "voltar" do navegador
+  // não serve, porque anterior/próxima empilham histórico.
+  const listHref = useListHref('/publicacoes')
   const [expanded, setExpanded] = useState(false)
   const [onlyUnreadQueue, setOnlyUnreadQueue] = useState(true)
 
@@ -268,7 +272,7 @@ export function PublicacaoDetailPage({ publicacaoId }: { publicacaoId: string })
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">Publicação não encontrada.</p>
-        <Button variant="outline" onClick={() => router.push('/publicacoes')}>
+        <Button variant="outline" onClick={() => router.push(listHref)}>
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
           Voltar para a lista
         </Button>
@@ -287,7 +291,7 @@ export function PublicacaoDetailPage({ publicacaoId }: { publicacaoId: string })
       <div className="shrink-0 border-b bg-card">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-6 py-2.5">
         <Link
-          href="/publicacoes"
+          href={listHref}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

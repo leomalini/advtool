@@ -1,7 +1,8 @@
 # Paginação das listagens
 
 Status: decisões fechadas em 2026-11-13. Fase 1 (peças compartilhadas e
-Movimentações) em `feat/paginacao-base`; fases 2 a 5 pendentes.
+Movimentações) em `feat/paginacao-base`; fase 2 (Publicações) em
+`feat/paginacao-publicacoes`; fases 3 a 5 pendentes.
 
 **Regra do projeto: toda listagem tem paginação.** Uma tela nova que mostra uma
 lista usa o componente `Pagination` e o hook de parâmetros descritos abaixo.
@@ -43,6 +44,10 @@ kanban (Tarefas, CRM), calendário (Agenda) e listas agrupadas por dia
   consulta, corrige a página que passou do total.
 - `src/hooks/useSearchParamsMirror.ts`: escreve na URL só as chaves que a tela
   controla, com `history.replaceState`, sem apagar as outras (`?create=1`).
+  Também guarda a última query de cada listagem na sessão do navegador, e
+  `useListHref('/publicacoes')` devolve o endereço da lista como a pessoa a
+  deixou: é o que o link "voltar para a lista" de um detalhe usa. O voltar do
+  navegador não basta, porque anterior/próxima no detalhe empilham histórico.
 - Nas telas paginadas no servidor, o serviço trata o `PGRST103` (página além
   do fim) devolvendo a página vazia com o total certo, e o rodapé pré-carrega a
   página em que o cursor parou.
