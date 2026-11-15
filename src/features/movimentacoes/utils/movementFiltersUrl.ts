@@ -1,6 +1,6 @@
-import { format, isValid, parseISO } from 'date-fns'
 import type { MovementCategory } from '@/types/legalProcess.types'
 import type { MirroredParams } from '@/hooks/useSearchParamsMirror'
+import { parseIsoDay, type ParamReader } from '@/lib/urlParams'
 import { MOVEMENT_CATEGORIES } from './categories'
 import { defaultMovementFilters, type MovementFilters } from './movementFilters'
 
@@ -26,17 +26,6 @@ const PARAMS = {
   includeHandled: 'tratadas',
 } as const
 
-interface ParamReader {
-  get(name: string): string | null
-}
-
-/** 'yyyy-MM-dd' que é um dia de verdade: '2026-02-30' não volta igual. */
-function parseDay(value: string | null): string | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  const date = parseISO(value)
-  return isValid(date) && format(date, 'yyyy-MM-dd') === value ? value : null
-}
-
 function isMovementCategory(value: string): value is MovementCategory {
   return Object.hasOwn(MOVEMENT_CATEGORIES, value)
 }
@@ -45,8 +34,8 @@ function isMovementCategory(value: string): value is MovementCategory {
 export function parseMovementFilters(params: ParamReader): MovementFilters {
   const base = defaultMovementFilters()
 
-  const from = parseDay(params.get(PARAMS.from)) ?? base.from
-  const to = parseDay(params.get(PARAMS.to)) ?? base.to
+  const from = parseIsoDay(params.get(PARAMS.from)) ?? base.from
+  const to = parseIsoDay(params.get(PARAMS.to)) ?? base.to
   // Um período invertido não tem resultado possível: volta ao padrão em vez de
   // abrir uma lista vazia sem explicação.
   const period = from > to ? { from: base.from, to: base.to } : { from, to }

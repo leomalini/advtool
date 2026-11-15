@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Download, FileText, Signature, Trash2, Upload } from 'lucide-react'
@@ -15,6 +16,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { Pagination } from '@/components/shared/Pagination'
+import { useListPagination } from '@/hooks/useListPagination'
+import { useSearchParamsMirror } from '@/hooks/useSearchParamsMirror'
+import { slicePage } from '@/lib/pagination'
 import { cn } from '@/lib/utils'
 import { getDisplayName } from '@/utils/profile'
 import { getClientDisplayName } from '@/types/cliente.types'
@@ -33,12 +38,8 @@ import {
   useOpenDocument,
   useUpdateDocumentCategory,
 } from '../hooks/useDocumentMutations'
-import {
-  documentOwners,
-  emptyDocumentFilters,
-  filterDocuments,
-  type DocumentFilters,
-} from '../utils/filterDocuments'
+import { documentOwners, filterDocuments, type DocumentFilters } from '../utils/filterDocuments'
+import { parseDocumentFilters, serializeDocumentFilters } from '../utils/documentFiltersUrl'
 import { DocumentFilterBar } from './DocumentFilterBar'
 import { Can } from '@/components/shared/Can'
 import {
@@ -50,23 +51,40 @@ import {
 
 const CATEGORIES = Object.keys(DOCUMENT_CATEGORY_LABELS) as DocumentCategory[]
 const TABLE_GRID = 'grid grid-cols-[1fr_170px_150px_200px_100px_104px]'
+const ITEM_LABEL = { singular: 'documento', plural: 'documentos' }
 
 export function DocumentosContent() {
   const { data: documents = [], isLoading } = useDocuments()
   const deleteDocument = useDeleteDocument()
   const openDocument = useOpenDocument()
   const updateCategory = useUpdateDocumentCategory()
+  const searchParams = useSearchParams()
 
   const [pendingDelete, setPendingDelete] = useState<DocumentWithRelations | null>(null)
-  const [filters, setFilters] = useState<DocumentFilters>(emptyDocumentFilters)
+  // Os filtros partem da URL uma vez, ao montar; daí em diante a URL só os
+  // espelha (useSearchParamsMirror).
+  const [filters, setFilters] = useState<DocumentFilters>(() => parseDocumentFilters(searchParams))
   const signature = useDocumentSignatureSeals()
   const [sending, setSending] = useState<DocumentWithRelations | null>(null)
   const [viewing, setViewing] = useState<DocumentWithRelations | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(
     () => filterDocuments(documents, filters, signature.seals),
     [documents, filters, signature.seals]
   )
+
+  // Fatiada no navegador (docs/paginacao.md): o filtro de assinatura depende
+  // dos selos, calculados aqui sobre a lista inteira.
+  const pagination = useListPagination({
+    listKey: 'documentos',
+    resetKey: JSON.stringify(filters),
+    scrollContainerRef: listRef,
+  })
+  pagination.clampToTotal(isLoading ? undefined : filtered.length)
+  const pageRows = slicePage(filtered, pagination.pageIndex, pagination.pageSize)
+
+  useSearchParamsMirror({ ...serializeDocumentFilters(filters), ...pagination.urlParams })
 
   return (
     <div className="space-y-6">
@@ -104,7 +122,7 @@ export function DocumentosContent() {
       />
 
       {/* Tabela */}
-      <Card>
+      <Card ref={listRef}>
         <CardContent className="p-0 pb-1">
           {isLoading ? (
             <div className="p-4 space-y-2">
@@ -143,7 +161,7 @@ export function DocumentosContent() {
                   </div>
                 )}
 
-                {filtered.map((doc) => {
+                {pageRows.map((doc) => {
                   const { client, legalProcess } = documentOwners(doc)
                   const seal = signature.seals.get(doc.id)
                   const signedCopy =
@@ -292,6 +310,18 @@ export function DocumentosContent() {
                   )
                 })}
               </div>
+
+              {filtered.length > 0 && (
+                <Pagination
+                  className="mt-1 px-4"
+                  pageIndex={pagination.pageIndex}
+                  pageSize={pagination.pageSize}
+                  total={filtered.length}
+                  itemLabel={ITEM_LABEL}
+                  onPageChange={pagination.setPageIndex}
+                  onPageSizeChange={pagination.setPageSize}
+                />
+              )}
             </div>
           )}
         </CardContent>

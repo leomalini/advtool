@@ -1,4 +1,5 @@
 import type { MirroredParams } from '@/hooks/useSearchParamsMirror'
+import type { ParamReader } from '@/lib/urlParams'
 
 /**
  * Os filtros de Publicações na URL (docs/paginacao.md):
@@ -17,10 +18,6 @@ const PARAMS = {
 export interface PublicationListToggles {
   onlyUnread: boolean
   onlyOrphans: boolean
-}
-
-interface ParamReader {
-  get(name: string): string | null
 }
 
 export function parsePublicationToggles(params: ParamReader): PublicationListToggles {
