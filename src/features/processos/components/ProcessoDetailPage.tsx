@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useListHref } from '@/hooks/useSearchParamsMirror'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -485,6 +486,8 @@ function MonitoringStrip({
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function ProcessoDetailPage({ processoId }: { processoId: string }) {
+  // A lista como a pessoa a deixou (página, filtros, ordem) — docs/paginacao.md.
+  const listHref = useListHref('/processos')
   const router = useRouter()
   const { data: processo, isLoading, error } = useLegalProcess(processoId)
   const { can } = usePermissions()
@@ -872,7 +875,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <p className="text-sm text-muted-foreground">Processo não encontrado</p>
-        <Button variant="outline" onClick={() => router.push('/processos')}>
+        <Button variant="outline" onClick={() => router.push(listHref)}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Voltar
         </Button>
@@ -910,7 +913,7 @@ export function ProcessoDetailPage({ processoId }: { processoId: string }) {
             Início
           </Link>
           <span className="text-border">/</span>
-          <Link href="/processos" className="hover:text-foreground transition-colors">
+          <Link href={listHref} className="hover:text-foreground transition-colors">
             Processos
           </Link>
           <span className="text-border">/</span>

@@ -4,7 +4,8 @@ Status: decisões fechadas em 2026-11-13. Fase 1 (peças compartilhadas e
 Movimentações) em `feat/paginacao-base`; fase 2 (Publicações) em
 `feat/paginacao-publicacoes`; fase 3 (Contratos, Documentos, Financeiro) em
 `feat/paginacao-fatiadas`; fase 4 (Clientes e Pessoas, migration 91) em
-`feat/paginacao-clientes`; fase 5 pendente.
+`feat/paginacao-clientes`; fase 5 (Processos, migration 92) em
+`feat/paginacao-processos`. Migrations 91 e 92 a aplicar.
 
 **Regra do projeto: toda listagem tem paginação.** Uma tela nova que mostra uma
 lista usa o componente `Pagination` e o hook de parâmetros descritos abaixo.
@@ -101,17 +102,30 @@ Filtros na URL: `area`, `tipo` (só em Pessoas). O selo de pendência continua
 vindo de `useClientesPendencies`. `useCadastroList` (combobox) não muda. Os
 detalhes de cliente e de pessoa voltam para a lista por `useListHref`.
 
-### Processos (fase 5), no servidor, migration nova
+### Processos (fase 5), no servidor, migration 92
 View `legal_process_list` (`security_invoker = true`) com uma linha por
 processo e o card mestre (wf-processos; sem ele, o mais antigo, igual a
 `pickMasterCrmItem`) achatado: etapa, área, responsável, prazo, atualização,
-cliente, mais `search_text` e `cnj_digits`. Busca, filtros e ordenação (Prazo,
-Atual., processo sem card no fim, desempate por `id`) rodam no SQL, com o
-mesmo resultado de `filterLegalProcesses`. Filtros na URL: `area`,
-`responsavel`, `etapa`, `prazo_de`, `prazo_ate`, `monitoramento`, `ordem`.
-"Selecionar todos os N" busca os pares `crm_item_id`/`id` do filtro inteiro
-em lotes de 1000. `useLegalProcesses()` (agenda, contratos, financeiro,
-webhooks, combobox) não muda.
+cliente e nome do responsável. A busca é a função
+`search_legal_processes(p_search)`, que devolve linhas da view (mesmos
+campos que `filterLegalProcesses` olhava, mais o CNJ só com dígitos), e o
+resto é encadeado sobre ela: área, responsável, etapa, faixa de prazo
+(`next_deadline` é date, inclusivo), monitoramento (`monitoring_frequency`
+nulo = pela OAB), ordem e página. Ordenando por Prazo ou Atual., o processo
+sem o dado (ou sem card) vai para o fim nas duas direções; sem ordem
+escolhida, o atualizado mais recentemente primeiro. Desempate por `id`.
+
+Filtros na URL: `area`, `responsavel`, `etapa`, `prazo_de`, `prazo_ate`,
+`monitoramento`, `ordem` (`prazo`, `-prazo`, `atualizacao`, `-atualizacao`).
+`create`, `clientId` e `cnj` continuam funcionando, e abrir/fechar o
+formulário não apaga mais os filtros.
+
+Seleção: o cabeçalho marca ou desmarca a página; o marcado em outras
+páginas fica. Com a página inteira marcada aparece "Selecionar todos os N
+processos do filtro", que busca os pares `crm_item_id`/`id` em lotes de 1000.
+Um filtro ou ordem novos remontam a tabela e a seleção recomeça — nenhuma
+ação em massa cai em processo fora da tela. `useLegalProcesses()` (agenda,
+contratos, financeiro, webhooks, combobox) não muda.
 
 Nas duas views, os nomes exatos das colunas saem de uma leitura das
 migrations na hora de escrever o SQL, não deste documento.

@@ -2,7 +2,16 @@ import { createClient } from '@/lib/supabase/client'
 import { recordActivity } from '@/lib/activities'
 import { updateCrmItemRecord } from '@/features/crm/services/crmItems.service'
 import { findClientsByDocuments } from '@/features/clientes/services/clientes.service'
+import {
+  getPageRange,
+  isRangeNotSatisfiable,
+  type PageResult,
+  type PageSize,
+} from '@/lib/pagination'
+import type { ProcessoFilters } from '../utils/filterLegalProcesses'
+import type { ProcessoSort, ProcessoSortField } from '../utils/processoListUrl'
 import type {
+  LegalProcessListRow,
   LegalProcessWithRelations,
   LegalProcessMovement,
   LegalProcessMovementWithContext,
@@ -319,6 +328,118 @@ export async function getLegalProcesses(): Promise<LegalProcessWithRelations[]> 
   return (data as unknown[]).map((row) =>
     toLegalProcessWithRelations(row as Parameters<typeof toLegalProcessWithRelations>[0])
   )
+}
+
+// ── Lista paginada (docs/paginacao.md) ───────────────────────────────────────
+
+/**
+ * A lista filtrada, sobre `search_legal_processes` (migration 92): a busca de
+ * texto vem da função, e o resto é encadeado sobre o resultado — as mesmas
+ * regras que `filterLegalProcesses` aplicava no navegador. Um filtro de card
+ * (área, responsável, etapa, prazo) exclui o processo sem card, que ainda
+ * casa pela busca.
+ */
+function filteredListQuery(filters: ProcessoFilters, columns: string, count: boolean) {
+  let query = supabase
+    .rpc(
+      'search_legal_processes',
+      { p_search: filters.search.trim() },
+      count ? { count: 'exact' } : undefined
+    )
+    .select(columns)
+
+  if (filters.legalArea) query = query.eq('legal_area', filters.legalArea)
+  if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo)
+  if (filters.columnId) query = query.eq('column_id', filters.columnId)
+  // `next_deadline` é date: comparar 'yyyy-MM-dd' é inclusivo nas duas pontas.
+  if (filters.deadlineFrom) query = query.gte('next_deadline', filters.deadlineFrom)
+  if (filters.deadlineTo) query = query.lte('next_deadline', filters.deadlineTo)
+  // As duas fontes marcadas equivalem a nenhuma: todo processo cai numa.
+  if (filters.monitoring.length === 1) {
+    query =
+      filters.monitoring[0] === 'oab'
+        ? query.is('monitoring_frequency', null)
+        : query.not('monitoring_frequency', 'is', null)
+  }
+  return query
+}
+
+const SORT_COLUMNS: Record<ProcessoSortField, keyof LegalProcessListRow> = {
+  prazo: 'next_deadline',
+  atualizacao: 'crm_updated_at',
+}
+
+export interface LegalProcessPageQuery {
+  filters: ProcessoFilters
+  sort: ProcessoSort | null
+  pageIndex: number
+  pageSize: PageSize
+}
+
+/**
+ * Uma página da lista de Processos. Sem ordem escolhida, o processo
+ * atualizado mais recentemente vem primeiro, como antes. Ordenando por prazo
+ * ou atualização, o processo sem esse dado (ou sem card) vai para o fim nas
+ * duas direções. Desempate por `id`: nenhum processo repete nem some entre
+ * páginas.
+ */
+export async function getLegalProcessPage(
+  query: LegalProcessPageQuery
+): Promise<PageResult<LegalProcessListRow>> {
+  let request = filteredListQuery(query.filters, '*', true)
+  if (query.sort) {
+    request = request.order(SORT_COLUMNS[query.sort.field], {
+      ascending: query.sort.direction === 'asc',
+      nullsFirst: false,
+    })
+  } else {
+    request = request.order('updated_at', { ascending: false })
+  }
+  request = request.order('id', { ascending: query.sort?.direction === 'asc' })
+
+  const { from, to } = getPageRange(query.pageIndex, query.pageSize)
+  const { data, error, count } = await request.range(from, to)
+  if (isRangeNotSatisfiable(error) && query.pageIndex > 0) {
+    // Página além do fim (processos excluídos, filtro mais estreito): a
+    // primeira traz o total, e a paginação corrige para a última.
+    const firstPage = await getLegalProcessPage({ ...query, pageIndex: 0 })
+    return { rows: [], total: firstPage.total }
+  }
+  if (error) throw error
+
+  return { rows: (data ?? []) as unknown as LegalProcessListRow[], total: count ?? 0 }
+}
+
+/** Um processo selecionável: as ações em massa agem no card, a exclusão no
+ * processo. */
+export interface LegalProcessSelectionEntry {
+  crmItemId: string
+  processoId: string
+}
+
+/** Lotes do "selecionar todos": o PostgREST corta respostas em 1000 linhas. */
+const SELECTION_BATCH = 1000
+
+/**
+ * Todos os processos do filtro com card — o "Selecionar todos os N do
+ * filtro" da tabela. Só ids, em lotes, na ordem de `id` para os lotes não se
+ * sobreporem.
+ */
+export async function getLegalProcessSelection(
+  filters: ProcessoFilters
+): Promise<LegalProcessSelectionEntry[]> {
+  const entries: LegalProcessSelectionEntry[] = []
+  for (let from = 0; ; from += SELECTION_BATCH) {
+    const { data, error } = await filteredListQuery(filters, 'id, crm_item_id', false)
+      .not('crm_item_id', 'is', null)
+      .order('id')
+      .range(from, from + SELECTION_BATCH - 1)
+    if (error) throw error
+
+    const rows = (data ?? []) as unknown as { id: string; crm_item_id: string }[]
+    for (const row of rows) entries.push({ crmItemId: row.crm_item_id, processoId: row.id })
+    if (rows.length < SELECTION_BATCH) return entries
+  }
 }
 
 /** All legal processes whose master crm_item (in wf-processos) belongs to a given client — used by the client detail modal. */
