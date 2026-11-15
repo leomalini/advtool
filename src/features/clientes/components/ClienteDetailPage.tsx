@@ -19,6 +19,7 @@ import {
   UserMinus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useListHref } from '@/hooks/useSearchParamsMirror'
 import { Button } from '@/components/ui/button'
 import { ActionCard } from '@/components/shared/DetailStrip'
 import {
@@ -348,6 +349,8 @@ function PendenciasTab({ clientId, onEdit }: { clientId: string; onEdit: () => v
 
 export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
   const router = useRouter()
+  // A lista como a pessoa a deixou (página, filtros) — docs/paginacao.md.
+  const listHref = useListHref('/clientes')
   const { data: cliente, isLoading, error } = useCliente(clienteId)
   const { can } = usePermissions()
 
@@ -399,7 +402,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <p className="text-sm text-muted-foreground">Cliente não encontrado</p>
-        <Button variant="outline" onClick={() => router.push('/clientes')}>
+        <Button variant="outline" onClick={() => router.push(listHref)}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Voltar
         </Button>
@@ -419,7 +422,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
             Início
           </Link>
           <span className="text-border">/</span>
-          <Link href="/clientes" className="hover:text-foreground transition-colors">
+          <Link href={listHref} className="hover:text-foreground transition-colors">
             Clientes
           </Link>
           <span className="text-border">/</span>

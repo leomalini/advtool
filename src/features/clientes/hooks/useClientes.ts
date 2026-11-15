@@ -1,12 +1,14 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  getCadastroPage,
   getClients,
   getPeople,
   getClientById,
   getClientsPendencies,
   getClientComments,
+  type CadastroPageQuery,
 } from '../services/clientes.service'
 
 export const clientKeys = {
@@ -14,6 +16,9 @@ export const clientKeys = {
   /** Sob a raiz `clients` de propósito: invalidar `all` (o que toda mutação de
    * cadastro faz) atualiza também a lista de Pessoas. */
   people: ['clients', 'people'] as const,
+  /** Uma página das listas (docs/paginacao.md) — sob a raiz `clients`, então
+   * toda mutação de cadastro já a invalida. */
+  page: (query: CadastroPageQuery) => ['clients', 'page', query] as const,
   detail: (id: string) => ['clients', id] as const,
   comments: (id: string) => ['clients', 'comments', id] as const,
   /** Fora da raiz: quem muda o estado de cliente invalida esta também. */
@@ -46,6 +51,28 @@ export function useCadastroList(scope: CadastroListScope) {
     queryKey: scope === 'people' ? clientKeys.people : clientKeys.all,
     queryFn: scope === 'people' ? getPeople : getClients,
   })
+}
+
+/** A página atual das telas de Clientes e Pessoas. `keepPreviousData` mantém
+ * a página anterior visível enquanto a próxima carrega, sem piscar. */
+export function useCadastroPage(query: CadastroPageQuery) {
+  return useQuery({
+    queryKey: clientKeys.page(query),
+    queryFn: () => getCadastroPage(query),
+    placeholderData: keepPreviousData,
+  })
+}
+
+/** Pré-carrega a página em que o cursor parou: o clique já a encontra pronta. */
+export function usePrefetchCadastroPage() {
+  const queryClient = useQueryClient()
+  return (query: CadastroPageQuery) => {
+    void queryClient.prefetchQuery({
+      queryKey: clientKeys.page(query),
+      queryFn: () => getCadastroPage(query),
+      staleTime: 30_000,
+    })
+  }
 }
 
 export function useCliente(id: string) {
