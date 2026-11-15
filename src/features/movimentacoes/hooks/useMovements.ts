@@ -18,6 +18,7 @@ import {
   setMovementVisibility,
 } from '../services/movements.service'
 import type { MovementFilters } from '../utils/movementFilters'
+import type { PageSize } from '@/lib/pagination'
 
 /**
  * As chaves vivem SOB `legalProcessKeys.all` de propósito.
@@ -30,8 +31,8 @@ import type { MovementFilters } from '../utils/movementFilters'
  */
 export const movementKeys = {
   all: [...legalProcessKeys.all, 'movements'] as const,
-  list: (filters: MovementFilters, page: number) =>
-    [...legalProcessKeys.all, 'movements', 'list', filters, page] as const,
+  list: (filters: MovementFilters, pageIndex: number, pageSize: PageSize) =>
+    [...legalProcessKeys.all, 'movements', 'list', filters, pageIndex, pageSize] as const,
   activity: (from: string, to: string) =>
     [...legalProcessKeys.all, 'movements', 'activity', from, to] as const,
   silence: () => [...legalProcessKeys.all, 'movements', 'silence'] as const,
@@ -47,12 +48,25 @@ export function useInvalidateMovements() {
 /** `keepPreviousData` mantém a página anterior visível enquanto a próxima
  * carrega: sem isso, cada clique na paginação pisca a lista vazia e o scroll
  * salta para o topo. */
-export function useMovements(filters: MovementFilters, page: number) {
+export function useMovements(filters: MovementFilters, pageIndex: number, pageSize: PageSize) {
   return useQuery({
-    queryKey: movementKeys.list(filters, page),
-    queryFn: () => getMovements(filters, page),
+    queryKey: movementKeys.list(filters, pageIndex, pageSize),
+    queryFn: () => getMovements(filters, pageIndex, pageSize),
     placeholderData: keepPreviousData,
   })
+}
+
+/** Pré-carrega uma página quando o cursor chega no botão dela: o clique já a
+ * encontra no cache. Uma página fresca não é buscada de novo. */
+export function usePrefetchMovements() {
+  const queryClient = useQueryClient()
+  return (filters: MovementFilters, pageIndex: number, pageSize: PageSize) => {
+    void queryClient.prefetchQuery({
+      queryKey: movementKeys.list(filters, pageIndex, pageSize),
+      queryFn: () => getMovements(filters, pageIndex, pageSize),
+      staleTime: 30_000,
+    })
+  }
 }
 
 export function useDailyActivity(from: string, to: string) {
