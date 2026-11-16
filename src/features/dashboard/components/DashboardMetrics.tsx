@@ -55,7 +55,7 @@ function ProcessesMetric({ step }: { step: number }) {
       label="Processos ativos"
       icon={Scale}
       tone="accent"
-      href="/processos"
+      href="/processos?status=ativo"
       value={valueOf(data, (counts) => counts.active)}
       isError={isError}
       chart={data && data.active > 0 && (

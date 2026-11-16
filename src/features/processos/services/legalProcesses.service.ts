@@ -348,6 +348,7 @@ function filteredListQuery(filters: ProcessoFilters, columns: string, count: boo
     )
     .select(columns)
 
+  if (filters.status) query = query.eq('status', filters.status)
   if (filters.legalArea) query = query.eq('legal_area', filters.legalArea)
   if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo)
   if (filters.columnId) query = query.eq('column_id', filters.columnId)
