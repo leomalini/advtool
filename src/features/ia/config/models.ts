@@ -8,6 +8,8 @@
  * esforço, `drop_block`, fallback) valem para ele.
  */
 
+import type { AiRoute } from '../model'
+
 export const AI_PROVIDERS = ['anthropic', 'google'] as const
 
 export type AssistantProvider = (typeof AI_PROVIDERS)[number]
@@ -51,6 +53,45 @@ export const AI_MODEL_OPTIONS = {
 export const DEFAULT_MODELS: Record<AssistantProvider, string> = {
   anthropic: 'claude-opus-5-5',
   google: 'gemini-3.8-flash',
+}
+
+/** Os interruptores da aba (fase 3). Ligados quando o painel não define. */
+export const AI_FEATURES = ['assistant', 'portal', 'autoSummary', 'triage', 'briefing'] as const
+
+export type AiFeature = (typeof AI_FEATURES)[number]
+
+export const AI_FEATURE_INFO: Record<AiFeature, { label: string; description: string }> = {
+  assistant: {
+    label: 'Assistente',
+    description: 'Chat, painel lateral, leitura de documentos, redação e o "Atualizar" do resumo.',
+  },
+  portal: {
+    label: 'Perguntas do portal',
+    description: 'O botão "Tirar dúvidas" no portal do cliente e as respostas preparadas.',
+  },
+  autoSummary: {
+    label: 'Resumo automático',
+    description: 'Atualiza sozinho, em lote, o resumo dos processos que receberam novidades.',
+  },
+  triage: {
+    label: 'Triagem de publicações',
+    description: 'Lê cada publicação nova, em lote, e sugere prazo e processo.',
+  },
+  briefing: {
+    label: 'Briefing diário',
+    description: 'O resumo do dia de cada pessoa, no sino, às 7h.',
+  },
+}
+
+/** Como cada rota aparece no gasto por função. */
+export const AI_ROUTE_LABELS: Record<AiRoute, string> = {
+  chat: 'Assistente (chat)',
+  portal: 'Portal do cliente',
+  contract_reader: 'Leitura de documentos',
+  drafting: 'Redação de modelos',
+  process_summary: 'Resumo de processo',
+  triage: 'Triagem de publicações',
+  briefing: 'Briefing diário',
 }
 
 export function isCuratedModel(provider: AssistantProvider, modelId: string): boolean {

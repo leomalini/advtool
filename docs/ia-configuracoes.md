@@ -1,8 +1,8 @@
 # Painel do Assistente IA em Configurações
 
 > Plano de 2026-11-16. Decisões tomadas com o usuário na mesma data (seção D).
-> Fase 1 em `feat/ia-config-base`, Fase 2 em `feat/ia-config-painel` (migration 94 NÃO
-> aplicada).
+> Fase 1 em `feat/ia-config-base`, Fase 2 em `feat/ia-config-painel`, Fase 3 em
+> `feat/ia-config-uso` (migration 94 NÃO aplicada).
 
 ## Objetivo
 
@@ -233,6 +233,30 @@ critério do usuário.
   chave Google do `.env` ok); rotas recusam sem sessão (401); tela conferida
   no navegador com dados simulados (desktop e 375 px).
 - **Não verificado:** a aba logada contra o banco real (precisa da migration 94).
+
+## Fase 3 — estado (2026-11-16)
+
+- Cards "Gasto e teto" (gasto do mês contra o teto, aviso de teto atingido,
+  teto Definir aqui / Sem teto / Usar o do ambiente, gasto por função),
+  "Funções" (5 interruptores) e "Histórico" (últimas 50 alterações).
+- Interruptores respeitados: `createAssistantModel` recusa a rota da função
+  desligada com `disabled: true` e as rotas respondem
+  `AI_ERROR_MESSAGES.disabled`; `enqueueBatch` descarta o trabalho de função
+  desligada (triagem, resumo automático, portal); o briefing nem lê as
+  pessoas; `isPortalAnswersEnabled` (agora assíncrona) soma o ambiente e o
+  painel. O que já estava no lote continua sendo recolhido.
+- Gasto do mês: `ai_usage` lido pela rota (service_role, paginado), somado
+  por rota; quem vê Configurações recebe as somas, nunca as linhas. Sem
+  migration nova. Conferido no banco real: o total bate com
+  `ai_usage_month_cost_usd` (a soma do teto).
+- Rotas novas: `GET …/uso`, `GET …/historico` (view), `PUT …/teto`,
+  `PUT …/funcoes` (manage).
+- Verificado: tsc, lint, build; 15/15 cenários da fase 3 e as suítes das
+  fases 1 (19/19) e 2 (18/18) de novo; tela no navegador com dados simulados
+  (desktop e 375 px).
+- **Não verificado:** a aba logada contra o banco real (precisa da migration
+  94). Os botões do Assistente na tela (painel, /ia) continuam visíveis com a
+  função desligada; o pedido é que volta com a mensagem de desligado.
 
 ## Em aberto
 

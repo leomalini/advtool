@@ -1,4 +1,7 @@
 import type {
+  AiFeature,
+  AiMonthUsage,
+  AiSettingsLogEntry,
   AiSettingsMutationResult,
   AiSettingsSummary,
   AssistantProvider,
@@ -61,4 +64,33 @@ export function saveAiProvider(input: {
     { method: 'PUT', body: JSON.stringify(input) },
     'Não foi possível trocar o provedor agora.',
   )
+}
+
+export function saveAiBudget(
+  budget: { source: 'env' } | { source: 'panel'; usd: number | null },
+): Promise<AiSettingsMutationResult> {
+  return call(
+    '/teto',
+    { method: 'PUT', body: JSON.stringify(budget) },
+    'Não foi possível salvar o teto agora.',
+  )
+}
+
+export function saveAiFeature(input: {
+  feature: AiFeature
+  enabled: boolean
+}): Promise<AiSettingsMutationResult> {
+  return call(
+    '/funcoes',
+    { method: 'PUT', body: JSON.stringify(input) },
+    'Não foi possível mudar a função agora.',
+  )
+}
+
+export function getAiMonthUsage(): Promise<AiMonthUsage> {
+  return call('/uso', { method: 'GET' }, 'Não foi possível ler o gasto do mês.')
+}
+
+export function getAiSettingsLog(): Promise<AiSettingsLogEntry[]> {
+  return call('/historico', { method: 'GET' }, 'Não foi possível ler o histórico.')
 }

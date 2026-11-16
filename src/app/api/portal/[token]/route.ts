@@ -79,7 +79,7 @@ export async function GET(
       payments,
       generated_at: new Date().toISOString(),
       // Sem processo, as perguntas não teriam sobre o que responder.
-      answers_enabled: processes.length > 0 && isPortalAnswersEnabled(),
+      answers_enabled: processes.length > 0 && (await isPortalAnswersEnabled()),
       office_contact: officeContact,
     }
 

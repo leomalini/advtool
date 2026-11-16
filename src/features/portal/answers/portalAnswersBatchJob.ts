@@ -26,7 +26,7 @@ export const portalAnswersBatchJob: BatchJob<PortalAnswers> = {
   maxOutputTokens: 8_000,
 
   async prepare(admin, legalProcessId) {
-    if (!isPortalAnswersEnabled()) return null
+    if (!(await isPortalAnswersEnabled())) return null
     const current = await getPortalAnswersRecord(admin, legalProcessId)
     if (!current?.generated_at) return null
     if (Date.now() - Date.parse(current.generated_at) < ARRIVAL_INTERVAL_MINUTES * 60_000) {

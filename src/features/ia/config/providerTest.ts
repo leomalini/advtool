@@ -89,7 +89,8 @@ async function testGoogle(apiKey: string, modelId: string) {
   if (response.ok) return { ok: true } as const
 
   const parsed = googleErrorSchema.safeParse(await readJson(response))
-  const reasons = parsed.success ? (parsed.data.error.details ?? []).flatMap((d) => (d.reason ? [d.reason] : [])) : []
+  const details = parsed.success ? (parsed.data.error.details ?? []) : []
+  const reasons = details.flatMap((detail) => (detail.reason ? [detail.reason] : []))
   const status = parsed.success ? parsed.data.error.status : undefined
   console.warn('[ia-config] teste Gemini:', response.status, status ?? '', reasons.join(','))
 
