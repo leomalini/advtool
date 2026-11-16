@@ -184,7 +184,7 @@ export async function sendDailyBriefings(now: Date = new Date()): Promise<Briefi
         continue
       }
 
-      const model = createAssistantModel('briefing', { userId: person.id })
+      const model = await createAssistantModel('briefing', { userId: person.id })
       if (!model.ok) {
         console.error('[briefing] IA indisponível:', model.reason)
         return summary

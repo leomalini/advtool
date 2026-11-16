@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   const guard = await requirePermissionApi('ia')
   if (!guard.ok) return guard.response
 
-  const assistantModel = createAssistantModel('drafting', { userId: guard.userId })
+  const assistantModel = await createAssistantModel('drafting', { userId: guard.userId })
   if (!assistantModel.ok) {
     console.error('[modelos] IA indisponível:', assistantModel.reason)
     return jsonError('A IA não está configurada neste ambiente.', 503)

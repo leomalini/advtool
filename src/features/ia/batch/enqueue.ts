@@ -3,7 +3,8 @@ import {
   type Experimental_TextBatchRequest as TextBatchRequest,
 } from 'ai'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
-import { AI_ROUTE_SETTINGS, createAnthropicProvider } from '../model'
+import { getAiRuntimeConfig } from '../config/runtimeConfig'
+import { AI_ROUTE_SETTINGS, anthropicBatchSetup, createAnthropicProvider } from '../model'
 import { checkAiBudget } from '../usage/budget'
 import { BATCH_JOBS, type RegisteredBatchJob } from './jobs'
 import type { BatchKind } from './types'
@@ -25,12 +26,13 @@ export function toBatchRequest(
   id: string,
   job: RegisteredBatchJob,
   userText: string,
+  modelId: string,
 ): TextBatchRequest {
   const settings = AI_ROUTE_SETTINGS[job.route]
   return {
     id,
     type: 'text',
-    model: settings.anthropicModel,
+    model: modelId,
     instructions: job.instructions,
     messages: [{ role: 'user', content: userText }],
     tools: { [job.toolName]: job.tool },
@@ -43,12 +45,6 @@ export function toBatchRequest(
   }
 }
 
-/** O lote só existe na Anthropic; com o Gemini (`AI_ASSISTANT_PROVIDER`), nada sai. */
-function batchAvailable(): boolean {
-  const provider = (process.env.AI_ASSISTANT_PROVIDER ?? 'anthropic').trim().toLowerCase()
-  return provider === 'anthropic' && Boolean(process.env.ANTHROPIC_API_KEY)
-}
-
 /**
  * Manda para a Batch API o que ainda não está esperando resultado: um pedido
  * por trabalho e registro (o índice único de `ai_batch_items` garante). O
@@ -59,7 +55,11 @@ function batchAvailable(): boolean {
  * `[ia-lote]`.
  */
 export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
-  if (work.length === 0 || !hasServiceRoleKey() || !batchAvailable()) return { sent: 0, waiting: 0 }
+  if (work.length === 0 || !hasServiceRoleKey()) return { sent: 0, waiting: 0 }
+  // O lote só existe na Anthropic, e fica nela mesmo com o Gemini ativo no
+  // chat (D7 do painel de IA). Sem chave do Claude, nada sai.
+  const setup = anthropicBatchSetup(await getAiRuntimeConfig())
+  if (!setup) return { sent: 0, waiting: 0 }
   const admin = createAdminClient()
 
   try {
@@ -89,7 +89,7 @@ export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
         // O id do pedido é o da linha: liga resultado e registro, e cabe no
         // formato da Anthropic (letras, dígitos, hífen; até 64).
         const id = crypto.randomUUID()
-        requests.set(id, toBatchRequest(id, job, prepared.userText))
+        requests.set(id, toBatchRequest(id, job, prepared.userText, setup.modelId))
         rows.push({
           id,
           kind: item.kind,
@@ -119,7 +119,7 @@ export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
     let batch: Awaited<ReturnType<typeof startBatch>>
     try {
       batch = await startBatch({
-        provider: createAnthropicProvider(),
+        provider: createAnthropicProvider(setup.credentials),
         requests: reserved.flatMap((id) => requests.get(id) ?? []),
       })
     } catch (sendError) {

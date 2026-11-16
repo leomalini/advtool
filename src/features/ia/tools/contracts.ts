@@ -377,7 +377,7 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           .describe('true quando o 1º arquivo é um contrato pronto a importar.'),
       }),
       execute: async ({ arquivos, modelo_id, importar_contrato }) => {
-        const model = createAssistantModel('contract_reader', {
+        const model = await createAssistantModel('contract_reader', {
           userId: context.userId,
           conversationId: context.conversationId,
         })

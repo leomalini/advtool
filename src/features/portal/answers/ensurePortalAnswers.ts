@@ -193,7 +193,7 @@ export async function ensurePortalAnswers(
       claimed = false
       return { status: 'unavailable' }
     }
-    const model = createAssistantModel('portal', scope)
+    const model = await createAssistantModel('portal', scope)
     if (!model.ok) {
       console.error('[portal-respostas] IA indisponível:', model.reason)
       await releaseClaim(admin, legalProcessId)

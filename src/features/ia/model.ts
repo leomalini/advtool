@@ -1,18 +1,26 @@
 import { createAnthropic, type AnthropicLanguageModelOptions } from '@ai-sdk/anthropic'
 import { createGoogle } from '@ai-sdk/google'
 import type { LanguageModel, streamText } from 'ai'
+import type { AssistantProvider } from './config/models'
+import {
+  API_KEY_ENV,
+  getAiRuntimeConfig,
+  type AiRuntimeConfig,
+  type ProviderCredentials,
+} from './config/runtimeConfig'
 import { withUsageRecording, type UsageScope } from './usage/recordUsage'
 
 type ProviderOptions = NonNullable<Parameters<typeof streamText>[0]['providerOptions']>
 type AnthropicEffort = NonNullable<AnthropicLanguageModelOptions['effort']>
 
-export type AssistantProvider = 'google' | 'anthropic'
+export type { AssistantProvider }
 
 /**
- * Cada lugar que chama a IA e o que ele usa no Claude — o painel de custo do
- * plano (`docs/assistente-claude.md`, D2 e "Efeito do esforço"). Mudar modelo
- * ou esforço de uma rota é mudar aqui; o consumo de cada uma aparece em
- * `ai_usage`, separado por `route`.
+ * Cada lugar que chama a IA e o esforço que ele usa no Claude — o painel de
+ * custo do plano (`docs/assistente-claude.md`, D2 e "Efeito do esforço"). O
+ * MODELO é um só para todas as rotas e vem das Configurações
+ * (`docs/ia-configuracoes.md`, D3); o esforço continua aqui, por rota. O
+ * consumo de cada uma aparece em `ai_usage`, separado por `route`.
  *
  * Esforço: no Opus 5.5 o raciocínio não desliga, e o esforço é o controle de
  * quanto ele pensa — o item mais caro, porque é cobrado como saída.
@@ -28,14 +36,14 @@ export type AssistantProvider = 'google' | 'anthropic'
  * 81, 82 e 85).
  */
 export const AI_ROUTE_SETTINGS = {
-  chat: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
-  portal: { anthropicModel: 'claude-opus-5-5', effort: 'low' },
-  contract_reader: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
-  drafting: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
-  process_summary: { anthropicModel: 'claude-opus-5-5', effort: 'medium' },
-  triage: { anthropicModel: 'claude-opus-5-5', effort: 'low' },
-  briefing: { anthropicModel: 'claude-opus-5-5', effort: 'low' },
-} as const satisfies Record<string, { anthropicModel: string; effort: AnthropicEffort }>
+  chat: { effort: 'medium' },
+  portal: { effort: 'low' },
+  contract_reader: { effort: 'medium' },
+  drafting: { effort: 'medium' },
+  process_summary: { effort: 'medium' },
+  triage: { effort: 'low' },
+  briefing: { effort: 'low' },
+} as const satisfies Record<string, { effort: AnthropicEffort }>
 
 export type AiRoute = keyof typeof AI_ROUTE_SETTINGS
 
@@ -44,49 +52,57 @@ export type AssistantModelResult =
   | { ok: false; reason: string }
 
 /**
- * O provedor da Anthropic, para as chamadas na hora e para o lote (fase 5).
+ * O provedor da Anthropic com as credenciais em vigor, para as chamadas na
+ * hora e para o lote (fase 5).
  *
  * Chave pessoal ou de service account criada para VÁRIOS workspaces não diz à
  * API onde o pedido roda: sem o cabeçalho, todo pedido volta 400. Chave criada
- * dentro de um workspace dispensa — daí a variável ser opcional.
+ * dentro de um workspace dispensa — daí o workspace ser opcional.
  */
-export function createAnthropicProvider() {
-  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
-  return createAnthropic(workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : {})
-}
-
-/** A chave que cada provedor lê do ambiente. */
-const API_KEY_ENV: Record<AssistantProvider, string> = {
-  google: 'GOOGLE_GENERATIVE_AI_API_KEY',
-  anthropic: 'ANTHROPIC_API_KEY',
-}
-
-function selectedProvider(): AssistantProvider | null {
-  const value = (process.env.AI_ASSISTANT_PROVIDER ?? 'anthropic').trim().toLowerCase()
-  return value === 'google' || value === 'anthropic' ? value : null
+export function createAnthropicProvider(credentials: ProviderCredentials) {
+  return createAnthropic({
+    apiKey: credentials.apiKey,
+    ...(credentials.workspaceId
+      ? { headers: { 'anthropic-workspace-id': credentials.workspaceId } }
+      : {}),
+  })
 }
 
 /**
- * O modelo de uma rota, conforme `AI_ASSISTANT_PROVIDER` (padrão: `anthropic`).
- *
- * O Claude é o provedor desde a fase 1 do plano. O Gemini continua atrás da
- * variável (`AI_ASSISTANT_PROVIDER=google`) até a fase 1 ser validada com
- * perguntas reais, e sai depois (D1).
+ * O que o lote precisa: a chave do Claude e o modelo do Claude, qualquer que
+ * seja o provedor ativo — com o Gemini no chat, triagem e resumo automático
+ * continuam no Claude (`docs/ia-configuracoes.md`, D7). `null` sem chave.
+ */
+export function anthropicBatchSetup(
+  config: AiRuntimeConfig,
+): { credentials: ProviderCredentials; modelId: string } | null {
+  const credentials = config.credentials.anthropic
+  return credentials ? { credentials, modelId: config.models.anthropic } : null
+}
+
+/**
+ * O modelo de uma rota, conforme a configuração em vigor: o painel de
+ * Configurações e, no que ele não define, o ambiente (`AI_ASSISTANT_PROVIDER`,
+ * padrão `anthropic`; chaves em `ANTHROPIC_API_KEY` /
+ * `GOOGLE_GENERATIVE_AI_API_KEY`). Ver `config/runtimeConfig.ts`.
  *
  * Toda chamada feita com o modelo devolvido é gravada em `ai_usage` com a rota
- * e o `scope` (quem pediu). Montado a cada pedido: trocar o `.env` vale sem
- * reiniciar o servidor.
+ * e o `scope` (quem pediu). A configuração é relida a cada 30 s: trocar o
+ * painel ou o `.env` vale sem reiniciar o servidor.
  */
-export function createAssistantModel(
+export async function createAssistantModel(
   route: AiRoute,
   scope: UsageScope = {},
-): AssistantModelResult {
-  const provider = selectedProvider()
+): Promise<AssistantModelResult> {
+  const config = await getAiRuntimeConfig()
+  const provider = config.activeProvider
   if (!provider) {
     return { ok: false, reason: 'AI_ASSISTANT_PROVIDER inválido (use anthropic ou google).' }
   }
-  if (!process.env[API_KEY_ENV[provider]]) {
-    return { ok: false, reason: `falta ${API_KEY_ENV[provider]}.` }
+  const credentials = config.credentials[provider]
+  if (!credentials) {
+    const where = `Configurações › Assistente IA ou ${API_KEY_ENV[provider]}`
+    return { ok: false, reason: `sem chave do provedor ${provider} (${where}).` }
   }
 
   if (provider === 'google') {
@@ -94,18 +110,21 @@ export function createAssistantModel(
       ok: true,
       provider,
       // Sem `thinkingConfig`: o modelo decide quanto raciocinar.
-      model: withUsageRecording(createGoogle()('gemini-3.8-flash'), { route, provider, scope }),
+      model: withUsageRecording(
+        createGoogle({ apiKey: credentials.apiKey })(config.models.google),
+        { route, provider, scope },
+      ),
       providerOptions: {},
     }
   }
 
-  const anthropic = createAnthropicProvider()
+  const anthropic = createAnthropicProvider(credentials)
   const settings = AI_ROUTE_SETTINGS[route]
 
   return {
     ok: true,
     provider,
-    model: withUsageRecording(anthropic(settings.anthropicModel), { route, provider, scope }),
+    model: withUsageRecording(anthropic(config.models.anthropic), { route, provider, scope }),
     providerOptions: {
       anthropic: {
         thinking: {
