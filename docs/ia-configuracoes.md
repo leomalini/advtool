@@ -1,7 +1,8 @@
 # Painel do Assistente IA em Configurações
 
 > Plano de 2026-11-16. Decisões tomadas com o usuário na mesma data (seção D).
-> Fase 1 implementada em `feat/ia-config-base` (migration 94 NÃO aplicada).
+> Fase 1 em `feat/ia-config-base`, Fase 2 em `feat/ia-config-painel` (migration 94 NÃO
+> aplicada).
 
 ## Objetivo
 
@@ -213,6 +214,25 @@ critério do usuário.
   app no meio). Produção usa a chave da Vercel.
 - A Fase 2 pode usar `GET /v1/models/{id}` como teste grátis: o 401 acima
   confirma que ele valida a chave.
+
+## Fase 2 — estado (2026-11-16)
+
+- Aba **Assistente IA** em Configurações: card "Provedor e modelo" (troca de
+  provedor pede confirmação; Gemini mostra o aviso do lote e do plano
+  gratuito) e card "Chaves de API" (origem painel/ambiente, final da chave,
+  workspace, último teste, Testar / Cadastrar ou Trocar / Remover).
+- Rotas: `GET /api/configuracoes/ia` (view), `POST …/testar`,
+  `PUT|DELETE …/chave`, `PUT …/provedor` (manage). Serviço em
+  `src/features/ia/config/panelSettings.ts`; teste em `providerTest.ts`
+  (`GET /v1/models/{id}` da Anthropic, `GET v1beta/models/{id}` do Google).
+- Remover a chave do provedor ativo sem chave no ambiente é recusado.
+- Histórico gravado (`provider`, `model`, `key_set`, `key_removed`,
+  `test`), sem a chave. A lista na tela é da Fase 3.
+- Verificado: tsc, lint, build; 18/18 cenários do serviço (banco em memória +
+  provedor simulado); teste contra as APIs reais (401/404/400 traduzidos,
+  chave Google do `.env` ok); rotas recusam sem sessão (401); tela conferida
+  no navegador com dados simulados (desktop e 375 px).
+- **Não verificado:** a aba logada contra o banco real (precisa da migration 94).
 
 ## Em aberto
 
