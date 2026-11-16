@@ -253,6 +253,8 @@ export interface LegalProcessListRow {
   client_company_name: string | null
   client_trade_name: string | null
   assigned_name: string | null
+  /** Do próprio processo (migration 93): existe mesmo sem card. */
+  status: ProcessStatus
 }
 
 export interface LegalProcessWithRelations extends LegalProcess {

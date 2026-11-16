@@ -4,6 +4,7 @@ import { CRM_LEGAL_AREAS } from '@/schemas/crmItem.schema'
 import {
   emptyProcessoFilters,
   MONITORING_SOURCES,
+  PROCESS_STATUSES,
   type ProcessoFilters,
 } from './filterLegalProcesses'
 
@@ -18,6 +19,7 @@ export interface ProcessoSort {
 /**
  * Os filtros e a ordem da lista de Processos na URL (docs/paginacao.md):
  *
+ *     ?status=ativo | arquivado | suspenso
  *     ?area=trabalhista&responsavel=<id>&etapa=<coluna>
  *     ?prazo_de=2026-11-01&prazo_ate=2026-11-30
  *     ?monitoramento=oab | monitoramento=manual
@@ -28,6 +30,7 @@ export interface ProcessoSort {
  * (`create`, `clientId`, `cnj`) não são tocados.
  */
 const PARAMS = {
+  status: 'status',
   legalArea: 'area',
   assignedTo: 'responsavel',
   columnId: 'etapa',
@@ -54,6 +57,7 @@ export function parseProcessoFilters(params: ParamReader): ProcessoFilters {
 
   return {
     ...emptyProcessoFilters,
+    status: parseOneOf(params.get(PARAMS.status), PROCESS_STATUSES),
     legalArea: parseOneOf(params.get(PARAMS.legalArea), CRM_LEGAL_AREAS),
     assignedTo: parseUuid(params.get(PARAMS.assignedTo)),
     columnId: parseColumnId(params.get(PARAMS.columnId)),
@@ -81,6 +85,7 @@ export function serializeProcessoListState(
   // As duas fontes marcadas equivalem a nenhuma (todo processo cai numa).
   const monitoring = filters.monitoring.length === 1 ? filters.monitoring[0] : null
   return {
+    [PARAMS.status]: filters.status,
     [PARAMS.legalArea]: filters.legalArea,
     [PARAMS.assignedTo]: filters.assignedTo,
     [PARAMS.columnId]: filters.columnId,

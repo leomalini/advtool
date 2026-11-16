@@ -36,7 +36,11 @@ import { useDeleteLegalProcess, useInvalidateLegalProcesses } from '../hooks/use
 import { useColumnPrefs, type ColumnConfig } from '@/hooks/useColumnPrefs'
 import type { ListPagination } from '@/hooks/useListPagination'
 import { formatPrazo, formatRelativeDate } from '@/features/crm/utils/prazo'
-import type { LegalProcessListRow } from '@/types/legalProcess.types'
+import {
+  PROCESS_STATUS_LABELS,
+  type LegalProcessListRow,
+  type ProcessStatus,
+} from '@/types/legalProcess.types'
 import type { Workflow } from '@/types/workflow.types'
 import type { LegalProcessSelectionEntry } from '../services/legalProcesses.service'
 import type { ProcessoSort, ProcessoSortField } from '../utils/processoListUrl'
@@ -51,12 +55,20 @@ const PROCESSO_COLUMNS: ColumnConfig[] = [
   { key: 'tribunal', label: 'Tribunal / Vara', defaultWidth: 150, minWidth: 110 },
   { key: 'area', label: 'Área', defaultWidth: 108, minWidth: 80 },
   { key: 'etapa', label: 'Etapa', defaultWidth: 158, minWidth: 110 },
+  { key: 'status', label: 'Status', defaultWidth: 96, minWidth: 80 },
   { key: 'responsavel', label: 'Responsável', defaultWidth: 148, minWidth: 110 },
   { key: 'prazo', label: 'Prazo', defaultWidth: 118, minWidth: 90 },
   { key: 'atualizacao', label: 'Atual.', defaultWidth: 100, minWidth: 70 },
 ]
 
 const COLUMN_STORAGE_KEY = 'advtool.processos-table-columns.v1'
+
+/** As mesmas cores do selo no cabeçalho do detalhe do processo. */
+const STATUS_BADGE_CLASSES: Record<ProcessStatus, string> = {
+  ativo: 'bg-success/12 text-success',
+  suspenso: 'bg-warning/12 text-warning',
+  arquivado: 'bg-muted text-muted-foreground',
+}
 
 /** O cliente do card mestre como a tabela sempre mostrou (o nome de exibição
  * de `getCrmItemClientName`); `null` sem cliente vinculado — ou um que a RLS
@@ -280,8 +292,20 @@ export function ProcessoTableView({
   }
 
   function renderCell(colKey: string, row: LegalProcessListRow) {
-    // Tribunal reads only from the processo row itself, so it renders even
-    // when no crm_item is linked.
+    // Tribunal and status read only from the processo row itself, so they
+    // render even when no crm_item is linked.
+    if (colKey === 'status') {
+      return (
+        <span
+          className={cn(
+            'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium',
+            STATUS_BADGE_CLASSES[row.status]
+          )}
+        >
+          {PROCESS_STATUS_LABELS[row.status]}
+        </span>
+      )
+    }
     if (colKey === 'tribunal') {
       return (
         <div className="min-w-0">

@@ -26,9 +26,11 @@ import {
   emptyProcessoFilters,
   MONITORING_SOURCES,
   MONITORING_SOURCE_LABELS,
+  PROCESS_STATUSES,
   type MonitoringSource,
   type ProcessoFilters,
 } from '../utils/filterLegalProcesses'
+import { PROCESS_STATUS_LABELS, type ProcessStatus } from '@/types/legalProcess.types'
 import type { Workflow } from '@/types/workflow.types'
 
 const ALL = '__all__'
@@ -77,6 +79,7 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
   useAssistantScreen({
     filters: screenFilters([
       ['Busca', filters.search.trim()],
+      ['Status', filters.status && PROCESS_STATUS_LABELS[filters.status]],
       ['Área', filters.legalArea && AREAS_JURIDICAS[filters.legalArea]?.label],
       ['Responsável', personFilterValue(filters.assignedTo, assignedProfile?.full_name)],
       [
@@ -121,6 +124,26 @@ export function ProcessoFilterBar({ workflow, filters, onChange, resultCount }: 
           </button>
         )}
       </div>
+
+      {/* Status do processo */}
+      <Select
+        value={filters.status ?? ALL}
+        onValueChange={(v) => set('status', v === ALL ? null : (v as ProcessStatus))}
+      >
+        <SelectTrigger className="h-9 w-[150px] text-sm">
+          <SelectValue>
+            {filters.status ? PROCESS_STATUS_LABELS[filters.status] : 'Todos os status'}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>Todos os status</SelectItem>
+          {PROCESS_STATUSES.map((s) => (
+            <SelectItem key={s} value={s}>
+              {PROCESS_STATUS_LABELS[s]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Área jurídica */}
       <Select

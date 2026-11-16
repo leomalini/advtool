@@ -1,4 +1,8 @@
 import type { CrmLegalArea } from '@/schemas/crmItem.schema'
+import type { ProcessStatus } from '@/types/legalProcess.types'
+
+/** A ordem do seletor: o caso comum primeiro. */
+export const PROCESS_STATUSES: readonly ProcessStatus[] = ['ativo', 'suspenso', 'arquivado']
 
 /**
  * Como o processo é acompanhado, pelo seletor de frequência do detalhe:
@@ -24,6 +28,8 @@ export const MONITORING_SOURCE_LABELS: Record<MonitoringSource, string> = {
 
 export interface ProcessoFilters {
   search: string
+  /** `legal_processes.status`; `null` = qualquer um. */
+  status: ProcessStatus | null
   legalArea: CrmLegalArea | null
   assignedTo: string | null
   columnId: string | null
@@ -36,6 +42,7 @@ export interface ProcessoFilters {
 
 export const emptyProcessoFilters: ProcessoFilters = {
   search: '',
+  status: null,
   legalArea: null,
   assignedTo: null,
   columnId: null,
@@ -47,6 +54,7 @@ export const emptyProcessoFilters: ProcessoFilters = {
 export function hasActiveProcessoFilters(f: ProcessoFilters): boolean {
   return (
     f.search.trim() !== '' ||
+    f.status !== null ||
     f.legalArea !== null ||
     f.assignedTo !== null ||
     f.columnId !== null ||
@@ -59,6 +67,7 @@ export function hasActiveProcessoFilters(f: ProcessoFilters): boolean {
 export function countActiveProcessoFilters(f: ProcessoFilters): number {
   let n = 0
   if (f.search.trim() !== '') n++
+  if (f.status !== null) n++
   if (f.legalArea !== null) n++
   if (f.assignedTo !== null) n++
   if (f.columnId !== null) n++
