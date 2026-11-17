@@ -202,7 +202,7 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
       // opened from inside its tabs are z-50. Tying would leave stacking up to
       // DOM order, and DialogContent renders its overlay without forwarding
       // className — so it couldn't be raised from the call site.
-      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
@@ -235,7 +235,7 @@ export function CasoModal({ caso, open, onClose, onEdit }: CasoModalProps) {
                 )}
                 {assignedName && (
                   <div className="flex items-center gap-1.5">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold bg-violet-500">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-primary-foreground text-xs font-semibold bg-primary">
                       {advInitials}
                     </div>
                     <span className="text-sm text-muted-foreground">{assignedName}</span>

@@ -60,31 +60,36 @@ const THEME_OPTIONS: ThemeOption[] = [
   { value: 'system', label: 'Sistema', icon: Monitor },
 ]
 
+/*
+ * Miniaturas do seletor de tema. As cores são fixas de propósito: cada uma
+ * mostra o tema que representa, qualquer que seja o tema aberto agora. Valores
+ * de src/app/globals.css (docs/redesign-visual.md).
+ */
 function LightPreview() {
   return (
-    <div className="flex h-full w-full overflow-hidden rounded-md border border-slate-200">
-      {/* Sidebar */}
-      <div className="w-8 shrink-0 bg-white border-r border-slate-200 flex flex-col gap-1 p-1 pt-2">
-        <div className="w-4 h-1 rounded-full bg-blue-500 mx-auto mb-1" />
+    <div className="flex h-full w-full gap-1 overflow-hidden rounded-md border border-[#dde3ee] bg-[#e2e8f7] p-1">
+      {/* Sidebar — azul-noite, flutuando */}
+      <div className="w-8 shrink-0 rounded bg-[#111b45] flex flex-col gap-1 p-1 pt-2">
+        <div className="w-4 h-1 rounded-full bg-[#2f54eb] mx-auto mb-1" />
         {[...Array(5)].map((_, i) => (
-          <div key={i} className={cn('h-1 rounded-full mx-auto', i === 0 ? 'w-5 bg-blue-100' : 'w-4 bg-slate-200')} />
+          <div key={i} className={cn('h-1 rounded-full mx-auto', i === 0 ? 'w-5 bg-[#24316f]' : 'w-4 bg-[#2c3766]')} />
         ))}
       </div>
       {/* Content */}
-      <div className="flex-1 bg-[#f2f3f8] p-1.5 space-y-1">
+      <div className="flex-1 space-y-1">
         <div className="grid grid-cols-2 gap-1">
           {[...Array(2)].map((_, i) => (
             <div key={i} className="bg-white rounded p-1">
-              <div className="h-1 w-4 bg-slate-200 rounded mb-0.5" />
-              <div className="h-2 w-3 bg-blue-500/30 rounded" />
+              <div className="h-1 w-4 bg-[#dde3ee] rounded mb-0.5" />
+              <div className="h-2 w-3 bg-[#2f54eb]/40 rounded" />
             </div>
           ))}
         </div>
         <div className="bg-white rounded p-1">
-          <div className="h-1 w-6 bg-slate-200 rounded mb-0.5" />
+          <div className="h-1 w-6 bg-[#dde3ee] rounded mb-0.5" />
           <div className="space-y-0.5">
             {[...Array(2)].map((_, i) => (
-              <div key={i} className="h-1 bg-slate-100 rounded" />
+              <div key={i} className="h-1 bg-[#eef1f8] rounded" />
             ))}
           </div>
         </div>
@@ -95,29 +100,29 @@ function LightPreview() {
 
 function DarkPreview() {
   return (
-    <div className="flex h-full w-full overflow-hidden rounded-md border border-[#2a2d3e]">
-      {/* Sidebar */}
-      <div className="w-8 shrink-0 bg-[#252838] border-r border-[#2a2d3e] flex flex-col gap-1 p-1 pt-2">
-        <div className="w-4 h-1 rounded-full bg-blue-400 mx-auto mb-1" />
+    <div className="flex h-full w-full gap-1 overflow-hidden rounded-md border border-[#222c50] bg-[#0a0f1f] p-1">
+      {/* Sidebar — cor dos cards */}
+      <div className="w-8 shrink-0 rounded bg-[#111834] flex flex-col gap-1 p-1 pt-2">
+        <div className="w-4 h-1 rounded-full bg-[#4563fa] mx-auto mb-1" />
         {[...Array(5)].map((_, i) => (
-          <div key={i} className={cn('h-1 rounded-full mx-auto', i === 0 ? 'w-5 bg-blue-400/20' : 'w-4 bg-[#3a3d50]')} />
+          <div key={i} className={cn('h-1 rounded-full mx-auto', i === 0 ? 'w-5 bg-[#1b2448]' : 'w-4 bg-[#222c50]')} />
         ))}
       </div>
       {/* Content */}
-      <div className="flex-1 bg-[#1a1d2c] p-1.5 space-y-1">
+      <div className="flex-1 space-y-1">
         <div className="grid grid-cols-2 gap-1">
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="bg-[#252838] rounded p-1">
-              <div className="h-1 w-4 bg-[#3a3d50] rounded mb-0.5" />
-              <div className="h-2 w-3 bg-blue-400/30 rounded" />
+            <div key={i} className="bg-[#111834] rounded p-1">
+              <div className="h-1 w-4 bg-[#222c50] rounded mb-0.5" />
+              <div className="h-2 w-3 bg-[#6b84ff]/40 rounded" />
             </div>
           ))}
         </div>
-        <div className="bg-[#252838] rounded p-1">
-          <div className="h-1 w-6 bg-[#3a3d50] rounded mb-0.5" />
+        <div className="bg-[#111834] rounded p-1">
+          <div className="h-1 w-6 bg-[#222c50] rounded mb-0.5" />
           <div className="space-y-0.5">
             {[...Array(2)].map((_, i) => (
-              <div key={i} className="h-1 bg-[#2f3244] rounded" />
+              <div key={i} className="h-1 bg-[#1b2448] rounded" />
             ))}
           </div>
         </div>
@@ -128,40 +133,40 @@ function DarkPreview() {
 
 function SystemPreview() {
   return (
-    <div className="flex h-full w-full overflow-hidden rounded-md border border-slate-200 relative">
+    <div className="flex h-full w-full overflow-hidden rounded-md border border-[#dde3ee] relative">
       {/* Left half — light */}
-      <div className="flex w-1/2 overflow-hidden">
-        <div className="w-7 shrink-0 bg-white flex flex-col gap-1 p-1 pt-2">
-          <div className="w-3 h-1 rounded-full bg-blue-500 mx-auto mb-1" />
+      <div className="flex w-1/2 gap-1 overflow-hidden bg-[#e2e8f7] p-1">
+        <div className="w-7 shrink-0 rounded bg-[#111b45] flex flex-col gap-1 p-1 pt-2">
+          <div className="w-3 h-1 rounded-full bg-[#2f54eb] mx-auto mb-1" />
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-1 w-3 bg-slate-200 rounded mx-auto" />
+            <div key={i} className="h-1 w-3 bg-[#2c3766] rounded mx-auto" />
           ))}
         </div>
-        <div className="flex-1 bg-[#f2f3f8] p-1 space-y-1">
+        <div className="flex-1 space-y-1">
           <div className="bg-white rounded p-0.5">
-            <div className="h-1 w-4 bg-slate-200 rounded" />
+            <div className="h-1 w-4 bg-[#dde3ee] rounded" />
           </div>
           <div className="bg-white rounded p-0.5">
-            <div className="h-1 w-3 bg-slate-100 rounded" />
+            <div className="h-1 w-3 bg-[#eef1f8] rounded" />
           </div>
         </div>
       </div>
       {/* Divider */}
-      <div className="absolute inset-y-0 left-1/2 w-px bg-slate-300 z-10" />
+      <div className="absolute inset-y-0 left-1/2 w-px bg-[#97a2c6] z-10" />
       {/* Right half — dark */}
-      <div className="flex w-1/2 overflow-hidden">
-        <div className="flex-1 bg-[#1a1d2c] p-1 space-y-1">
-          <div className="bg-[#252838] rounded p-0.5">
-            <div className="h-1 w-4 bg-[#3a3d50] rounded" />
+      <div className="flex w-1/2 gap-1 overflow-hidden bg-[#0a0f1f] p-1">
+        <div className="flex-1 space-y-1">
+          <div className="bg-[#111834] rounded p-0.5">
+            <div className="h-1 w-4 bg-[#222c50] rounded" />
           </div>
-          <div className="bg-[#252838] rounded p-0.5">
-            <div className="h-1 w-3 bg-[#2f3244] rounded" />
+          <div className="bg-[#111834] rounded p-0.5">
+            <div className="h-1 w-3 bg-[#1b2448] rounded" />
           </div>
         </div>
-        <div className="w-7 shrink-0 bg-[#252838] flex flex-col gap-1 p-1 pt-2">
-          <div className="w-3 h-1 rounded-full bg-blue-400 mx-auto mb-1" />
+        <div className="w-7 shrink-0 rounded bg-[#111834] flex flex-col gap-1 p-1 pt-2">
+          <div className="w-3 h-1 rounded-full bg-[#4563fa] mx-auto mb-1" />
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-1 w-3 bg-[#3a3d50] rounded mx-auto" />
+            <div key={i} className="h-1 w-3 bg-[#222c50] rounded mx-auto" />
           ))}
         </div>
       </div>

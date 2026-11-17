@@ -24,7 +24,7 @@ export function GeneratedFileCard({ fileId, fileName, missingFields = [], notes 
   ]
 
   return (
-    <div className="rounded-lg border bg-background p-3 text-sm space-y-2">
+    <div className="rounded-lg border bg-card p-3 text-sm space-y-2">
       <div className="flex items-center gap-2">
         <FileText className="h-4 w-4 shrink-0 text-primary" />
         <span className="min-w-0 flex-1 truncate font-medium">{fileName}</span>

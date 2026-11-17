@@ -152,7 +152,7 @@ export function EventDetailModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="absolute top-3.5 right-4 p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-black/5 transition-colors"
+                className="absolute top-3.5 right-4 p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -390,7 +390,7 @@ export function EventDetailModal({
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 h-8 px-4 rounded-md text-sm font-medium border border-input bg-background hover:bg-muted/50 transition-colors"
+                className="key inline-flex items-center gap-1.5 h-8 px-4 rounded-lg text-sm font-semibold bg-key hover:bg-secondary"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Editar

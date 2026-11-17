@@ -125,7 +125,7 @@ export function CrmItemTimeline({ crmItemId, itemLabel = 'item' }: CrmItemTimeli
               {/* Dot + vertical line */}
               <div className="flex flex-col items-center flex-shrink-0">
                 <div
-                  className="w-3 h-3 rounded-full mt-1.5 ring-2 ring-white shadow-sm"
+                  className="w-3 h-3 rounded-full mt-1.5 ring-2 ring-card shadow-sm"
                   style={{ backgroundColor: dotColor }}
                 />
                 {!isLast && <div className="w-px flex-1 bg-muted mt-1 min-h-[2rem]" />}

@@ -168,7 +168,9 @@ Como a mudança fica nas variantes, esses lugares não precisam ser editados um 
 ### Fase 3 — Estrutura
 
 - `src/app/(app)/layout.tsx`: o shell ganha respiro (`p-3 gap-3`) para a sidebar
-  flutuar.
+  flutuar. O `main` mantém o `p-6`, porque 12 telas de tela cheia se esticam até a
+  borda com `-m-6`, e ganha `rounded-3xl`: nelas o conteúdo vira um painel de cantos
+  arredondados.
 - `src/components/layout/Sidebar.tsx`: cartão arredondado com `bg-sidebar`; item ativo
   em tecla com `--sidebar-accent`; contadores em tecla; versão recolhida (`w-14`)
   também flutuante.

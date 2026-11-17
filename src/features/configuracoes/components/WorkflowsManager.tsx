@@ -234,7 +234,7 @@ function ColumnRow({
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-background">
+    <div className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-secondary">
       <div className="flex flex-col">
         <button
           type="button"
@@ -580,7 +580,7 @@ export function WorkflowsManager() {
               {wf.colunas.map((col) => (
                 <div
                   key={col.id}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium bg-background"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium bg-secondary"
                 >
                   <div
                     className="h-2 w-2 rounded-full shrink-0"

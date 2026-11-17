@@ -18,8 +18,10 @@ import { AssistantPanel } from '@/features/ia/components/AssistantPanel'
  * do app; quem rola é o `main`, que é o que sempre se quis.
  *
  * O `p-3 gap-3` deixa a sidebar flutuar como um cartão sobre o fundo azulado
- * (docs/redesign-visual.md). O `px-3` do `main` dá espaço para a sombra dos
- * cards não ser cortada pela rolagem.
+ * (docs/redesign-visual.md). O `main` mantém o `p-6`: as telas de tela cheia
+ * (Processos, Movimentações, Publicações, CRM…) se esticam até a borda com
+ * `-m-6`. O `rounded-3xl` vira, nelas, um painel de cantos arredondados; nas
+ * demais, que não têm fundo próprio, não aparece.
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -27,7 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto px-3 pt-2 pb-6">{children}</main>
+        <main className="flex-1 overflow-y-auto rounded-3xl p-6">{children}</main>
       </div>
       <AssistantPanel />
     </div>

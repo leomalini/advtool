@@ -7,10 +7,33 @@ import { cn } from '@/lib/utils'
 import { useCountUp } from '../hooks/useCountUp'
 import { formatCount } from '../utils/format'
 import { ENTER_ANIMATION } from '../utils/motion'
-import { TONE_CHIP_CLASSES, type DashboardTone } from './DashboardCard'
+import { type DashboardTone } from './DashboardCard'
 
 /** The supporting line: muted at rest, coloured when it flags a problem. */
 export type StatFootTone = 'muted' | 'warning' | 'danger' | 'success'
+
+/** Fundo do indicador: a cor do assunto misturada ao card (docs/redesign-visual.md,
+ * "Com tons"). Strings completas no topo para o extrator do Tailwind. */
+const TONE_TINT_CLASSES: Record<DashboardTone, string> = {
+  accent: 'bg-[color-mix(in_srgb,var(--primary)_9%,var(--card))] dark:bg-[color-mix(in_srgb,var(--primary)_13%,var(--card))]',
+  info: 'bg-[color-mix(in_srgb,var(--info)_9%,var(--card))] dark:bg-[color-mix(in_srgb,var(--info)_13%,var(--card))]',
+  warning: 'bg-[color-mix(in_srgb,var(--warning)_9%,var(--card))] dark:bg-[color-mix(in_srgb,var(--warning)_13%,var(--card))]',
+  success: 'bg-[color-mix(in_srgb,var(--success)_9%,var(--card))] dark:bg-[color-mix(in_srgb,var(--success)_13%,var(--card))]',
+  danger: 'bg-[color-mix(in_srgb,var(--destructive)_9%,var(--card))] dark:bg-[color-mix(in_srgb,var(--destructive)_13%,var(--card))]',
+  violet: 'bg-[color-mix(in_srgb,var(--chart-2)_9%,var(--card))] dark:bg-[color-mix(in_srgb,var(--chart-2)_13%,var(--card))]',
+  muted: 'bg-card',
+}
+
+/** Ícone sólido na cor do assunto, com o texto de contraste de cada token. */
+const TONE_SOLID_CHIP_CLASSES: Record<DashboardTone, string> = {
+  accent: 'bg-primary text-primary-foreground',
+  info: 'bg-info text-info-foreground',
+  warning: 'bg-warning text-warning-foreground',
+  success: 'bg-success text-success-foreground',
+  danger: 'bg-destructive text-destructive-foreground',
+  violet: 'bg-chart-2 text-white dark:text-background',
+  muted: 'bg-muted text-muted-foreground',
+}
 
 const FOOT_TONES: Record<StatFootTone, string> = {
   muted: 'text-muted-foreground',
@@ -69,8 +92,9 @@ export function StatTile({
   return (
     <div
       className={cn(
-        '@container group relative flex min-w-0 flex-col gap-2.5 rounded-xl border bg-card p-4 text-card-foreground shadow-sm',
-        'transition-[box-shadow,border-color,translate] hover:border-foreground/15 hover:shadow-md motion-safe:hover:-translate-y-px',
+        '@container group relative flex min-w-0 flex-col gap-2.5 rounded-2xl p-4 text-card-foreground card-shadow',
+        'transition-[translate] motion-safe:hover:-translate-y-px',
+        TONE_TINT_CLASSES[tone],
         'has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-ring',
         ENTER_ANIMATION,
         className
@@ -80,14 +104,14 @@ export function StatTile({
         <span
           className={cn(
             'flex size-7 shrink-0 items-center justify-center rounded-lg',
-            TONE_CHIP_CLASSES[tone]
+            TONE_SOLID_CHIP_CLASSES[tone]
           )}
         >
           <Icon aria-hidden className="size-4" />
         </span>
         <Link
           href={href}
-          className="min-w-0 truncate after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none @max-[13rem]:whitespace-normal"
+          className="min-w-0 truncate after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none @max-[13rem]:whitespace-normal"
         >
           {label}
         </Link>

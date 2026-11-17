@@ -183,7 +183,7 @@ function ChecklistRow({
           'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'disabled:cursor-not-allowed disabled:opacity-60',
-          done ? 'border-success bg-success text-white' : 'border-input bg-background',
+          done ? 'border-success bg-success text-success-foreground' : 'border-[var(--control-edge)] bg-card',
         )}
       >
         {done && <Check aria-hidden className="size-3" />}

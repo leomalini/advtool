@@ -66,7 +66,7 @@ export function DashboardCard({
     <section
       aria-labelledby={titleId}
       className={cn(
-        '@container relative min-w-0 rounded-xl border bg-card text-card-foreground shadow-sm',
+        '@container relative min-w-0 rounded-2xl bg-card text-card-foreground card-shadow',
         ENTER_ANIMATION,
         className
       )}

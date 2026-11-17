@@ -37,7 +37,7 @@ export function AttachmentChip({ fileName, href, status, onRemove, onPrimary = f
     'inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs',
     onPrimary
       ? 'border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground'
-      : 'bg-background text-foreground',
+      : 'bg-card text-foreground',
     status === 'error' && 'border-destructive/50 text-destructive',
   )
 

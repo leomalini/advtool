@@ -206,7 +206,7 @@ export function FinancialEntryDetailModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="absolute top-3.5 right-4 p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-black/5 transition-colors"
+                  className="absolute top-3.5 right-4 p-1.5 rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -375,7 +375,7 @@ export function FinancialEntryDetailModal({
               </div>
 
               {/* Rodapé */}
-              <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t bg-background">
+              <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t bg-popover">
                 <Can resource="financeiro" action="delete" fallback={<span />}>
                   {/* Com link vivo ou pago, o banco recusa a exclusão (migration
                       67); o clique explica o porquê em vez de tentar. */}

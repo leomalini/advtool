@@ -86,7 +86,7 @@ const FLAG_CONFIG = [
     label: "Retroativa",
     icon: History,
     activeCls:
-      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+      "bg-muted text-muted-foreground border-border",
   },
 ] as const;
 
@@ -575,7 +575,7 @@ export function EventForm({
               </div>
 
               {isRetroactive && (
-                <div className="pl-3 border-l-2 border-slate-200 dark:border-slate-700 space-y-1.5">
+                <div className="pl-3 border-l-2 border-border space-y-1.5">
                   <Label className="text-xs text-muted-foreground">
                     Data em que foi concluída
                   </Label>
@@ -662,7 +662,7 @@ function AssigneeMultiSelect({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "w-full min-h-9 rounded-md border px-3 py-1.5 text-sm flex items-start gap-2 justify-between bg-background transition-all",
+          "w-full min-h-9 rounded-lg bg-muted well px-3 py-1.5 text-sm flex items-start gap-2 justify-between transition-all",
           open
             ? "border-ring ring-[3px] ring-ring/20"
             : "border-input hover:bg-muted/20",
@@ -714,10 +714,10 @@ function AssigneeMultiSelect({
                     "h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
                     selected
                       ? "bg-primary border-primary"
-                      : "border-input bg-background",
+                      : "border-[var(--control-edge)] bg-card",
                   )}
                 >
-                  {selected && <Check className="h-2.5 w-2.5 text-white" />}
+                  {selected && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
                 </span>
                 <span className={cn("flex-1 text-left", selected && "font-medium")}>
                   {profile.full_name}
