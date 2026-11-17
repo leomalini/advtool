@@ -45,6 +45,12 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-key: var(--key);
+  --color-key-edge: var(--key-edge);
+  --color-primary-edge: var(--primary-edge);
+  --color-groove: var(--groove-dark);
+  --color-overlay: var(--overlay);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -54,138 +60,261 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── Graphite — light ── */
+/*
+ * ── Prisma + Relevo — light ──
+ * Plano em docs/redesign-visual.md. Três planos: trilho rebaixado (--muted com
+ * as sombras --well-*), superfície (--card) e tecla levantada (--key-*). Só o
+ * que é clicável vira tecla. Contraste AA conferido por script nos dois temas.
+ */
 :root {
-  /* ── Backgrounds ── */
-  --background: #fafafb;
-  --foreground: #1a1c22;
+  /* ── Backgrounds — azul claro, para a tela não ficar branca ── */
+  --background: #e2e8f7;
+  --foreground: #0e1530;
 
   /* ── Cards & Popovers ── */
   --card: #ffffff;
-  --card-foreground: #1a1c22;
+  --card-foreground: #0e1530;
   --popover: #ffffff;
-  --popover-foreground: #1a1c22;
+  --popover-foreground: #0e1530;
 
-  /* ── Primary — monochrome inverted CTA (Linear/Vercel style) ── */
-  --primary: #1a1c22;
+  /* ── Primary — cobalto ── */
+  --primary: #2f54eb;
   --primary-foreground: #ffffff;
+  --primary-edge: #1d3cb5;
+  --primary-glow: rgba(47, 84, 235, 0.7);
 
   /* ── Secondary ── */
-  --secondary: #f2f3f5;
-  --secondary-foreground: #1a1c22;
+  --secondary: #f4f6fb;
+  --secondary-foreground: #0e1530;
 
-  /* ── Muted ── */
-  --muted: #f2f3f5;
-  --muted-foreground: #6b7280;
+  /* ── Muted — também a face dos trilhos (campos, abas, medidores) ── */
+  --muted: #e2e7f1;
+  --muted-foreground: #55607e;
 
-  /* ── Accent — indigo tint for hover/active states ── */
-  --accent: rgba(81, 101, 240, 0.09);
-  --accent-foreground: #5165f0;
+  /* ── Accent — cobalto suave para hover e seleção ── */
+  --accent: rgba(47, 84, 235, 0.1);
+  --accent-foreground: #2445d4;
 
   /* ── Destructive ── */
-  --destructive: #dc5068;
+  --destructive: #b92c44;
 
   /* ── Borders & Inputs ── */
-  --border: #e6e6ea;
-  --input: #e6e6ea;
-  --ring: #5165f0;
+  --border: #dde3ee;
+  --input: #dde3ee;
+  --ring: #2f54eb;
 
   /* ── Semantic ── */
-  --success: #0f9d6a;
+  --success: #0a7350;
   --success-foreground: #ffffff;
-  --warning: #c07b12;
+  --warning: #975000;
   --warning-foreground: #ffffff;
-  --info: #1a90b8;
+  --info: #0a6898;
   --info-foreground: #ffffff;
 
   /* ── Charts / áreas jurídicas — trabalhista, cível, família, tributário, consumidor ── */
-  --chart-1: #5165f0;
+  --chart-1: #2f54eb;
   --chart-2: #8161e6;
   --chart-3: #d456a0;
   --chart-4: #d99a2b;
   --chart-5: #0f9d6a;
 
-  --radius: 0.5rem;
+  /* 10 px: rounded-lg nas teclas, rounded-2xl (18 px) nos cards, rounded-3xl (22 px) na sidebar */
+  --radius: 0.625rem;
 
-  /* ── Sidebar ── */
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1a1c22;
-  --sidebar-primary: #5165f0;
+  /* ── Sidebar — azul-noite no tema claro ── */
+  --sidebar: #111b45;
+  --sidebar-foreground: #ffffff;
+  --sidebar-muted-foreground: #b9c3e6;
+  --sidebar-primary: #2f54eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(81, 101, 240, 0.09);
-  --sidebar-accent-foreground: #5165f0;
-  --sidebar-border: #ececef;
-  --sidebar-ring: #5165f0;
+  --sidebar-accent: #24316f;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #070d2a;
+  --sidebar-ring: #a9b8ff;
+  --sidebar-key-hl: rgba(255, 255, 255, 0.12);
+  --sidebar-key-drop: rgba(0, 0, 0, 0.4);
+  --sidebar-well: #0b1333;
+  --sidebar-well-shadow: rgba(0, 0, 0, 0.45);
+
+  /* ── Relevo — teclas, trilhos e divisórias gravadas ── */
+  --edge: 2px;
+  --key: #ffffff;
+  --key-hl: #ffffff;
+  --key-edge: #c6cee0;
+  --key-drop: rgba(14, 21, 48, 0.14);
+  --well-shadow: rgba(14, 21, 48, 0.13);
+  --well-edge: rgba(198, 206, 224, 0.5);
+  --groove-dark: #e4e9f2;
+  --groove-light: #ffffff;
+  --card-edge: rgba(198, 206, 224, 0.55);
+  --card-drop: rgba(14, 21, 48, 0.26);
+  --overlay: rgba(14, 21, 48, 0.42);
 
   /* ── Scrollbar — o foreground em baixa opacidade ── */
-  --scrollbar-thumb: rgba(26, 28, 34, 0.18);
-  --scrollbar-thumb-hover: rgba(26, 28, 34, 0.34);
+  --scrollbar-thumb: rgba(14, 21, 48, 0.2);
+  --scrollbar-thumb-hover: rgba(14, 21, 48, 0.36);
 }
 
-/* ── Graphite — dark ── */
+/* ── Prisma + Relevo — dark ── azul-noite em vez de preto */
 .dark {
   /* ── Backgrounds ── */
-  --background: #0b0d11;
-  --foreground: #e7e9ee;
+  --background: #0a0f1f;
+  --foreground: #e8ecfb;
 
   /* ── Cards & Popovers ── */
-  --card: #14181e;
-  --card-foreground: #e7e9ee;
-  --popover: #14181e;
-  --popover-foreground: #e7e9ee;
+  --card: #111834;
+  --card-foreground: #e8ecfb;
+  --popover: #151d3b;
+  --popover-foreground: #e8ecfb;
 
-  /* ── Primary — monochrome inverted CTA (Linear/Vercel style) ── */
-  --primary: #eef0f4;
-  --primary-foreground: #0b0d11;
+  /* ── Primary — cobalto ── */
+  --primary: #4563fa;
+  --primary-foreground: #ffffff;
+  --primary-edge: #2a40c4;
+  --primary-glow: rgba(69, 99, 250, 0.75);
 
   /* ── Secondary ── */
-  --secondary: #1a1f27;
-  --secondary-foreground: #e7e9ee;
+  --secondary: #151d3b;
+  --secondary-foreground: #e8ecfb;
 
-  /* ── Muted ── */
-  --muted: #1a1f27;
-  --muted-foreground: #8b929c;
+  /* ── Muted — trilho, mais fundo que o fundo da página ── */
+  --muted: #080c1a;
+  --muted-foreground: #97a2c6;
 
-  /* ── Accent — indigo tint for hover/active states ── */
-  --accent: rgba(142, 162, 255, 0.12);
-  --accent-foreground: #8ea2ff;
+  /* ── Accent ── */
+  --accent: rgba(99, 128, 255, 0.16);
+  --accent-foreground: #93a6ff;
 
   /* ── Destructive ── */
-  --destructive: #f2657a;
+  --destructive: #ff6b82;
 
   /* ── Borders & Inputs ── */
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #6b8afd;
+  --border: #222c50;
+  --input: #222c50;
+  --ring: #4563fa;
 
   /* ── Semantic ── */
-  --success: #3ecf8e;
+  --success: #3fd39a;
   --success-foreground: #06281c;
-  --warning: #f5b544;
+  --warning: #f5b84a;
   --warning-foreground: #2b1c04;
-  --info: #38bdf8;
+  --info: #4cc3f0;
   --info-foreground: #04202b;
 
   /* ── Charts / áreas jurídicas — trabalhista, cível, família, tributário, consumidor ── */
-  --chart-1: #6b8afd;
+  --chart-1: #4563fa;
   --chart-2: #b07cf0;
   --chart-3: #ec6ead;
   --chart-4: #f5b544;
   --chart-5: #3ecf8e;
 
-  /* ── Sidebar ── */
-  --sidebar: #0e1116;
-  --sidebar-foreground: #e7e9ee;
-  --sidebar-primary: #8ea2ff;
-  --sidebar-primary-foreground: #0b0d11;
-  --sidebar-accent: rgba(142, 162, 255, 0.12);
-  --sidebar-accent-foreground: #8ea2ff;
-  --sidebar-border: rgba(255, 255, 255, 0.06);
-  --sidebar-ring: #6b8afd;
+  /* ── Sidebar — a cor dos cards no tema escuro ── */
+  --sidebar: #111834;
+  --sidebar-foreground: #e8ecfb;
+  --sidebar-muted-foreground: #97a2c6;
+  --sidebar-primary: #4563fa;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1b2448;
+  --sidebar-accent-foreground: #e8ecfb;
+  --sidebar-border: #05081a;
+  --sidebar-ring: #93a6ff;
+  --sidebar-key-hl: rgba(255, 255, 255, 0.08);
+  --sidebar-key-drop: rgba(0, 0, 0, 0.55);
+  --sidebar-well: #080c1a;
+  --sidebar-well-shadow: rgba(0, 0, 0, 0.6);
 
-  /* ── Scrollbar — o foreground em baixa opacidade ── */
+  /* ── Relevo ── */
+  --key: #1b2448;
+  --key-hl: rgba(255, 255, 255, 0.08);
+  --key-edge: #05081a;
+  --key-drop: rgba(0, 0, 0, 0.55);
+  --well-shadow: rgba(0, 0, 0, 0.6);
+  --well-edge: #05081a;
+  --groove-dark: #0b1024;
+  --groove-light: #1a2244;
+  --card-edge: #05081a;
+  --card-drop: rgba(0, 0, 0, 0.85);
+  --overlay: rgba(2, 4, 12, 0.66);
+
+  /* ── Scrollbar ── */
   --scrollbar-thumb: rgba(255, 255, 255, 0.14);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+}
+
+/*
+ * ── Relevo: utilitárias ──
+ * As sombras entram pelas variáveis do Tailwind (--tw-shadow,
+ * --tw-inset-shadow…) em vez de um `box-shadow` fechado: assim o anel de foco
+ * (`ring-*`) soma com a tecla em vez de apagá-la. Os fallbacks cobrem a página
+ * em que nenhuma utilitária de sombra do Tailwind registrou essas variáveis.
+ */
+
+/* Tecla levantada. Ao pressionar, desce a própria altura (--edge) e perde a base. */
+@utility key {
+  --tw-shadow:
+    inset 0 1px 0 var(--key-face-hl, var(--key-hl)),
+    0 0 0 1px var(--key-face-edge, var(--key-edge)),
+    0 var(--key-lift, var(--edge)) 0 var(--key-face-edge, var(--key-edge)),
+    0 var(--key-drop-y, 3px) var(--key-drop-blur, 6px) var(--key-drop),
+    var(--key-glow, 0 0 #0000);
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+  transition-property: translate, box-shadow, background-color, color, opacity;
+  transition-duration: 80ms;
+
+  &:active:not(:disabled):not([aria-disabled="true"]) {
+    translate: 0 var(--key-lift, var(--edge));
+    --tw-shadow:
+      inset 0 1px 0 var(--key-face-hl, var(--key-hl)),
+      0 0 0 1px var(--key-face-edge, var(--key-edge)),
+      0 0 0 var(--key-face-edge, var(--key-edge)),
+      0 1px 1px var(--key-drop);
+  }
+}
+
+/* Tecla na cor da marca: base mais escura e brilho cobalto embaixo. Use com `key`. */
+@utility key-primary {
+  --key-face-hl: rgb(255 255 255 / 0.28);
+  --key-face-edge: var(--primary-edge);
+  --key-glow: 0 8px 18px -8px var(--primary-glow);
+}
+
+/* Tecla baixa: aba ativa, item ativo do menu, contadores. Use com `key`. */
+@utility key-sm {
+  --key-lift: 1px;
+  --key-drop-y: 1px;
+  --key-drop-blur: 3px;
+}
+
+/* Trilho rebaixado. O fundo vem de `bg-muted` (ou outro) no próprio elemento. */
+@utility well {
+  --tw-inset-shadow: inset 0 1px 3px var(--well-shadow);
+  --tw-inset-ring-shadow: inset 0 0 0 1px var(--well-edge);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
+}
+
+/* Superfície de card: luz na borda de cima, contorno suave e sombra em camadas. */
+@utility card-shadow {
+  --tw-shadow:
+    inset 0 1px 0 var(--key-hl),
+    0 0 0 1px var(--card-edge),
+    0 1px 2px var(--key-drop),
+    0 12px 28px -14px var(--card-drop);
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+/* Divisória gravada: linha escura embaixo e linha clara em cima de cada linha da tabela. */
+@utility groove {
+  border-color: var(--groove-dark);
+  --tw-inset-shadow: inset 0 1px 0 var(--groove-light);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
 }
 
 @keyframes adv-pulse-urgent {
