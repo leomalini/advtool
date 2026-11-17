@@ -90,21 +90,21 @@ export function Header() {
   }
 
   return (
-    <header className="flex h-14 items-center gap-4 border-b bg-card px-6">
-      <h1 className="text-[14.5px] font-semibold tracking-tight text-foreground shrink-0">
+    <header className="flex h-14 shrink-0 items-center gap-3 px-3">
+      <h1 className="text-lg font-extrabold tracking-tight text-foreground shrink-0">
         {title}
       </h1>
 
       <button
         onClick={() => setCommandOpen(true)}
-        className="ml-2 hidden min-w-[230px] items-center gap-2 rounded-lg border border-border bg-muted/50 px-2.5 h-8 text-[12.5px] text-muted-foreground transition-colors hover:bg-muted sm:flex"
+        className="well ml-auto hidden h-9 min-w-[260px] items-center gap-2 rounded-full bg-muted px-3.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground sm:flex"
       >
         <Search className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1 text-left">Buscar…</span>
-        <span className="rounded-sm bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px]">⌘K</span>
+        <span className="key key-sm rounded-md bg-key px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">⌘K</span>
       </button>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2 sm:ml-0">
         <AssistantPanelButton />
 
         {/* O sino carrega a assinatura do Realtime, e o Header está montado em
@@ -116,7 +116,7 @@ export function Header() {
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="size-9 rounded-full text-muted-foreground hover:text-foreground"
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             aria-label={resolvedTheme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
           >

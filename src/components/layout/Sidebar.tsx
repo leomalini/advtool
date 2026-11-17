@@ -87,6 +87,25 @@ const bottomItems: NavItem[] = [
   { href: "/configuracoes", label: "Configurações", icon: Settings, resource: "configuracoes" },
 ];
 
+// Classes em constantes no topo: o extrator do Tailwind perde classes escritas
+// perto de JS com colchetes, e aqui elas também documentam o desenho
+// (docs/redesign-visual.md).
+
+/** Cartão flutuante. Redefine as variáveis de tecla para as teclas daqui de
+ * dentro (item ativo, logo) combinarem com o fundo da sidebar. */
+const SIDEBAR_FRAME =
+  "flex shrink-0 flex-col overflow-hidden rounded-3xl bg-sidebar text-sidebar-foreground transition-[width] duration-300 shadow-[inset_0_1px_0_var(--sidebar-key-hl),0_0_0_1px_var(--sidebar-border),0_14px_30px_-14px_rgba(14,21,48,0.5)] [--key-hl:var(--sidebar-key-hl)] [--key-edge:var(--sidebar-border)] [--key-drop:var(--sidebar-key-drop)]";
+/** Item ativo: tecla levantada. */
+const ACTIVE_ITEM = "key key-sm bg-sidebar-accent text-sidebar-accent-foreground font-semibold";
+const INACTIVE_ITEM =
+  "text-sidebar-muted-foreground font-medium hover:bg-sidebar-accent/50 hover:text-sidebar-foreground";
+/** Contador de prazo correndo: tecla cobalto com o número em fonte mono. */
+const COUNTER =
+  "flex items-center justify-center rounded-md bg-sidebar-primary font-mono font-medium text-sidebar-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.2),0_0_0_1px_var(--sidebar-border),0_1px_0_var(--sidebar-border)]";
+/** Bloco do usuário: trilho rebaixado na cor da sidebar. */
+const USER_WELL =
+  "flex items-center gap-2 rounded-xl bg-[var(--sidebar-well)] p-2 shadow-[inset_0_1px_3px_var(--sidebar-well-shadow)]";
+
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarOpen, toggleSidebar } = useUIStore();
@@ -154,14 +173,12 @@ export function Sidebar() {
               href={href}
               className={cn(
                 "relative flex w-full items-center justify-center rounded-lg p-2 transition-colors",
-                active
-                  ? "bg-sidebar-accent text-sidebar-primary shadow-[inset_0_0_0_1px_var(--sidebar-accent)]"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                active ? ACTIVE_ITEM : INACTIVE_ITEM,
               )}
             >
               <Icon className="h-4 w-4" />
               {badge != null && badge > 0 && (
-                <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning text-[9px] font-bold text-warning-foreground">
+                <span className={cn(COUNTER, "absolute top-0.5 right-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]")}>
                   {badge > 9 ? '9+' : badge}
                 </span>
               )}
@@ -178,15 +195,13 @@ export function Sidebar() {
         href={href}
         className={cn(
           "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] transition-colors",
-          active
-            ? "bg-sidebar-accent text-sidebar-primary font-semibold shadow-[inset_0_0_0_1px_var(--sidebar-accent)]"
-            : "text-sidebar-foreground/60 font-medium hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+          active ? ACTIVE_ITEM : INACTIVE_ITEM,
         )}
       >
-        <Icon className={cn("h-4 w-4 shrink-0", active && "text-sidebar-primary")} />
+        <Icon className={cn("h-4 w-4 shrink-0", active && "text-sidebar-ring")} />
         <span className="truncate flex-1">{label}</span>
         {badge != null && badge > 0 && (
-          <span className="flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-warning px-1 text-[10px] font-bold text-warning-foreground">
+          <span className={cn(COUNTER, "h-5 min-w-5 px-1 text-[10.5px]")}>
             {badge > 99 ? "99+" : badge}
           </span>
         )}
@@ -196,22 +211,19 @@ export function Sidebar() {
 
   return (
     <aside
-      className={cn(
-        "flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 shrink-0",
-        sidebarOpen ? "w-56" : "w-14",
-      )}
+      className={cn(SIDEBAR_FRAME, sidebarOpen ? "w-56" : "w-14")}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center border-b border-sidebar-border px-3 gap-2.5">
+      <div className="flex h-14 items-center px-3 gap-2.5">
         <button
           onClick={toggleSidebar}
           className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
+          <div className="key key-sm key-primary flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
             <Scale className="h-4 w-4" />
           </div>
           {sidebarOpen && (
-            <span className="text-sm font-semibold tracking-wide text-sidebar-foreground truncate">
+            <span className="text-[15px] font-extrabold tracking-tight text-sidebar-foreground truncate">
               AdvTool
             </span>
           )}
@@ -225,7 +237,7 @@ export function Sidebar() {
           visibleGroups.map((group) => (
             <div key={group.label} className="mb-0.5">
               {sidebarOpen && (
-                <div className="px-2.5 pt-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-sidebar-foreground/40 first:pt-2">
+                <div className="px-2.5 pt-4 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-sidebar-muted-foreground/80 first:pt-2">
                   {group.label}
                 </div>
               )}
@@ -248,11 +260,11 @@ export function Sidebar() {
       )}
 
       {/* User */}
-      <div className="border-t border-sidebar-border px-2 py-3">
+      <div className="p-2">
         {sidebarOpen ? (
-          <div className="flex items-center gap-2">
+          <div className={USER_WELL}>
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="text-xs font-semibold bg-sidebar-primary/20 text-sidebar-primary">
+              <AvatarFallback className="text-xs font-bold bg-sidebar-primary text-sidebar-primary-foreground">
                 {initials}
               </AvatarFallback>
             </Avatar>
@@ -260,14 +272,14 @@ export function Sidebar() {
               <p className="text-xs font-medium truncate text-sidebar-foreground">
                 {user?.email ?? "advogado@escritorio.adv.br"}
               </p>
-              <p className="text-xs text-sidebar-foreground/50 truncate">
+              <p className="text-xs text-sidebar-muted-foreground truncate">
                 {role ? getRoleLabel(role) : "AdvTool"}
               </p>
             </div>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              className="h-7 w-7 shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
               onClick={signOut}
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -276,7 +288,7 @@ export function Sidebar() {
         ) : (
           <Tooltip>
             <TooltipTrigger
-              className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+              className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
               onClick={signOut}
             >
               <LogOut className="h-4 w-4" />

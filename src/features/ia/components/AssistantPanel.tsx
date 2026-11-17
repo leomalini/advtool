@@ -73,8 +73,9 @@ export function AssistantPanel() {
     <aside
       aria-label="Assistente"
       className={cn(
-        'fixed inset-y-0 right-0 z-40 w-full flex-col border-l bg-background shadow-xl',
-        'sm:w-[420px] xl:static xl:z-auto xl:shadow-none',
+        'fixed inset-y-0 right-0 z-40 w-full flex-col border-l bg-card shadow-xl',
+        // No desktop largo o painel entra no shell como mais um cartão.
+        'sm:w-[420px] xl:static xl:z-auto xl:overflow-hidden xl:rounded-3xl xl:border-0 xl:shadow-none xl:ring-1 xl:ring-[var(--card-edge)]',
         open ? 'flex' : 'hidden',
       )}
     >

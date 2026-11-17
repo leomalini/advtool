@@ -166,7 +166,7 @@ export function NotificationBell() {
         <Button
           variant="outline"
           size="icon"
-          className="relative h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="relative size-9 rounded-full text-muted-foreground hover:text-foreground"
           aria-label={
             unreadCount > 0 ? `${unreadCount} aviso(s) não lido(s)` : 'Avisos'
           }
