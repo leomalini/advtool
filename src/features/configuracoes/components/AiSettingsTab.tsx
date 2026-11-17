@@ -3,18 +3,23 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useAiSettings } from '../hooks/useAiSettings'
+import { AiBudgetCard } from './AiBudgetCard'
+import { AiFeaturesCard } from './AiFeaturesCard'
+import { AiHistoryCard } from './AiHistoryCard'
 import { AiKeysCard } from './AiKeysCard'
 import { AiProviderCard } from './AiProviderCard'
 import { StatusRow } from './StatusRow'
 
 /**
- * Aba "Assistente IA": qual IA atende o escritório, com qual modelo, e as
- * chaves de cada provedor (docs/ia-configuracoes.md, fase 2). Quem vê
- * Configurações vê a situação; só quem administra muda.
+ * Aba "Assistente IA": qual IA atende o escritório, com qual modelo, as
+ * chaves, o gasto e o teto, as funções ligadas e o histórico
+ * (docs/ia-configuracoes.md, fases 2 e 3). Quem vê Configurações vê a
+ * situação; só quem administra muda.
  */
 export function AiSettingsTab() {
   const { data: summary, isLoading, error } = useAiSettings()
   const { can } = usePermissions()
+  const canEdit = Boolean(summary?.editable) && can('configuracoes', 'manage')
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -47,14 +52,11 @@ export function AiSettingsTab() {
               service_role). O que aparece abaixo vem das variáveis de ambiente.
             </StatusRow>
           )}
-          <AiProviderCard
-            summary={summary}
-            canEdit={summary.editable && can('configuracoes', 'manage')}
-          />
-          <AiKeysCard
-            summary={summary}
-            canEdit={summary.editable && can('configuracoes', 'manage')}
-          />
+          <AiProviderCard summary={summary} canEdit={canEdit} />
+          <AiKeysCard summary={summary} canEdit={canEdit} />
+          <AiBudgetCard summary={summary} canEdit={canEdit} />
+          <AiFeaturesCard summary={summary} canEdit={canEdit} />
+          {summary.editable && <AiHistoryCard />}
         </>
       )}
     </div>

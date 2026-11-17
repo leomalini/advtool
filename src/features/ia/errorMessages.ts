@@ -15,6 +15,7 @@ export const AI_ERROR_MESSAGES = {
   refusal: 'Os filtros de segurança do provedor da IA recusaram este pedido. Reformule e tente de novo.',
   budget: 'O teto mensal de gasto com a IA foi atingido. Quem administra o escritório pode aumentá-lo.',
   unavailable: 'A IA está indisponível agora. Tente de novo mais tarde.',
+  disabled: 'O Assistente está desligado em Configurações › Assistente IA.',
 } as const
 
 export type AiErrorMessage = (typeof AI_ERROR_MESSAGES)[keyof typeof AI_ERROR_MESSAGES]

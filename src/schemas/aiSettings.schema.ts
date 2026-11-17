@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AI_PROVIDERS } from '@/features/ia/config/models'
+import { AI_FEATURES, AI_PROVIDERS } from '@/features/ia/config/models'
 
 export const aiProviderSchema = z.enum(AI_PROVIDERS)
 
@@ -31,3 +31,25 @@ export const saveAiProviderSchema = z.object({
 })
 
 export const aiProviderOnlySchema = z.object({ provider: aiProviderSchema })
+
+export const aiFeatureSchema = z.enum(AI_FEATURES)
+
+export const saveAiFeatureSchema = z.object({
+  feature: aiFeatureSchema,
+  enabled: z.boolean(),
+})
+
+/** Teto em US$, com centavos. */
+export const aiBudgetUsdSchema = z
+  .number({ error: 'Informe o teto em US$.' })
+  .positive('O teto precisa ser maior que zero.')
+  .max(100_000, 'Teto alto demais.')
+  .refine(
+    (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6,
+    'Use no máximo duas casas decimais.',
+  )
+
+export const saveAiBudgetSchema = z.discriminatedUnion('source', [
+  z.object({ source: z.literal('env') }),
+  z.object({ source: z.literal('panel'), usd: aiBudgetUsdSchema.nullable() }),
+])

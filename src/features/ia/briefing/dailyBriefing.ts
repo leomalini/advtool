@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import { isAiFeatureEnabled } from '../config/runtimeConfig'
 import { createAssistantModel } from '../model'
 import { officeDayEnd, officeDayStart, officeToday } from '../tools/shared'
 import { checkAiBudget } from '../usage/budget'
@@ -143,6 +144,10 @@ function describeDay(person: Person, day: DayData): string {
 export async function sendDailyBriefings(now: Date = new Date()): Promise<BriefingSummary> {
   const summary: BriefingSummary = { sent: 0, skipped: 0, failed: 0 }
   if (!hasServiceRoleKey()) return summary
+  if (!(await isAiFeatureEnabled('briefing'))) {
+    console.info('[briefing] desligado nas Configurações.')
+    return summary
+  }
   const admin = createAdminClient()
   const today = officeToday(now)
 

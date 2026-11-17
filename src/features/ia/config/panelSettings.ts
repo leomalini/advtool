@@ -3,13 +3,21 @@
 import { z } from 'zod'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import type {
+  AiBudgetSummary,
   AiProviderKeySummary,
+  AiSettingsLogKind,
   AiSettingsMutationResult,
   AiSettingsSummary,
   ProviderTestResult,
 } from '@/types/aiSettings.types'
 import { aiKeyVault } from './keyVault'
-import { AI_PROVIDERS, AI_PROVIDER_LABELS, isCuratedModel, type AssistantProvider } from './models'
+import {
+  AI_PROVIDERS,
+  AI_PROVIDER_LABELS,
+  isCuratedModel,
+  type AiFeature,
+  type AssistantProvider,
+} from './models'
 import { testProviderKey } from './providerTest'
 import { API_KEY_ENV, getAiRuntimeConfig, invalidateAiRuntimeConfig } from './runtimeConfig'
 
@@ -30,6 +38,15 @@ const MODEL_COLUMN: Record<AssistantProvider, 'anthropic_model' | 'google_model'
   google: 'google_model',
 }
 
+/** A coluna de `ai_settings` de cada interruptor (migration 94). */
+const FEATURE_COLUMN: Record<AiFeature, string> = {
+  assistant: 'assistant_enabled',
+  portal: 'portal_enabled',
+  autoSummary: 'auto_summary_enabled',
+  triage: 'triage_enabled',
+  briefing: 'briefing_enabled',
+}
+
 /** Falha ao gravar no banco — a rota responde 503 com a mensagem. */
 export class AiSettingsStorageError extends Error {}
 
@@ -39,7 +56,7 @@ function hintOf(apiKey: string): string {
 
 async function log(
   changedBy: string,
-  kind: 'provider' | 'model' | 'key_set' | 'key_removed' | 'test',
+  kind: AiSettingsLogKind,
   details: Record<string, unknown>,
 ): Promise<void> {
   const { error } = await createAdminClient()
@@ -88,12 +105,23 @@ export async function loadAiSettingsSummary(): Promise<AiSettingsSummary> {
     }
   })
 
+  const budget: AiBudgetSummary =
+    config.monthlyBudget.kind === 'invalid'
+      ? { source: 'env', limitUsd: null, invalidEnv: true }
+      : {
+          source: config.monthlyBudget.source,
+          limitUsd: config.monthlyBudget.kind === 'limit' ? config.monthlyBudget.usd : null,
+          invalidEnv: false,
+        }
+
   return {
     editable,
     activeProvider: config.activeProvider,
     providerSource: config.providerSource,
     models: config.models,
     keys,
+    budget,
+    features: config.features,
   }
 }
 
@@ -307,6 +335,69 @@ export async function saveProviderAndModel(input: {
       to: input.modelId,
     })
   }
+  invalidateAiRuntimeConfig()
+  return done()
+}
+
+/** O teto como o histórico o descreve. */
+function describeBudget(budget: AiBudgetSummary): Record<string, unknown> {
+  return { source: budget.source, usd: budget.limitUsd }
+}
+
+/**
+ * Teto mensal. `env` devolve o teto à variável de ambiente; `panel` assume
+ * o teto pelo painel (`null` = sem teto). Vale na próxima chamada à IA.
+ */
+export async function saveBudget(input: {
+  budget: { source: 'env' } | { source: 'panel'; usd: number | null }
+  userId: string
+}): Promise<AiSettingsMutationResult> {
+  const blocked = await requireEditable()
+  if (blocked) return blocked
+
+  const before = (await loadAiSettingsSummary()).budget
+  const { error } = await createAdminClient()
+    .from('ai_settings')
+    .upsert(
+      {
+        id: true,
+        budget_source: input.budget.source,
+        monthly_budget_usd: input.budget.source === 'panel' ? input.budget.usd : null,
+        updated_by: input.userId,
+      },
+      { onConflict: 'id' },
+    )
+  if (error) throw new AiSettingsStorageError(`${error.code}: ${error.message}`)
+
+  invalidateAiRuntimeConfig()
+  const result = await done()
+  if (result.ok) {
+    await log(input.userId, 'budget', {
+      from: describeBudget(before),
+      to: describeBudget(result.summary.budget),
+    })
+  }
+  return result
+}
+
+/** Liga ou desliga uma função. Vale em até 30 s em todas as instâncias. */
+export async function saveFeature(input: {
+  feature: AiFeature
+  enabled: boolean
+  userId: string
+}): Promise<AiSettingsMutationResult> {
+  const blocked = await requireEditable()
+  if (blocked) return blocked
+
+  const { error } = await createAdminClient()
+    .from('ai_settings')
+    .upsert(
+      { id: true, [FEATURE_COLUMN[input.feature]]: input.enabled, updated_by: input.userId },
+      { onConflict: 'id' },
+    )
+  if (error) throw new AiSettingsStorageError(`${error.code}: ${error.message}`)
+
+  await log(input.userId, 'toggle', { feature: input.feature, enabled: input.enabled })
   invalidateAiRuntimeConfig()
   return done()
 }

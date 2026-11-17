@@ -5,6 +5,7 @@ import type { AssistantProvider } from './config/models'
 import {
   API_KEY_ENV,
   getAiRuntimeConfig,
+  type AiFeature,
   type AiRuntimeConfig,
   type ProviderCredentials,
 } from './config/runtimeConfig'
@@ -47,9 +48,26 @@ export const AI_ROUTE_SETTINGS = {
 
 export type AiRoute = keyof typeof AI_ROUTE_SETTINGS
 
+/**
+ * O interruptor das Configurações que libera cada rota
+ * (`docs/ia-configuracoes.md`, fase 3). A triagem e o resumo AUTOMÁTICO
+ * passam pelo lote, que confere o próprio interruptor (`batch/enqueue.ts`);
+ * `process_summary` aqui é o "Atualizar" da tela, uma ação do Assistente.
+ */
+const ROUTE_FEATURE: Record<AiRoute, AiFeature> = {
+  chat: 'assistant',
+  contract_reader: 'assistant',
+  drafting: 'assistant',
+  process_summary: 'assistant',
+  portal: 'portal',
+  triage: 'triage',
+  briefing: 'briefing',
+}
+
 export type AssistantModelResult =
   | { ok: true; provider: AssistantProvider; model: LanguageModel; providerOptions: ProviderOptions }
-  | { ok: false; reason: string }
+  /** `disabled`: a função foi desligada nas Configurações — não é falha. */
+  | { ok: false; reason: string; disabled: boolean }
 
 /**
  * O provedor da Anthropic com as credenciais em vigor, para as chamadas na
@@ -95,14 +113,18 @@ export async function createAssistantModel(
   scope: UsageScope = {},
 ): Promise<AssistantModelResult> {
   const config = await getAiRuntimeConfig()
+  if (!config.features[ROUTE_FEATURE[route]]) {
+    return { ok: false, reason: `função desligada (${ROUTE_FEATURE[route]}).`, disabled: true }
+  }
   const provider = config.activeProvider
   if (!provider) {
-    return { ok: false, reason: 'AI_ASSISTANT_PROVIDER inválido (use anthropic ou google).' }
+    const reason = 'AI_ASSISTANT_PROVIDER inválido (use anthropic ou google).'
+    return { ok: false, reason, disabled: false }
   }
   const credentials = config.credentials[provider]
   if (!credentials) {
     const where = `Configurações › Assistente IA ou ${API_KEY_ENV[provider]}`
-    return { ok: false, reason: `sem chave do provedor ${provider} (${where}).` }
+    return { ok: false, reason: `sem chave do provedor ${provider} (${where}).`, disabled: false }
   }
 
   if (provider === 'google') {

@@ -3,7 +3,7 @@ import {
   type Experimental_TextBatchRequest as TextBatchRequest,
 } from 'ai'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
-import { getAiRuntimeConfig } from '../config/runtimeConfig'
+import { getAiRuntimeConfig, type AiFeature } from '../config/runtimeConfig'
 import { AI_ROUTE_SETTINGS, anthropicBatchSetup, createAnthropicProvider } from '../model'
 import { checkAiBudget } from '../usage/budget'
 import { BATCH_JOBS, type RegisteredBatchJob } from './jobs'
@@ -13,6 +13,13 @@ export interface EnqueueResult {
   sent: number
   /** Pedidos que já esperavam resultado e não foram mandados de novo. */
   waiting: number
+}
+
+/** O interruptor das Configurações de cada trabalho em lote (fase 3 do painel). */
+const KIND_FEATURE: Record<BatchKind, AiFeature> = {
+  triage: 'triage',
+  process_summary: 'autoSummary',
+  portal_answers: 'portal',
 }
 
 export interface BatchWork {
@@ -56,10 +63,15 @@ export function toBatchRequest(
  */
 export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
   if (work.length === 0 || !hasServiceRoleKey()) return { sent: 0, waiting: 0 }
+  const config = await getAiRuntimeConfig()
   // O lote só existe na Anthropic, e fica nela mesmo com o Gemini ativo no
   // chat (D7 do painel de IA). Sem chave do Claude, nada sai.
-  const setup = anthropicBatchSetup(await getAiRuntimeConfig())
+  const setup = anthropicBatchSetup(config)
   if (!setup) return { sent: 0, waiting: 0 }
+  // Função desligada nas Configurações: o trabalho dela nem entra. O que já
+  // estava no lote continua sendo recolhido.
+  const enabled = work.filter((item) => config.features[KIND_FEATURE[item.kind]])
+  if (enabled.length === 0) return { sent: 0, waiting: 0 }
   const admin = createAdminClient()
 
   try {
@@ -69,7 +81,7 @@ export async function enqueueBatch(work: BatchWork[]): Promise<EnqueueResult> {
       return { sent: 0, waiting: 0 }
     }
 
-    const unique = [...new Map(work.map((w) => [`${w.kind}:${w.entityId}`, w])).values()]
+    const unique = [...new Map(enabled.map((w) => [`${w.kind}:${w.entityId}`, w])).values()]
     const { data: pending, error } = await admin
       .from('ai_batch_items')
       .select('kind, entity_id')

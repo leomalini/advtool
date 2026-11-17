@@ -7,8 +7,11 @@ import {
   DEFAULT_MODELS,
   isAssistantProvider,
   isCuratedModel,
+  type AiFeature,
   type AssistantProvider,
 } from './models'
+
+export type { AiFeature }
 
 /** De onde veio um valor: do painel de Configurações ou do ambiente. */
 export type ConfigSource = 'panel' | 'env'
@@ -26,13 +29,8 @@ export type MonthlyBudget =
   /** `AI_MONTHLY_BUDGET_USD` com valor que não é número: falha fechada. */
   | { kind: 'invalid'; raw: string }
 
-export interface AiFeatureToggles {
-  assistant: boolean
-  portal: boolean
-  autoSummary: boolean
-  triage: boolean
-  briefing: boolean
-}
+/** Um interruptor por função — o que cada um cobre está em `AI_FEATURE_INFO`. */
+export type AiFeatureToggles = Record<AiFeature, boolean>
 
 /**
  * - `loaded`: o painel tem configuração (linha ou chave).
@@ -250,6 +248,11 @@ export function getAiRuntimeConfig(): Promise<AiRuntimeConfig> {
   const value = loadAiRuntimeConfig()
   cached = { value, expiresAt: now + CACHE_TTL_MS }
   return value
+}
+
+/** O interruptor de uma função no painel (ligada quando o painel não define). */
+export async function isAiFeatureEnabled(feature: AiFeature): Promise<boolean> {
+  return (await getAiRuntimeConfig()).features[feature]
 }
 
 /** Descarta a leitura guardada — chamar depois de salvar no painel. */
