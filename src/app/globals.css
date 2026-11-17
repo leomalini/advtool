@@ -146,6 +146,8 @@
   --key-drop: rgba(14, 21, 48, 0.14);
   --well-shadow: rgba(14, 21, 48, 0.13);
   --well-edge: rgba(198, 206, 224, 0.5);
+  /* Contorno de controle marcável (checkbox, interruptor): 3:1 sobre o card e o fundo */
+  --control-edge: #76829f;
   --groove-dark: #e4e9f2;
   --groove-light: #ffffff;
   --card-edge: rgba(198, 206, 224, 0.55);
@@ -234,6 +236,7 @@
   --key-drop: rgba(0, 0, 0, 0.55);
   --well-shadow: rgba(0, 0, 0, 0.6);
   --well-edge: #05081a;
+  --control-edge: #6573aa;
   --groove-dark: #0b1024;
   --groove-light: #1a2244;
   --card-edge: #05081a;
@@ -294,7 +297,7 @@
 /* Trilho rebaixado. O fundo vem de `bg-muted` (ou outro) no próprio elemento. */
 @utility well {
   --tw-inset-shadow: inset 0 1px 3px var(--well-shadow);
-  --tw-inset-ring-shadow: inset 0 0 0 1px var(--well-edge);
+  --tw-inset-ring-shadow: inset 0 0 0 1px var(--well-ring, var(--well-edge));
   box-shadow:
     var(--tw-inset-shadow), var(--tw-inset-ring-shadow),
     var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
