@@ -22,6 +22,7 @@ import {
   CreditCard,
   Landmark,
   Signature,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -38,6 +39,7 @@ import { PaymentSettingsCard } from './PaymentSettingsCard'
 import { InfinitePayDeliveries } from './InfinitePayDeliveries'
 import { D4SignSettingsCard } from './D4SignSettingsCard'
 import { D4SignDeliveries } from './D4SignDeliveries'
+import { AiSettingsTab } from './AiSettingsTab'
 import type { D4SignSetupStatus } from '@/types/d4sign.types'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
@@ -226,6 +228,7 @@ type TabValue =
   | 'audiencias'
   | 'pagamentos'
   | 'assinatura'
+  | 'assistente-ia'
   | 'webhooks'
   | 'geral'
 
@@ -235,6 +238,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'publicacoes', label: 'Publicações', icon: Newspaper },
   { value: 'pagamentos', label: 'Pagamentos', icon: CreditCard },
   { value: 'assinatura', label: 'Assinatura', icon: Signature },
+  { value: 'assistente-ia', label: 'Assistente IA', icon: Sparkles },
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
   { value: 'etiquetas', label: 'Etiquetas', icon: Tag },
@@ -509,6 +513,9 @@ export function ConfiguracoesContent({
               <D4SignSettingsCard setup={signatureSetup} />
               <D4SignDeliveries />
             </div>
+          </TabsContent>
+          <TabsContent value="assistente-ia">
+            <AiSettingsTab />
           </TabsContent>
           <TabsContent value="areas">
             <TabAreas />

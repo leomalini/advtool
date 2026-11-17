@@ -28,12 +28,14 @@ export const AI_MODEL_OPTIONS = {
     {
       id: 'claude-opus-5-5',
       label: 'Claude Opus 5.5',
-      description: 'O modelo validado em todas as funções do AdvTool. US$ 4 / 20 por milhão de tokens.',
+      description:
+        'O modelo validado em todas as funções do AdvTool. US$ 4 / 20 por milhão de tokens.',
     },
     {
       id: 'claude-sonnet-5-5',
       label: 'Claude Sonnet 5.5',
-      description: 'Metade do preço do Opus (US$ 2 / 10). Ainda não validado nas funções do AdvTool.',
+      description:
+        'Metade do preço do Opus (US$ 2 / 10). Ainda não validado nas funções do AdvTool.',
     },
   ],
   // Sem preço em `pricing.ts`: o consumo do Gemini aparece sem custo estimado.

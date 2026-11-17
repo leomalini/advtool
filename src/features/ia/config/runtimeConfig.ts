@@ -122,7 +122,9 @@ function envBudget(): MonthlyBudget {
   const raw = envValue('AI_MONTHLY_BUDGET_USD')
   if (!raw) return { kind: 'none', source: 'env' }
   const parsed = budgetSchema.safeParse(raw)
-  return parsed.success ? { kind: 'limit', usd: parsed.data, source: 'env' } : { kind: 'invalid', raw }
+  return parsed.success
+    ? { kind: 'limit', usd: parsed.data, source: 'env' }
+    : { kind: 'invalid', raw }
 }
 
 type PanelRead =
@@ -166,7 +168,7 @@ async function readPanel(): Promise<PanelRead> {
 function panelModel(provider: AssistantProvider, modelId: string | null): string {
   if (!modelId) return DEFAULT_MODELS[provider]
   if (isCuratedModel(provider, modelId)) return modelId
-  console.error(`[ia-config] modelo fora da lista curada (${provider}): ${modelId}; usando o padrão.`)
+  console.error(`[ia-config] modelo fora da lista (${provider}): ${modelId}; usando o padrão.`)
   return DEFAULT_MODELS[provider]
 }
 
@@ -190,7 +192,7 @@ async function loadAiRuntimeConfig(): Promise<AiRuntimeConfig> {
     }
     if (row) {
       unreadableKeys.push(provider)
-      console.error(`[ia-config] chave do painel ilegível (${provider}); valendo a do ambiente, se houver.`)
+      console.error(`[ia-config] chave do painel ilegível (${provider}); vale a do ambiente.`)
     }
     credentials[provider] = envCredentials(provider)
   }
