@@ -26,10 +26,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          // Aviso invertido (escuro no tema claro, claro no escuro): destaca
+          // sobre qualquer tela sem competir com os cards.
+          "--normal-bg": "var(--foreground)",
+          "--normal-text": "var(--background)",
+          "--normal-border": "transparent",
+          "--border-radius": "calc(var(--radius) + 4px)",
         } as React.CSSProperties
       }
       {...props}
