@@ -111,7 +111,7 @@ export async function POST(request: Request) {
   const { conversationId } = parsed.data
 
   // Antes de tocar no banco: sem provedor configurado não há o que fazer.
-  const assistantModel = createAssistantModel('chat', { userId: guard.userId, conversationId })
+  const assistantModel = await createAssistantModel('chat', { userId: guard.userId, conversationId })
   if (!assistantModel.ok) {
     return NextResponse.json(
       { error: `Assistente não configurado: ${assistantModel.reason}` },

@@ -24,55 +24,20 @@
  * falhar em vez de devolver lixo que pareceria um token.
  */
 
+import { createSecretVault } from '@/lib/crypto/secretVault'
 import { derivePortalKeyBytes } from './secret'
 
 const KEY_INFO = 'advtool:client-portal:token-vault:v1'
 
-/** GCM: 96 bits é o tamanho recomendado, e o único que o WebCrypto otimiza. */
-const IV_BYTES = 12
-
-let cachedKey: Promise<CryptoKey> | null = null
-
-function vaultKey(): Promise<CryptoKey> {
-  cachedKey ??= derivePortalKeyBytes(KEY_INFO).then((raw) =>
-    crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
-  )
-  return cachedKey
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
-
-function fromBase64(value: string): Uint8Array {
-  const binary = atob(value)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes
-}
+// O AES-GCM mora em `@/lib/crypto/secretVault` (também usado pelas chaves da
+// IA); aqui fica só o rótulo que separa a chave do portal das outras.
+const vault = createSecretVault(() => derivePortalKeyBytes(KEY_INFO))
 
 /**
  * Texto cifrado pronto para a coluna: base64 de `iv || ciphertext`.
- *
- * O IV é novo a cada chamada e viaja junto — ele não é segredo, e reusá-lo com
- * a mesma chave é o erro que quebra o GCM.
  */
 export async function sealPortalToken(token: string): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
-
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    await vaultKey(),
-    new TextEncoder().encode(token)
-  )
-
-  const packed = new Uint8Array(iv.length + ciphertext.byteLength)
-  packed.set(iv, 0)
-  packed.set(new Uint8Array(ciphertext), iv.length)
-
-  return toBase64(packed)
+  return vault.seal(token)
 }
 
 /**
@@ -89,20 +54,5 @@ export async function sealPortalToken(token: string): Promise<string> {
  * cadastro inteiro por causa de um campo.
  */
 export async function openPortalToken(sealed: string | null): Promise<string | null> {
-  if (!sealed) return null
-
-  try {
-    const packed = fromBase64(sealed)
-    if (packed.length <= IV_BYTES) return null
-
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: packed.slice(0, IV_BYTES) },
-      await vaultKey(),
-      packed.slice(IV_BYTES)
-    )
-
-    return new TextDecoder().decode(plaintext)
-  } catch {
-    return null
-  }
+  return vault.open(sealed)
 }
