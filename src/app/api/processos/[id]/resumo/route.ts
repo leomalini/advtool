@@ -35,8 +35,9 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (!parsed.success) return jsonError('Processo inválido.', 400)
   const { id } = parsed.data
 
-  const assistantModel = createAssistantModel('process_summary', { userId: guard.userId })
+  const assistantModel = await createAssistantModel('process_summary', { userId: guard.userId })
   if (!assistantModel.ok) {
+    if (assistantModel.disabled) return jsonError(AI_ERROR_MESSAGES.disabled, 503)
     console.error('[resumo] IA indisponível:', assistantModel.reason)
     return jsonError('A IA não está configurada neste ambiente.', 503)
   }

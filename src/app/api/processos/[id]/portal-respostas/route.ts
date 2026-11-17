@@ -80,7 +80,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       stale = !data || portalAnswersHash(data) !== record.source_hash
     }
     return NextResponse.json({
-      enabled: isPortalAnswersEnabled(),
+      enabled: await isPortalAnswersEnabled(),
       record,
       stale,
     } satisfies OfficePortalAnswers)

@@ -1,6 +1,7 @@
 import { generateText, Output } from 'ai'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import { isAiFeatureEnabled } from '@/features/ia/config/runtimeConfig'
 import { createAssistantModel } from '@/features/ia/model'
 import { checkAiBudget } from '@/features/ia/usage/budget'
 import type { UsageScope } from '@/features/ia/usage/recordUsage'
@@ -39,11 +40,14 @@ export type PortalAnswersOutcome =
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
 
 /**
- * `PORTAL_ASSISTANT_ENABLED=false` tira a IA da frente do cliente sem tirá-la
- * da equipe — o mesmo interruptor do antigo chat do portal.
+ * As perguntas do portal estão ligadas: nem `PORTAL_ASSISTANT_ENABLED=false`
+ * no ambiente, nem o interruptor "Perguntas do portal" desligado em
+ * Configurações › Assistente IA. Tira a IA da frente do cliente sem tirá-la
+ * da equipe.
  */
-export function isPortalAnswersEnabled(): boolean {
-  return process.env.PORTAL_ASSISTANT_ENABLED?.trim().toLowerCase() !== 'false'
+export async function isPortalAnswersEnabled(): Promise<boolean> {
+  if (process.env.PORTAL_ASSISTANT_ENABLED?.trim().toLowerCase() === 'false') return false
+  return isAiFeatureEnabled('portal')
 }
 
 async function releaseClaim(admin: SupabaseClient, legalProcessId: string) {
@@ -153,7 +157,7 @@ export async function ensurePortalAnswers(
   trigger: PortalAnswersTrigger,
   scope: UsageScope = {},
 ): Promise<PortalAnswersOutcome> {
-  if (!isPortalAnswersEnabled()) return { status: 'unavailable' }
+  if (!(await isPortalAnswersEnabled())) return { status: 'unavailable' }
   if (!hasServiceRoleKey()) {
     console.error('[portal-respostas] SUPABASE_SERVICE_ROLE_KEY ausente.')
     return { status: 'unavailable' }
@@ -193,7 +197,7 @@ export async function ensurePortalAnswers(
       claimed = false
       return { status: 'unavailable' }
     }
-    const model = createAssistantModel('portal', scope)
+    const model = await createAssistantModel('portal', scope)
     if (!model.ok) {
       console.error('[portal-respostas] IA indisponível:', model.reason)
       await releaseClaim(admin, legalProcessId)

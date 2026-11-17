@@ -20,6 +20,7 @@ import {
   toolDataFromPerson,
 } from '@/features/contratos/utils/partyToolInput'
 import { readDocumentsAsParts, type ReadableDocument } from '@/features/ia/files/documentParts'
+import { AI_ERROR_MESSAGES } from '@/features/ia/errorMessages'
 import { createAssistantModel } from '@/features/ia/model'
 import { isProviderCreditError, isProviderQuotaError } from '@/features/ia/providerErrors'
 import { contractKindSchema, contractStatusSchema } from '@/schemas/contract.schema'
@@ -377,11 +378,17 @@ export function createContractTools(supabase: ToolClient, context: TemplateTools
           .describe('true quando o 1º arquivo é um contrato pronto a importar.'),
       }),
       execute: async ({ arquivos, modelo_id, importar_contrato }) => {
-        const model = createAssistantModel('contract_reader', {
+        const model = await createAssistantModel('contract_reader', {
           userId: context.userId,
           conversationId: context.conversationId,
         })
-        if (!model.ok) return { error: 'A IA não está configurada neste ambiente.' }
+        if (!model.ok) {
+          return {
+            error: model.disabled
+              ? AI_ERROR_MESSAGES.disabled
+              : 'A IA não está configurada neste ambiente.',
+          }
+        }
 
         const documents: (ReadableDocument & { origem: 'conversa' | 'documentos' })[] = []
         const missing: string[] = []

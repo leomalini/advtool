@@ -54,8 +54,9 @@ export async function POST(request: Request) {
   const guard = await requirePermissionApi('contratos', 'update')
   if (!guard.ok) return guard.response
 
-  const assistantModel = createAssistantModel('contract_reader', { userId: guard.userId })
+  const assistantModel = await createAssistantModel('contract_reader', { userId: guard.userId })
   if (!assistantModel.ok) {
+    if (assistantModel.disabled) return jsonError(AI_ERROR_MESSAGES.disabled, 503)
     console.error('[contratos] IA indisponível:', assistantModel.reason)
     return jsonError('A IA não está configurada neste ambiente.', 503)
   }

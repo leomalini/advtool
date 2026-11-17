@@ -9,6 +9,8 @@ interface ModelPrice {
  * Preço por milhão de tokens, em US$, da tabela da Anthropic (conferida em
  * 2026-10). Só os modelos que o AdvTool usa e os destinos do fallback de
  * recusa (`fallbacks: 'default'` no Opus 5.5 leva ao Opus 5 ou ao 4.8).
+ * O Sonnet 5.5 entrou como opção do painel de Configurações (conferido em
+ * 2026-11); o destino do fallback dele não está aqui e fica sem custo.
  *
  * Escrita no cache custa 1,25 × a entrada — o TTL padrão de 5 minutos, o único
  * que pedimos. Modelo fora da tabela fica SEM custo (`null`), nunca com um
@@ -19,6 +21,8 @@ const PRICES_USD_PER_MTOK: Readonly<Record<string, ModelPrice>> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  // Leitura de cache a 0,05 × a entrada, como o Opus 5.5.
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
 }
 
 export interface TokenCounts {

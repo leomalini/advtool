@@ -5,7 +5,8 @@ import {
 } from 'ai'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
-import { AI_ROUTE_SETTINGS, createAnthropicProvider } from '../model'
+import { getAiRuntimeConfig } from '../config/runtimeConfig'
+import { anthropicBatchSetup, createAnthropicProvider } from '../model'
 import { recordBatchUsage } from '../usage/recordUsage'
 import { BATCH_JOBS, BATCH_TOOLS } from './jobs'
 import type { BatchKind } from './types'
@@ -88,7 +89,14 @@ export async function collectBatches(
     byBatch.set(row.batch_id, group)
   }
 
-  const provider = createAnthropicProvider()
+  // O lote é sempre do Claude, mesmo com o Gemini ativo (D7 do painel de IA).
+  const setup = anthropicBatchSetup(await getAiRuntimeConfig())
+  if (!setup) {
+    if (byBatch.size > 0) console.error('[ia-lote] sem chave do Claude: os lotes esperam.')
+    summary.waiting += byBatch.size
+    return summary
+  }
+  const provider = createAnthropicProvider(setup.credentials)
   for (const [batchId, { reference: batch, rows }] of byBatch) {
     const lastCheck = Math.max(...rows.map((row) => (row.checked_at ? Date.parse(row.checked_at) : 0)))
     if (options.minIntervalMs && now - lastCheck < options.minIntervalMs) {
@@ -129,7 +137,7 @@ export async function collectBatches(
           continue
         }
 
-        const modelId = item.response?.modelId ?? AI_ROUTE_SETTINGS[job.route].anthropicModel
+        const modelId = item.response?.modelId ?? setup.modelId
         await recordBatchUsage({
           route: job.route,
           model: modelId,
