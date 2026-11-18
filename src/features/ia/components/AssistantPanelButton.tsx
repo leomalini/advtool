@@ -22,7 +22,7 @@ export function AssistantPanelButton() {
       variant="outline"
       size="sm"
       className={cn(
-        'h-8 gap-1.5 text-muted-foreground hover:text-foreground',
+        'h-9 gap-1.5 rounded-full px-3.5 text-muted-foreground hover:text-foreground',
         open && 'bg-accent text-foreground',
       )}
       onClick={toggle}

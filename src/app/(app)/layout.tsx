@@ -16,14 +16,18 @@ import { AssistantPanel } from '@/features/ia/components/AssistantPanel'
  * Fora do fluxo, o shell não contribui NADA para a altura do documento e é
  * medido contra a viewport real. O documento não tem mais como rolar nas rotas
  * do app; quem rola é o `main`, que é o que sempre se quis.
+ *
+ * O `p-3 gap-3` deixa a sidebar flutuar como um cartão sobre o fundo azulado
+ * (docs/redesign-visual.md). O `px-3` do `main` dá espaço para a sombra dos
+ * cards não ser cortada pela rolagem.
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 flex overflow-hidden bg-background">
+    <div className="fixed inset-0 flex gap-3 overflow-hidden bg-background p-3">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto px-3 pt-2 pb-6">{children}</main>
       </div>
       <AssistantPanel />
     </div>
