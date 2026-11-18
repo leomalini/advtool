@@ -36,7 +36,7 @@ profissional e sem gradientes.
 | Decisão | Escolha |
 |---|---|
 | Direção | Mistura Prisma + Relevo: cor e layout do Prisma, teclas e trilhos do Relevo |
-| Cor da marca | Cobalto — `#2f54eb` no claro, `#4563fa` no escuro |
+| Cor da marca | Cobalto — `#2f54eb` no claro, `#6b84ff` no escuro (com texto azul-noite nos botões) |
 | Sidebar | Azul-noite (`#111b45`) no claro; cor dos cards (`#111834`) no escuro |
 | Conteúdo | "Com tons": fundo azulado, indicadores tingidos, cabeçalho de tabela em azul |
 | Relevo | Equilibrado: tecla com 2 px de borda inferior (`--edge: 2px`) |
@@ -56,20 +56,21 @@ Os valores abaixo foram conferidos por script (contraste AA), não a olho.
 | `--foreground` | `#0e1530` | `#e8ecfb` |
 | `--card` | `#ffffff` | `#111834` |
 | `--popover` | `#ffffff` | `#151d3b` |
-| `--primary` | `#2f54eb` | `#4563fa` |
-| `--primary-foreground` | `#ffffff` | `#ffffff` |
+| `--primary` | `#2f54eb` | `#6b84ff` |
+| `--primary-foreground` | `#ffffff` | `#0a0f1f` |
 | `--secondary` | `#f4f6fb` | `#151d3b` |
 | `--muted` (vira o trilho) | `#e2e7f1` | `#080c1a` |
 | `--muted-foreground` | `#55607e` | `#97a2c6` |
 | `--accent` | `rgba(47,84,235,.10)` | `rgba(99,128,255,.16)` |
 | `--accent-foreground` | `#2445d4` | `#93a6ff` |
 | `--border`, `--input` | `#dde3ee` | `#222c50` |
-| `--ring` | `#2f54eb` | `#4563fa` |
+| `--ring` | `#2f54eb` | `#6b84ff` |
 | `--destructive` | `#b92c44` | `#ff6b82` |
+| `--destructive-foreground` (novo) | `#ffffff` | `#2a0610` |
 | `--success` | `#0a7350` | `#3fd39a` |
 | `--warning` | `#975000` | `#f5b84a` |
 | `--info` | `#0a6898` | `#4cc3f0` |
-| `--chart-1` | `#2f54eb` | `#4563fa` |
+| `--chart-1` | `#2f54eb` | `#6b84ff` |
 | `--sidebar` | `#111b45` | `#111834` |
 | `--sidebar-foreground` | `#ffffff` | `#e8ecfb` |
 | `--sidebar-primary` | `#2f54eb` | `#4563fa` |
@@ -80,6 +81,11 @@ Os valores abaixo foram conferidos por script (contraste AA), não a olho.
 | `--sidebar-ring` | `#a9b8ff` | `#93a6ff` |
 
 `--chart-2` a `--chart-5` (áreas jurídicas) não mudam.
+
+No escuro, o cobalto da prévia (`#4563fa` com texto branco) dava só 3,6:1 quando usado
+como cor de texto sobre os cards, e o app usa `text-primary` como texto em 92 lugares.
+O `#6b84ff` com texto azul-noite passa nos dois papéis (5,3:1 como texto, 5,8:1 no botão).
+A sidebar escura continua com `--sidebar-primary` em `#4563fa` e texto branco (4,75:1).
 
 ### Tokens novos
 
@@ -143,7 +149,7 @@ dessa branch vai para a `main`, então é um deploy só. Toda branch nasce com `
 
 | Arquivo | Muda para |
 |---|---|
-| `button.tsx` | `default` vira tecla cobalto; `outline` e `secondary` viram tecla neutra; `destructive` vira tecla neutra com texto vermelho; `ghost` e `link` continuam sem relevo |
+| `button.tsx` | `default` vira tecla cobalto; `outline` e `secondary` viram tecla neutra; `destructive` vira tecla vermelha (é o botão de confirmar exclusão nos diálogos); `ghost` e `link` continuam sem relevo |
 | `input.tsx`, `textarea.tsx`, `input-group.tsx` | trilho; foco com anel cobalto |
 | `select.tsx` | gatilho em trilho; lista em `bg-popover` |
 | `tabs.tsx` | lista em trilho, aba ativa em tecla |

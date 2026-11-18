@@ -14,7 +14,10 @@ function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "peer size-4 shrink-0 rounded-[4px] border border-input shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:bg-input/30 dark:aria-invalid:ring-destructive/40 dark:data-[state=checked]:bg-primary",
+        "peer size-4 shrink-0 rounded-[5px] bg-muted well transition-shadow outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:ring-2 aria-invalid:ring-destructive/60",
+        // Marcado: vira tecla cobalto (luz em cima, borda na cor da base).
+        "data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:[--tw-inset-shadow:inset_0_1px_0_rgb(255_255_255/0.25)] data-[state=checked]:[--tw-inset-ring-shadow:inset_0_0_0_1px_var(--primary-edge)]",
+        "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:[--tw-inset-ring-shadow:inset_0_0_0_1px_var(--primary-edge)]",
         className
       )}
       {...props}

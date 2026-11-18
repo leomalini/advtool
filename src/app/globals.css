@@ -27,6 +27,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -97,6 +98,7 @@
 
   /* ── Destructive ── */
   --destructive: #b92c44;
+  --destructive-foreground: #ffffff;
 
   /* ── Borders & Inputs ── */
   --border: #dde3ee;
@@ -167,11 +169,12 @@
   --popover: #151d3b;
   --popover-foreground: #e8ecfb;
 
-  /* ── Primary — cobalto ── */
-  --primary: #4563fa;
-  --primary-foreground: #ffffff;
-  --primary-edge: #2a40c4;
-  --primary-glow: rgba(69, 99, 250, 0.75);
+  /* ── Primary — cobalto claro com texto azul-noite: o mesmo token serve de fundo
+     de botão e de cor de texto (`text-primary`), com 4,5:1 nos dois papéis ── */
+  --primary: #6b84ff;
+  --primary-foreground: #0a0f1f;
+  --primary-edge: #3a52d0;
+  --primary-glow: rgba(107, 132, 255, 0.55);
 
   /* ── Secondary ── */
   --secondary: #151d3b;
@@ -187,11 +190,12 @@
 
   /* ── Destructive ── */
   --destructive: #ff6b82;
+  --destructive-foreground: #2a0610;
 
   /* ── Borders & Inputs ── */
   --border: #222c50;
   --input: #222c50;
-  --ring: #4563fa;
+  --ring: #6b84ff;
 
   /* ── Semantic ── */
   --success: #3fd39a;
@@ -202,7 +206,7 @@
   --info-foreground: #04202b;
 
   /* ── Charts / áreas jurídicas — trabalhista, cível, família, tributário, consumidor ── */
-  --chart-1: #4563fa;
+  --chart-1: #6b84ff;
   --chart-2: #b07cf0;
   --chart-3: #ec6ead;
   --chart-4: #f5b544;
@@ -294,6 +298,11 @@
   box-shadow:
     var(--tw-inset-shadow), var(--tw-inset-ring-shadow),
     var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
+
+  /* Dentro de um InputGroup o trilho é o grupo, não o campo. */
+  &[data-slot="input-group-control"] {
+    box-shadow: none;
+  }
 }
 
 /* Superfície de card: luz na borda de cima, contorno suave e sombra em camadas. */
