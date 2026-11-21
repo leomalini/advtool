@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { requirePermission } from '@/lib/auth/requirePermission'
 import { redirectToRecordKind } from '@/lib/cadastro/recordKindRoute'
+import { isEmailConfigured } from '@/lib/email/config'
 import { ClienteDetailPage } from '@/features/clientes/components/ClienteDetailPage'
 
 export default async function ClienteDetailRoute({
@@ -15,7 +16,8 @@ export default async function ClienteDetailRoute({
 
   return (
     <Suspense fallback={null}>
-      <ClienteDetailPage clienteId={id} />
+      {/* Lido aqui, no servidor: a chave do Resend não chega ao navegador. */}
+      <ClienteDetailPage clienteId={id} emailEnabled={isEmailConfigured()} />
     </Suspense>
   )
 }

@@ -29,6 +29,19 @@ export function publicAppBaseUrl(): string | null {
 }
 
 /**
+ * A base dos links que o escritório manda para fora (o link de acompanhamento,
+ * copiado na tela ou enviado por e-mail). `APP_PUBLIC_URL` tem prioridade: em
+ * produção atrás de proxy, o `origin` da requisição pode ser o endereço interno
+ * do container. Sem ela, o `origin` — que em desenvolvimento é o certo.
+ *
+ * Diferente das duas funções acima, não exige HTTPS: quem abre o link é uma
+ * pessoa, e em desenvolvimento ela abre `http://localhost`.
+ */
+export function requestPublicOrigin(requestOrigin: string): string {
+  return configuredBase() ?? requestOrigin
+}
+
+/**
  * A mesma base aceitando HTTP e localhost — para o que sai daqui mesmo e volta
  * para cá (o disparo de teste do webhook). Null quando `APP_PUBLIC_URL` está
  * vazia ou não é uma URL HTTP.

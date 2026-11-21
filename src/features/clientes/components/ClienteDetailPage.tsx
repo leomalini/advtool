@@ -29,6 +29,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { PortalLinkButton } from './PortalLinkDialog'
+import { pickClientEmail } from '@/utils/clientContacts'
+import { ClientEmailsTab } from '@/features/emails/components/ClientEmailsTab'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import type { CreateTaskInput } from '@/schemas/task.schema'
@@ -70,6 +72,7 @@ type Tab =
   | 'contratos'
   | 'financeiro'
   | 'arquivos'
+  | 'emails'
   | 'pendencias'
 
 const TABS: { id: Tab; label: string }[] = [
@@ -81,6 +84,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'contratos', label: 'Contratos' },
   { id: 'financeiro', label: 'Financeiro' },
   { id: 'arquivos', label: 'Arquivos' },
+  { id: 'emails', label: 'E-mails' },
   { id: 'pendencias', label: 'Pendências' },
 ]
 
@@ -347,7 +351,14 @@ function PendenciasTab({ clientId, onEdit }: { clientId: string; onEdit: () => v
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
+export function ClienteDetailPage({
+  clienteId,
+  emailEnabled,
+}: {
+  clienteId: string
+  /** O servidor consegue mandar e-mail (`isEmailConfigured`). */
+  emailEnabled: boolean
+}) {
   const router = useRouter()
   // A lista como a pessoa a deixou (página, filtros) — docs/paginacao.md.
   const listHref = useListHref('/clientes')
@@ -442,7 +453,11 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
             }
             actions={
               <>
-                <PortalLinkButton clientId={clienteId} />
+                <PortalLinkButton
+                  clientId={clienteId}
+                  emailEnabled={emailEnabled}
+                  emailTo={pickClientEmail(cliente)}
+                />
                 <Can resource="documentos" action="view">
                   <Button size="sm" variant="outline" onClick={() => setGenerateOpen(true)}>
                     <FileSignature className="h-3.5 w-3.5 mr-1.5" />
@@ -565,6 +580,7 @@ export function ClienteDetailPage({ clienteId }: { clienteId: string }) {
               {tab === 'arquivos' && (
                 <DocumentsTab clientId={clienteId} lockedClientId={clienteId} itemLabel="cliente" />
               )}
+              {tab === 'emails' && <ClientEmailsTab clientId={clienteId} />}
               {tab === 'pendencias' && (
                 <PendenciasTab clientId={clienteId} onEdit={() => setEditOpen(true)} />
               )}

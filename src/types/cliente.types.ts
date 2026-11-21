@@ -176,6 +176,26 @@ export function getClientDisplayName(client: Client | ClientWithRelations): stri
   return (client as CompanyClient).trade_name ?? (client as CompanyClient).company_name ?? ''
 }
 
+/** O que a saudação lê do cadastro — basta o recorte, para servir também a
+ * selects que não trazem o cliente inteiro (rotas de e-mail). */
+export interface ClientGreetingSource {
+  type: ClientType
+  name: string | null
+  trade_name?: string | null
+  company_name?: string | null
+}
+
+/**
+ * Como o escritório cumprimenta o cliente numa mensagem: pessoa física pelo
+ * primeiro nome; empresa pelo nome da tela (fantasia, senão razão social).
+ * Null quando não há nome — quem chama escreve só "Olá".
+ */
+export function getClientGreetingName(client: ClientGreetingSource | null | undefined): string | null {
+  if (!client) return null
+  if (client.type === 'individual') return client.name?.trim().split(/\s+/)[0] || null
+  return client.trade_name?.trim() || client.company_name?.trim() || null
+}
+
 export function getClientDocument(client: Client | ClientWithRelations): string {
   if (client.type === 'individual') return client.cpf ?? ''
   return (client as CompanyClient).cnpj ?? ''

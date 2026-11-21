@@ -25,7 +25,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { useCliente } from '@/features/clientes/hooks/useClientes'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import { pickClientPhone } from '@/lib/infinitepay/customer'
-import { getClientDisplayName, type ClientWithRelations } from '@/types/cliente.types'
+import { getClientGreetingName } from '@/types/cliente.types'
 import { formatCurrency, type FinancialEntryWithRelations } from '@/types/financialEntry.types'
 import {
   LIVE_CHARGE_STATUSES,
@@ -49,13 +49,6 @@ const fromCents = (cents: number) => cents / 100
 
 function formatMoment(iso: string): string {
   return format(parseISO(iso), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
-}
-
-/** Pessoa física pelo primeiro nome; empresa pelo nome da tela. */
-function greetingName(client: ClientWithRelations | undefined): string | null {
-  if (!client) return null
-  if (client.type === 'individual') return client.name?.trim().split(/\s+/)[0] || null
-  return getClientDisplayName(client) || null
 }
 
 /**
@@ -133,7 +126,7 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
             <OpenLinkCard
               charge={live}
               url={live.checkout_url}
-              greeting={greetingName(client)}
+              greeting={getClientGreetingName(client)}
               phone={pickClientPhone(client)}
               canCancel={can('financeiro', 'update')}
               confirmingCancel={confirmingCancel}

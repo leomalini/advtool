@@ -23,6 +23,7 @@ import {
   Landmark,
   Signature,
   Sparkles,
+  Mail,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -40,7 +41,9 @@ import { InfinitePayDeliveries } from './InfinitePayDeliveries'
 import { D4SignSettingsCard } from './D4SignSettingsCard'
 import { D4SignDeliveries } from './D4SignDeliveries'
 import { AiSettingsTab } from './AiSettingsTab'
+import { EmailSettingsTab } from './EmailSettingsTab'
 import type { D4SignSetupStatus } from '@/types/d4sign.types'
+import type { EmailSetupStatus } from '@/types/emailMessage.types'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -228,6 +231,7 @@ type TabValue =
   | 'audiencias'
   | 'pagamentos'
   | 'assinatura'
+  | 'email'
   | 'assistente-ia'
   | 'webhooks'
   | 'geral'
@@ -238,6 +242,7 @@ const TABS: { value: TabValue; label: string; icon: React.ElementType }[] = [
   { value: 'publicacoes', label: 'Publicações', icon: Newspaper },
   { value: 'pagamentos', label: 'Pagamentos', icon: CreditCard },
   { value: 'assinatura', label: 'Assinatura', icon: Signature },
+  { value: 'email', label: 'E-mail', icon: Mail },
   { value: 'assistente-ia', label: 'Assistente IA', icon: Sparkles },
   { value: 'areas', label: 'Áreas Jurídicas', icon: Scale },
   { value: 'workflows', label: 'Workflows', icon: GitBranch },
@@ -449,12 +454,15 @@ export function ConfiguracoesContent({
   initialTab,
   paymentsWebhookEndpoint,
   signatureSetup,
+  emailSetup,
 }: {
   initialTab?: string
   /** Lido do ambiente no servidor — `APP_PUBLIC_URL` não chega ao navegador. */
   paymentsWebhookEndpoint: string | null
   /** Idem: as variáveis da D4Sign, só os nomes do que falta. */
   signatureSetup: D4SignSetupStatus
+  /** Idem: as do Resend — nomes do que falta, remetente e endereço de teste. */
+  emailSetup: EmailSetupStatus
 }) {
   const { can } = usePermissions()
 
@@ -513,6 +521,9 @@ export function ConfiguracoesContent({
               <D4SignSettingsCard setup={signatureSetup} />
               <D4SignDeliveries />
             </div>
+          </TabsContent>
+          <TabsContent value="email">
+            <EmailSettingsTab setup={emailSetup} />
           </TabsContent>
           <TabsContent value="assistente-ia">
             <AiSettingsTab />

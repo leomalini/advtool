@@ -1,40 +1,29 @@
 import { toBrazilianE164 } from '@/utils/format'
+import { contactCandidates, pickClientEmail, type ContactSource } from '@/utils/clientContacts'
 import type { CreateLinkRequest } from './schemas'
 
 /**
  * Do cadastro do cliente para o que a InfinitePay entende. Puro — sem I/O —,
  * porque serve aos dois lados: o servidor pré-preenche o checkout, e a tela
  * escolhe o telefone do botão de WhatsApp pela mesma regra.
+ *
+ * A ordem dos candidatos (cadastro, depois contatos com o principal à frente)
+ * mora em `utils/clientContacts.ts`, que o e-mail ao cliente também usa.
  */
 
 /** O que estas funções leem do cliente. `contacts` é opcional porque nem todo
  * select embute `client_contacts`. */
-export interface PaymentClient {
+export interface PaymentClient extends ContactSource {
   type: 'individual' | 'company'
   name: string | null
   company_name: string | null
   trade_name: string | null
-  email: string | null
-  phone: string | null
-  contacts?: { type: 'phone' | 'email'; value: string; is_primary: boolean }[] | null
-}
-
-const SIMPLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-/** O campo do cadastro primeiro; depois os contatos, o principal à frente. */
-function candidates(client: PaymentClient, kind: 'phone' | 'email'): string[] {
-  const contacts = [...(client.contacts ?? [])]
-    .filter((contact) => contact.type === kind)
-    .sort((a, b) => Number(b.is_primary) - Number(a.is_primary))
-    .map((contact) => contact.value)
-  const fromRecord = kind === 'phone' ? client.phone : client.email
-  return [fromRecord, ...contacts].filter((value): value is string => !!value?.trim())
 }
 
 /** O primeiro telefone do cliente que é telefone brasileiro, em E.164. */
 export function pickClientPhone(client: PaymentClient | null | undefined): string | null {
   if (!client) return null
-  for (const value of candidates(client, 'phone')) {
+  for (const value of contactCandidates(client, 'phone')) {
     const e164 = toBrazilianE164(value)
     if (e164) return e164
   }
@@ -57,9 +46,7 @@ export function buildCustomer(client: PaymentClient | null): CreateLinkRequest['
   const rawName =
     client.type === 'company' ? (client.company_name ?? client.trade_name) : client.name
   const name = rawName?.trim() || undefined
-  const email = candidates(client, 'email')
-    .map((value) => value.trim())
-    .find((value) => SIMPLE_EMAIL.test(value))
+  const email = pickClientEmail(client) ?? undefined
   const phone = pickClientPhone(client)
 
   const customer = {

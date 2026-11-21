@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePermissionApi } from '@/lib/auth/requirePermissionApi'
+import { requestPublicOrigin } from '@/lib/appUrl'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
 import { buildPortalUrl, generatePortalToken, onlyDigits } from '@/lib/clientPortal/token'
 import { openPortalToken, sealPortalToken } from '@/lib/clientPortal/vault'
@@ -49,11 +50,9 @@ function serviceUnavailable() {
   )
 }
 
-/** A base pública do link. `APP_PUBLIC_URL` tem prioridade porque o link é
- * copiado e mandado para fora: em produção atrás de proxy, o `origin` da
- * requisição pode ser o endereço interno do container. */
+/** A base pública do link — a mesma do envio por e-mail (`appUrl.ts`). */
 function publicOrigin(request: NextRequest): string {
-  return process.env.APP_PUBLIC_URL?.trim() || request.nextUrl.origin
+  return requestPublicOrigin(request.nextUrl.origin)
 }
 
 export async function GET(

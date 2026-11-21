@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  Mail,
   RefreshCw,
   ShieldOff,
 } from 'lucide-react'
@@ -30,6 +31,7 @@ import {
   useIssueClientPortalLink,
   useRevokeClientPortalLink,
 } from '../hooks/useClientPortalLink'
+import { useSendPortalLinkEmail } from '@/features/emails/hooks/useEmailMutations'
 import type { ClientPortalLink } from '@/types/clientPortal.types'
 
 /**
@@ -42,7 +44,17 @@ import type { ClientPortalLink } from '@/types/clientPortal.types'
  * O botão é também o indicador de estado — o ponto ao lado diz, sem abrir
  * nada, se aquele cliente já tem link ativo.
  */
-export function PortalLinkButton({ clientId }: { clientId: string }) {
+export function PortalLinkButton({
+  clientId,
+  emailEnabled,
+  emailTo,
+}: {
+  clientId: string
+  /** O servidor consegue mandar e-mail. */
+  emailEnabled: boolean
+  /** Para onde o e-mail iria — a mesma regra que a rota usa (`pickClientEmail`). */
+  emailTo: string | null
+}) {
   const [open, setOpen] = useState(false)
   const { data: link, isLoading } = useClientPortalLink(clientId)
 
@@ -71,6 +83,8 @@ export function PortalLinkButton({ clientId }: { clientId: string }) {
         isLoading={isLoading}
         open={open}
         onOpenChange={setOpen}
+        emailEnabled={emailEnabled}
+        emailTo={emailTo}
       />
     </>
   )
@@ -82,24 +96,36 @@ function PortalLinkDialog({
   isLoading,
   open,
   onOpenChange,
+  emailEnabled,
+  emailTo,
 }: {
   clientId: string
   link: ClientPortalLink | null
   isLoading: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
+  emailEnabled: boolean
+  emailTo: string | null
 }) {
   const { can } = usePermissions()
   const issue = useIssueClientPortalLink(clientId)
   const revoke = useRevokeClientPortalLink(clientId)
+  const sendEmail = useSendPortalLinkEmail(clientId)
 
   const [copied, setCopied] = useState(false)
   /** Confirmação embutida em vez de um segundo modal: AlertDialog dentro de
    * Dialog briga pelo foco, e a pergunta cabe no espaço que já existe. */
-  const [confirming, setConfirming] = useState<'reissue' | 'revoke' | null>(null)
+  const [confirming, setConfirming] = useState<'reissue' | 'revoke' | 'email' | null>(null)
 
   const canManage = can('clientes', 'update')
-  const isBusy = issue.isPending || revoke.isPending
+  const isBusy = issue.isPending || revoke.isPending || sendEmail.isPending
+
+  /** Por que o envio por e-mail não está disponível — null quando está. */
+  const emailBlocker = !emailEnabled
+    ? 'O envio de e-mail não está configurado (Configurações → E-mail).'
+    : !emailTo
+      ? 'O cadastro não tem um e-mail válido.'
+      : null
 
   async function copy(value: string) {
     try {
@@ -121,6 +147,21 @@ function PortalLinkDialog({
       await copy(issued.url)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Erro ao gerar o link.')
+    }
+  }
+
+  async function handleSendEmail() {
+    try {
+      const message = await sendEmail.mutateAsync()
+      setConfirming(null)
+      toast.success(
+        message.sandbox_to
+          ? `Modo de teste: o e-mail foi para ${message.sandbox_to}, não para o cliente.`
+          : `Link enviado para ${message.to_address}.`
+      )
+    } catch (error) {
+      setConfirming(null)
+      toast.error(error instanceof Error ? error.message : 'Erro ao enviar o link por e-mail.')
     }
   }
 
@@ -211,6 +252,16 @@ function PortalLinkDialog({
               />
             )}
 
+            {confirming === 'email' && emailTo && (
+              <ConfirmRow
+                message={`Enviar este link para ${emailTo}? O e-mail sai em nome do escritório e fica registrado na aba E-mails.`}
+                confirmLabel="Enviar"
+                pending={sendEmail.isPending}
+                onConfirm={handleSendEmail}
+                onCancel={() => setConfirming(null)}
+              />
+            )}
+
             {confirming === 'revoke' && (
               <ConfirmRow
                 message="O endereço para de funcionar imediatamente, inclusive para quem já o tinha aberto. O cliente só volta a acompanhar com um link novo."
@@ -224,6 +275,20 @@ function PortalLinkDialog({
 
             {canManage && confirming === null && (
               <div className="flex flex-wrap gap-2">
+                {/* Só com a URL à mão: a rota manda o link existente, e o que
+                    não pode ser exibido também não pode ser enviado. */}
+                {link.url && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirming('email')}
+                    disabled={isBusy || emailBlocker !== null}
+                    title={emailBlocker ?? `Enviar para ${emailTo}`}
+                  >
+                    <Mail className="h-3.5 w-3.5 mr-1.5" />
+                    Enviar por e-mail
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -244,6 +309,11 @@ function PortalLinkDialog({
                   Revogar
                 </Button>
               </div>
+            )}
+
+            {/* O motivo à vista, não só no tooltip: no celular não há hover. */}
+            {canManage && confirming === null && link.url && emailBlocker && (
+              <p className="text-xs text-muted-foreground">{emailBlocker}</p>
             )}
           </div>
         ) : (

@@ -9,6 +9,7 @@ export const WEBHOOK_PROVIDERS = {
   buscaProcessos: 'busca_processos',
   infinitePay: 'infinitepay',
   d4sign: 'd4sign',
+  resend: 'resend',
 } as const
 
 export type WebhookProvider = (typeof WEBHOOK_PROVIDERS)[keyof typeof WEBHOOK_PROVIDERS]
