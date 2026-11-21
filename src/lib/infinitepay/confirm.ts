@@ -8,6 +8,7 @@ import {
   type PaymentConfirmationSource,
 } from '@/types/paymentCharge.types'
 import type { WebhookEventDestination } from '@/types/webhookEvent.types'
+import { sendPaymentConfirmationEmail } from '@/lib/email/billing'
 import { checkPayment } from './client'
 
 /**
@@ -321,6 +322,7 @@ export async function confirmPayment(
         return { status: 'invalid', reason: 'A transação pertence a outra cobrança.' }
       }
       const settlement = await settle(supabase, charge, existing, false, input.via)
+      if (settlement.settled) await emailConfirmation(supabase, charge.id, existing.id)
       return { status: 'duplicate', transactionId: existing.id, ...settlement }
     }
 
@@ -362,12 +364,14 @@ export async function confirmPayment(
       const winner = await findTransaction(supabase, input.transactionNsu)
       if (!winner) throw insertError
       const settlement = await settle(supabase, charge, winner, false, input.via)
+      if (settlement.settled) await emailConfirmation(supabase, charge.id, winner.id)
       return { status: 'duplicate', transactionId: winner.id, ...settlement }
     }
     if (insertError) throw insertError
 
     const transaction = inserted as unknown as StoredTransaction
     const settlement = await settle(supabase, charge, transaction, true, input.via)
+    if (settlement.settled) await emailConfirmation(supabase, charge.id, transaction.id)
     return {
       status: 'processed',
       transactionId: transaction.id,
@@ -380,6 +384,24 @@ export async function confirmPayment(
   } catch (error) {
     return { status: 'error', error: errorMessage(error) }
   }
+}
+
+/**
+ * O e-mail "pagamento recebido", só quando ESTA rodada deu a baixa — é o que
+ * garante que o valor bateu (regra 2) e que o lançamento não estava pago.
+ * Pagamento que entra com alerta (valor diferente, lançamento já pago) fica
+ * para o escritório decidir, sem e-mail.
+ *
+ * `sendPaymentConfirmationEmail` não lança, confere se o link desta cobrança
+ * saiu por e-mail (a regra dos automáticos de cobrança) e não repete por
+ * transação. Ver docs/emails-clientes.md, "Cobrança".
+ */
+async function emailConfirmation(
+  supabase: SupabaseClient,
+  chargeId: string,
+  transactionId: string,
+): Promise<void> {
+  await sendPaymentConfirmationEmail(supabase, { chargeId, transactionId })
 }
 
 /** Erro do PostgREST não é necessariamente `Error`: lê `message` de qualquer objeto. */

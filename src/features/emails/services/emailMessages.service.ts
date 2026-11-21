@@ -37,6 +37,28 @@ export async function getClientEmailMessages(clientId: string): Promise<EmailMes
   return (data ?? []) as unknown as EmailMessageWithSender[]
 }
 
+/** Os e-mails de uma cobrança: o link, os lembretes e a confirmação. A RLS
+ * pede `financeiro:view` (migration 95). */
+export async function getChargeEmailMessages(chargeId: string): Promise<EmailMessageWithSender[]> {
+  const { data, error } = await supabase
+    .from('email_messages')
+    .select(LIST_WITH_SENDER)
+    .eq('payment_charge_id', chargeId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  if (error) throw error
+  return (data ?? []) as unknown as EmailMessageWithSender[]
+}
+
+/** O servidor consegue mandar e-mail? Só o booleano (`/api/email/status`). */
+export async function getEmailConfigured(): Promise<boolean> {
+  const response = await fetch('/api/email/status')
+  if (!response.ok) return false
+  const body = (await response.json().catch(() => null)) as { configured?: unknown } | null
+  return body?.configured === true
+}
+
 /** Os últimos de todos os clientes — a lista de Configurações → E-mail. */
 export async function getRecentEmailMessages(limit = 20): Promise<EmailMessageWithSender[]> {
   const { data, error } = await supabase
@@ -94,6 +116,13 @@ export function sendPortalLinkEmail(clientId: string): Promise<EmailMessageSumma
   return postSend(
     `/api/clientes/${clientId}/portal-link/email`,
     'Não foi possível enviar o link por e-mail.',
+  )
+}
+
+export function sendChargeLinkEmail(chargeId: string): Promise<EmailMessageSummary> {
+  return postSend(
+    `/api/financeiro/cobrancas/${chargeId}/email`,
+    'Não foi possível enviar o link de pagamento por e-mail.',
   )
 }
 

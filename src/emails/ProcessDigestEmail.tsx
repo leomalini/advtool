@@ -1,6 +1,6 @@
-import { Button, Link, Section, Text } from '@react-email/components'
+import { Link, Section, Text } from '@react-email/components'
 import type { OfficeIdentity } from '@/lib/email/office'
-import { EMAIL_COLORS, EmailLayout, emailMutedText, emailText } from './EmailLayout'
+import { EMAIL_COLORS, EmailButton, EmailLayout, emailMutedText, emailText } from './EmailLayout'
 
 /** Um ato, já em palavras: o dia e o tipo — nunca o texto do tribunal
  * (decisão 2 de docs/emails-clientes.md). */
@@ -87,22 +87,7 @@ export function ProcessDigestEmail({
 
       <Text style={emailText}>O que cada ato diz está no portal, na íntegra.</Text>
 
-      <Section style={{ margin: '8px 0 24px' }}>
-        <Button
-          href={portalUrl}
-          style={{
-            backgroundColor: EMAIL_COLORS.accent,
-            color: EMAIL_COLORS.accentText,
-            borderRadius: '8px',
-            padding: '12px 20px',
-            fontSize: '15px',
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Ver andamento completo
-        </Button>
-      </Section>
+      <EmailButton href={portalUrl}>Ver andamento completo</EmailButton>
 
       {showAnswersHint && (
         <Text style={emailText}>

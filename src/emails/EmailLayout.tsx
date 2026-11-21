@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   Body,
+  Button,
   Container,
   Head,
   Hr,
@@ -48,6 +49,28 @@ export const emailMutedText = {
   lineHeight: '20px',
   color: EMAIL_COLORS.muted,
 } as const
+
+/** A ação principal do e-mail — o único lugar com a cor de destaque. */
+export function EmailButton({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Section style={{ margin: '8px 0 24px' }}>
+      <Button
+        href={href}
+        style={{
+          backgroundColor: EMAIL_COLORS.accent,
+          color: EMAIL_COLORS.accentText,
+          borderRadius: '8px',
+          padding: '12px 20px',
+          fontSize: '15px',
+          fontWeight: 600,
+          textDecoration: 'none',
+        }}
+      >
+        {children}
+      </Button>
+    </Section>
+  )
+}
 
 interface EmailLayoutProps {
   /** O texto que a caixa de entrada mostra ao lado do assunto. */

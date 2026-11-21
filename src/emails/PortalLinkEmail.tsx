@@ -1,6 +1,6 @@
-import { Button, Link, Section, Text } from '@react-email/components'
+import { Link, Text } from '@react-email/components'
 import type { OfficeIdentity } from '@/lib/email/office'
-import { EMAIL_COLORS, EmailLayout, emailMutedText, emailText } from './EmailLayout'
+import { EMAIL_COLORS, EmailButton, EmailLayout, emailMutedText, emailText } from './EmailLayout'
 
 export interface PortalLinkEmailProps {
   office: OfficeIdentity
@@ -40,22 +40,7 @@ export function PortalLinkEmail({
         qualquer momento.
       </Text>
 
-      <Section style={{ margin: '8px 0 24px' }}>
-        <Button
-          href={portalUrl}
-          style={{
-            backgroundColor: EMAIL_COLORS.accent,
-            color: EMAIL_COLORS.accentText,
-            borderRadius: '8px',
-            padding: '12px 20px',
-            fontSize: '15px',
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Acompanhar meus processos
-        </Button>
-      </Section>
+      <EmailButton href={portalUrl}>Acompanhar meus processos</EmailButton>
 
       <Text style={emailText}>
         Para entrar, confirme o seu {documentLabel}. O link é pessoal: não o encaminhe.

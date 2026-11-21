@@ -1,7 +1,11 @@
 'use client'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { sendPortalLinkEmail, sendTestEmail } from '../services/emailMessages.service'
+import {
+  sendChargeLinkEmail,
+  sendPortalLinkEmail,
+  sendTestEmail,
+} from '../services/emailMessages.service'
 import { emailMessageKeys } from './useEmailMessages'
 
 /** Invalida em `onSettled`, não só no sucesso: envio recusado também deixa
@@ -11,6 +15,17 @@ export function useSendPortalLinkEmail(clientId: string) {
 
   return useMutation({
     mutationFn: () => sendPortalLinkEmail(clientId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: emailMessageKeys.all })
+    },
+  })
+}
+
+export function useSendChargeLinkEmail(chargeId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => sendChargeLinkEmail(chargeId),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: emailMessageKeys.all })
     },

@@ -1,11 +1,12 @@
 # E-mails para clientes — plano
 
 > **Status:** planejado em 21/11/2026 e **revisado no mesmo dia contra a `main`
-> em `52ab3ca` (PR #80)**. **PRs 1 e 2 implementados** (ver "Como ficou");
-> migrations 95 e 96 ainda não aplicadas. PRs 3 e 4 por fazer.
+> em `52ab3ca` (PR #80)**. **PRs 1, 2 e 3 implementados** (ver "Como ficou");
+> migrations 95 e 96 ainda não aplicadas. PR 4 por fazer.
 > **Branches:** PR 1 em `feat/emails-clientes`, criada da `main` em `52ab3ca`;
-> PR 2 em `feat/emails-resumo-diario`, empilhada na do PR 1. As migrations
-> 72–75 (movimentações) que a primeira versão esperava já estão na `main`.
+> PR 2 em `feat/emails-resumo-diario`, empilhada na do PR 1; PR 3 em
+> `feat/emails-cobranca`, empilhada na do PR 2. As migrations 72–75
+> (movimentações) que a primeira versão esperava já estão na `main`.
 
 O escritório passa a falar com o cliente por e-mail, a partir do domínio
 `cordeiropessigato.com.br`: um resumo diário do que andou nos processos, o link
@@ -306,13 +307,15 @@ mensagem avulsa continuam.
 ## Cobrança
 
 - **Link de pagamento por e-mail**: em `PaymentLinkSection.tsx`, ao lado do
-  botão do WhatsApp, **Enviar por e-mail** (habilitado quando há e-mail
-  válido). O texto parte do mesmo `buildPaymentMessage`. Exige
+  botão do WhatsApp, **E-mail** (habilitado quando há e-mail válido). Leva o
+  mesmo o quê/quanto da mensagem do WhatsApp, mais o vencimento. Exige
   `financeiro:create`, como a rota do link.
-- **Lembrete**: o cron manda para cobranças `open` cujo lançamento vence em
-  **3 dias** e, se continuar aberta, **no dia seguinte ao vencimento**.
+- **Lembrete**: o cron manda para cobranças `open` com lançamento pendente,
+  uma vez **quando faltam de 1 a 3 dias** para o vencimento e outra **quando
+  venceu há 1 a 7 dias** (janelas, para um dia de cron perdido não perder o
+  lembrete; a `dedupe_key` garante um de cada).
 - **Confirmação**: quando `confirmPayment` (`src/lib/infinitepay/confirm.ts`)
-  baixa o pagamento, sai um e-mail de recebido, com o comprovante, em `after()`.
+  dá baixa no lançamento, sai um e-mail de recebido, com o comprovante.
 
 **Regra única para os automáticos de cobrança**: lembrete e confirmação só
 existem para cobrança cujo link **foi enviado por e-mail**. Quem mandou o link
@@ -335,7 +338,7 @@ Exige `clientes:update`. Anexo fica para depois.
 | Ficha do cliente → aba **E-mails**, no topo | Chave **Resumo diário dos processos**, com o motivo quando não dá para ligar (sem e-mail, sem link do portal, endereço bloqueado). Na aba E-mails, e não no `CadastroTab`, porque este é o mesmo da ficha de pessoa |
 | Ficha do cliente → aba **E-mails** | Histórico: data, tipo, assunto, status (enviado, entregue, recusado), quem enviou; abre o e-mail como saiu |
 | Lista de Clientes | **Ativar resumo por e-mail** no topo: aplica ao filtro atual, no servidor. O diálogo mostra antes "N clientes do filtro · M cumprem os requisitos · K já estavam ligados" e só liga os M |
-| Financeiro → `PaymentLinkSection` | **Enviar por e-mail**, ao lado do WhatsApp |
+| Financeiro → `PaymentLinkSection` | **E-mail**, ao lado do WhatsApp, e o que já saiu desta cobrança (link, lembretes, confirmação) com o status |
 | Configurações → aba **E-mail** | Situação (chave, domínio verificado, remetente), Reply-To vindo do cadastro do escritório, **Enviar e-mail de teste** para mim |
 | Sino | Aviso de e-mail recusado / marcado como spam |
 
@@ -392,7 +395,8 @@ supabase/migrations/20260101000096_client_email_digest.sql
 2. **Resumo diário.** Migration 96, `digest.ts`, `/api/cron/emails` e a
    entrada no `vercel.json`, `src/lib/cron/authorize.ts`, descadastro, chave na
    ficha, ativação pelo filtro. **Feito — ver "Como ficou o PR 2".**
-3. **Cobrança.** Envio do link, lembretes no cron, confirmação no `confirmPayment`.
+3. **Cobrança.** Envio do link, lembretes no cron, confirmação no
+   `confirmPayment`. **Feito — ver "Como ficou o PR 3".**
 4. **Mensagem avulsa.**
 
 Verificação de cada PR: `npx tsc --noEmit`, `npx eslint src`, `npx next build`;
@@ -557,6 +561,75 @@ Roteiro de conferência, depois das migrations e das variáveis (com
    passa a dizer "Desligado pelo próprio cliente em …".
 5. Lista de Clientes → **Resumo por e-mail**: a prévia conta esse cliente em
    "pediram para não receber", e ligar não o religa.
+
+## Como ficou o PR 3 (21/11/2026)
+
+Branch `feat/emails-cobranca`, empilhada na `feat/emails-resumo-diario`. **Sem
+migration**: a 95 já tinha os tipos `payment_link`, `payment_reminder` e
+`payment_confirmed` e a coluna `payment_charge_id`.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Regras e envio | `src/lib/email/billing.ts` | `sendPaymentLinkEmail` (manual), `sendPaymentConfirmationEmail` (nunca lança) e `runPaymentReminders` (cron). A regra "o link foi por e-mail" — um envio `payment_link` com status `sent`, `delivered` ou `delayed` — decide lembrete e confirmação |
+| Templates | `src/emails/` | `ChargeSummary` (o quê, quanto, vencimento), `PaymentLinkEmail`, `PaymentReminderEmail` (antes e depois do vencimento, com "se já pagou, desconsidere"), `PaymentConfirmedEmail` (valor pago, data, método e comprovante). O botão de ação virou `EmailButton`, comum aos cinco templates |
+| Envio do link | `POST /api/financeiro/cobrancas/[id]/email` | `financeiro:create`. Só link `open`, com cliente e e-mail válido. Reenviar é permitido |
+| Confirmação | `confirmPayment` (`src/lib/infinitepay/confirm.ts`) | Depois da baixa, nas três entradas (webhook, retorno do cliente, reprocessamento): um ponto só. `dedupe_key` por transação — o webhook e o retorno chegando juntos mandam um e-mail |
+| Lembretes | `/api/cron/emails` | Mesmo cron das 18h, depois do resumo, e independente dele: um falhar não impede o outro, e a resposta traz os dois |
+| Datas | `src/lib/email/dates.ts` | Dia de Brasília, dia guardado, instante formatado e diferença em dias — o resumo e os lembretes contam do mesmo jeito |
+| Tela | `ChargeEmailControl` no cartão do link em aberto | Botão **E-mail** (ou **Reenviar por e-mail**) com confirmação que diz o que liga (lembretes e confirmação), e as últimas três mensagens da cobrança com o status |
+| Status do envio | `GET /api/email/status`, `useEmailConfigured` | Só o booleano, para telas fundas demais para recebê-lo do Server Component da página |
+
+Decidido na implementação:
+
+- **Confirmação só quando ESTA rodada deu a baixa.** É o que garante que o
+  valor bateu e que o lançamento não estava pago. Pagamento que entra com
+  alerta (valor diferente, lançamento já pago) fica para o escritório decidir,
+  sem e-mail ao cliente.
+- **A confirmação roda dentro do `confirmPayment`, aguardada**, e não em
+  `after()`: o webhook já a chama de dentro de um `after()`, e a função não
+  lança. No retorno do cliente, a página leva o tempo de um envio a mais.
+- **Lembrete em janela** (1 a 3 dias antes; 1 a 7 depois), não em dia exato:
+  um dia de cron perdido não perde o lembrete. O "antes" espera 24 h depois do
+  envio do link — link e lembrete no mesmo dia é ruído. No dia do vencimento,
+  nada.
+- **Um lembrete de cada momento, para sempre** (`payment_reminder:<cobrança>:<momento>`):
+  o que falhou não é tentado de novo. O resumo diário tenta no dia seguinte; o
+  lembrete, não — perder um lembrete custa menos que mandar dois.
+- **Para onde vai**: o e-mail ATUAL do cadastro (`pickClientEmail`), não o
+  endereço para onde o link foi — o escritório pode ter corrigido o cadastro.
+
+Verificação:
+
+- `tsc`, `eslint` (zero problemas nos arquivos tocados), `next build`; fim de
+  linha conferido pela comparação das duas estatísticas do diff (pegou
+  `confirm.ts`, já corrigido).
+- **A regra dos lembretes** (`reminderMoment`), em nove casos: 3 dias antes;
+  1 dia antes com o link de 9 h (não) e de 25 h (sim); 4 dias antes (não); no
+  dia (não); 1 e 7 dias depois (sim); 8 dias depois (não); virada de mês.
+  Todos passaram.
+- Os três templates novos e o do portal (que mudou com o `EmailButton`)
+  renderizados, e as versões em texto puro conferidas.
+- As rotas novas sem sessão: 401.
+
+Não verificado:
+
+- Nada contra o banco real nem envio real.
+- A confirmação dentro de um pagamento de verdade (webhook ou retorno).
+- A tela do cartão do link com login.
+
+Roteiro de conferência, depois das migrations e das variáveis (com
+`EMAIL_SANDBOX_TO`):
+
+1. Financeiro → uma receita pendente de um cliente com e-mail → gerar o link
+   → **E-mail** → confirmar. O e-mail chega com "Pagar"; o cartão mostra
+   "Link de pagamento · Enviado".
+2. Pagar pelo link (valor mínimo, de teste). Na volta, a confirmação chega e
+   aparece no cartão e na aba E-mails do cliente (para quem vê o Financeiro).
+3. Outra receita com vencimento daqui a 2 dias, link enviado há mais de 24 h:
+   chamar o cron à mão (`curl -H "Authorization: Bearer $CRON_SECRET"
+   <base>/api/cron/emails`) → `reminders.sent: 1`. Chamar de novo → nada sai.
+4. Um link mandado só pelo WhatsApp: nenhum lembrete nem confirmação por
+   e-mail.
 
 ## Pendências do operador (podem começar já, em paralelo ao código)
 

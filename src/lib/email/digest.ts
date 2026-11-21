@@ -17,6 +17,7 @@ import {
   type DigestProcess,
 } from '@/emails/ProcessDigestEmail'
 import { getEmailConfig } from './config'
+import { brazilDay, formatInstantDay, formatInstantTime, formatStoredDay } from './dates'
 import { assessDigestEligibility, DIGEST_CLIENT_COLUMNS, type DigestClientRow } from './digestEligibility'
 import { loadOfficeIdentity } from './office'
 import { renderEmail } from './render'
@@ -60,7 +61,6 @@ const CONSUMED_STATUSES: EmailStatus[] = [
   'complained',
 ]
 
-const TIME_ZONE = 'America/Sao_Paulo'
 const HOUR_MS = 60 * 60 * 1000
 
 // ── Resultado ───────────────────────────────────────────────────────────────
@@ -82,35 +82,10 @@ const MAX_REPORTED_ERRORS = 10
 
 // ── Datas ───────────────────────────────────────────────────────────────────
 
-/** 'AAAA-MM-DD' de Brasília: o dia do resumo, que entra na `dedupe_key`. Às
- * 22h de Brasília o servidor (UTC) já está no dia seguinte. */
-function brazilDay(instant: Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(instant)
-}
-
-/** `movement_date` é o dia gravado como meia-noite UTC (migration 72): só o
- * começo da string, como o portal (`PortalProcessCard`). */
-function storedDay(value: string): string {
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
-}
-
 /** A data da audiência é um instante de verdade (`events.start_at`). */
 function hearingMoment(startAt: string, allDay: boolean): string {
-  const instant = new Date(startAt)
-  const day = new Intl.DateTimeFormat('pt-BR', {
-    timeZone: TIME_ZONE,
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(instant)
-  if (allDay) return day
-  const time = new Intl.DateTimeFormat('pt-BR', {
-    timeZone: TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(instant)
-  return `${day} às ${time}`
+  const day = formatInstantDay(startAt)
+  return allDay ? day : `${day} às ${formatInstantTime(startAt)}`
 }
 
 // ── Leitura ─────────────────────────────────────────────────────────────────
@@ -256,7 +231,7 @@ export async function loadPendingProcesses(
       .filter((movement) => !consumed.has(`${link.client_id}:${movement.id}`))
       .map((movement) => ({
         id: movement.id,
-        day: storedDay(movement.movement_date),
+        day: formatStoredDay(movement.movement_date),
         label: actLabel(movement, hearings.get(movement.id)),
       }))
     if (acts.length === 0) continue

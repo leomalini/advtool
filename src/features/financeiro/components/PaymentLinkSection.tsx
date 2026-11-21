@@ -25,6 +25,8 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { useCliente } from '@/features/clientes/hooks/useClientes'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import { pickClientPhone } from '@/lib/infinitepay/customer'
+import { pickClientEmail } from '@/utils/clientContacts'
+import { ChargeEmailControl } from '@/features/emails/components/ChargeEmailControl'
 import { getClientGreetingName } from '@/types/cliente.types'
 import { formatCurrency, type FinancialEntryWithRelations } from '@/types/financialEntry.types'
 import {
@@ -128,6 +130,8 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
               url={live.checkout_url}
               greeting={getClientGreetingName(client)}
               phone={pickClientPhone(client)}
+              emailRecipient={pickClientEmail(client)}
+              canSendEmail={can('financeiro', 'create')}
               canCancel={can('financeiro', 'update')}
               confirmingCancel={confirmingCancel}
               canceling={cancelLink.isPending}
@@ -231,6 +235,8 @@ function OpenLinkCard({
   url,
   greeting,
   phone,
+  emailRecipient,
+  canSendEmail,
   canCancel,
   confirmingCancel,
   canceling,
@@ -242,6 +248,9 @@ function OpenLinkCard({
   url: string
   greeting: string | null
   phone: string | null
+  /** Para onde o e-mail iria — a mesma regra da rota. */
+  emailRecipient: string | null
+  canSendEmail: boolean
   canCancel: boolean
   confirmingCancel: boolean
   canceling: boolean
@@ -345,6 +354,14 @@ function OpenLinkCard({
             </Button>
           )}
         </div>
+      )}
+
+      {!confirmingCancel && (
+        <ChargeEmailControl
+          chargeId={charge.id}
+          recipient={emailRecipient}
+          canSend={canSendEmail}
+        />
       )}
     </div>
   )
