@@ -47,6 +47,8 @@ export interface SendEmailInput {
    * idêntica ao que saiu, menos o segredo.
    */
   redactions?: { secret: string; replacement: string }[]
+  /** Cabeçalhos extras — o `List-Unsubscribe` do resumo diário. */
+  headers?: Record<string, string>
 }
 
 /** O texto com cada segredo trocado pela máscara. `split/join` troca todas as
@@ -245,6 +247,7 @@ export async function sendEmail(
         html: input.content.html,
         text: input.content.text,
         ...(input.office.email ? { replyTo: input.office.email } : {}),
+        ...(input.headers ? { headers: input.headers } : {}),
         tags: [
           { name: MESSAGE_ID_TAG, value: id },
           { name: 'kind', value: input.kind },

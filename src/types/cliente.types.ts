@@ -129,6 +129,14 @@ interface ClientBase extends BaseEntity {
   client_since: string | null
   /** Gerada de `client_since` — é o que listas, seletores e pendências filtram. */
   is_client: boolean
+
+  // ── Resumo diário por e-mail (migration 96) ────────────────────────────────
+  // Opcionais: o `select('*')` só os traz depois da migration. Quem grava é a
+  // rota `/api/clientes/[id]/resumo-email`, que confere os requisitos.
+  /** Desde quando recebe o resumo. `null` = desligado. */
+  email_updates_enabled_at?: string | null
+  /** Quando o próprio cliente pediu para sair, pelo link do e-mail. */
+  email_updates_opted_out_at?: string | null
 }
 
 export interface IndividualClient extends ClientBase {

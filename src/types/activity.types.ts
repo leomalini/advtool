@@ -16,6 +16,11 @@ export type ActivityType =
   | 'person_created'
   | 'person_converted'
   | 'client_moved_to_person'
+  // Resumo diário por e-mail (migration 96). O pedido de saída do PRÓPRIO
+  // cliente não vira atividade — `actor_id` é obrigatório; ele fica em
+  // `clients.email_updates_opted_out_at`.
+  | 'client_email_digest_enabled'
+  | 'client_email_digest_disabled'
   | 'task_created'
   | 'task_done'
   | 'task_comment'

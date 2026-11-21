@@ -26,6 +26,10 @@ const PREFIXOS_PUBLICOS = [
   // pagar, sem sessão. A rota que a página chama confirma o pagamento no
   // `payment_check` (`/api/pagamento/retorno`).
   '/pagamento',
+  // Descadastro do resumo diário por e-mail: quem chega é o cliente, pelo link
+  // do rodapé. A página só confere o token; a rota que desliga
+  // (`/api/email/descadastrar`) confere de novo.
+  '/descadastrar',
 ]
 
 /**

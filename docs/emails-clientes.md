@@ -1,11 +1,11 @@
 # E-mails para clientes — plano
 
 > **Status:** planejado em 21/11/2026 e **revisado no mesmo dia contra a `main`
-> em `52ab3ca` (PR #80)**. **PR 1 implementado** (ver "Como ficou o PR 1");
-> migration 95 ainda não aplicada. PRs 2 a 4 por fazer.
-> **Branch:** `feat/emails-clientes`, criada da `main` em `52ab3ca`. As
-> migrations 72–75 (movimentações) que a primeira versão esperava já estão na
-> `main`.
+> em `52ab3ca` (PR #80)**. **PRs 1 e 2 implementados** (ver "Como ficou");
+> migrations 95 e 96 ainda não aplicadas. PRs 3 e 4 por fazer.
+> **Branches:** PR 1 em `feat/emails-clientes`, criada da `main` em `52ab3ca`;
+> PR 2 em `feat/emails-resumo-diario`, empilhada na do PR 1. As migrations
+> 72–75 (movimentações) que a primeira versão esperava já estão na `main`.
 
 O escritório passa a falar com o cliente por e-mail, a partir do domínio
 `cordeiropessigato.com.br`: um resumo diário do que andou nos processos, o link
@@ -69,8 +69,8 @@ Limites que importam (docs do Resend, conferidos em 21/11/2026):
 
 - Plano gratuito: **100 e-mails/dia e 3.000/mês**. Ao estourar, o envio
   **pausa** (não cobra). Plano pago não tem teto diário.
-- API: **10 requisições/s por conta**, em qualquer plano — o resumo usa o
-  endpoint de lote para não bater nisso.
+- API: **10 requisições/s por conta**, em qualquer plano. O resumo manda um
+  por vez (ver "Como ficou o PR 2"), bem abaixo disso.
 
 O gratuito serve para começar. Quando os lembretes de cobrança entrarem, um dia
 de vencimentos concentrados mais o resumo pode passar de 100: aí é plano pago.
@@ -298,8 +298,10 @@ escritório" no portal) e **Não quero mais receber estes resumos**.
 **Descadastro**: link e cabeçalho `List-Unsubscribe` + `List-Unsubscribe-Post`
 (RFC 8058, um clique). O token é um HMAC do `client_id` com chave derivada do
 segredo do portal (`derivePortalKeyBytes` em `src/lib/clientPortal/secret.ts`,
-com rótulo próprio). Descadastrar zera `email_updates_enabled_at` e registra
-em `activities`. Vale só para o resumo — cobrança e mensagem avulsa continuam.
+com rótulo próprio). Descadastrar zera `email_updates_enabled_at` e grava
+`email_updates_opted_out_at` (não vai para `activities`: `actor_id` é
+obrigatório lá, e quem age é o cliente). Vale só para o resumo — cobrança e
+mensagem avulsa continuam.
 
 ## Cobrança
 
@@ -330,7 +332,7 @@ Exige `clientes:update`. Anexo fica para depois.
 |---|---|
 | Ficha do cliente → cabeçalho (`actions` do `CadastroHeader`, montado em `ClienteDetailPage`) | **Enviar e-mail** (avulsa) ao lado do `PortalLinkButton` — só na ficha de cliente; a de pessoa (`PessoaDetailPage`) não recebe |
 | `PortalLinkDialog` | **Enviar por e-mail** |
-| Ficha do cliente → `CadastroTab` | Chave **Resumo diário por e-mail**, com o motivo quando não dá para ligar (sem e-mail, sem link do portal, endereço bloqueado) |
+| Ficha do cliente → aba **E-mails**, no topo | Chave **Resumo diário dos processos**, com o motivo quando não dá para ligar (sem e-mail, sem link do portal, endereço bloqueado). Na aba E-mails, e não no `CadastroTab`, porque este é o mesmo da ficha de pessoa |
 | Ficha do cliente → aba **E-mails** | Histórico: data, tipo, assunto, status (enviado, entregue, recusado), quem enviou; abre o e-mail como saiu |
 | Lista de Clientes | **Ativar resumo por e-mail** no topo: aplica ao filtro atual, no servidor. O diálogo mostra antes "N clientes do filtro · M cumprem os requisitos · K já estavam ligados" e só liga os M |
 | Financeiro → `PaymentLinkSection` | **Enviar por e-mail**, ao lado do WhatsApp |
@@ -388,8 +390,8 @@ supabase/migrations/20260101000096_client_email_digest.sql
    botão **Enviar por e-mail** no `PortalLinkDialog` — o menor fluxo de ponta
    a ponta. **Feito — ver "Como ficou o PR 1".**
 2. **Resumo diário.** Migration 96, `digest.ts`, `/api/cron/emails` e a
-   entrada no `vercel.json`, `src/lib/cron/authorize.ts`, descadastro, chave no
-   cadastro, ativação pelo filtro.
+   entrada no `vercel.json`, `src/lib/cron/authorize.ts`, descadastro, chave na
+   ficha, ativação pelo filtro. **Feito — ver "Como ficou o PR 2".**
 3. **Cobrança.** Envio do link, lembretes no cron, confirmação no `confirmPayment`.
 4. **Mensagem avulsa.**
 
@@ -468,6 +470,93 @@ Roteiro de conferência, depois da migration e das variáveis (com
 3. Aba **E-mails** da mesma ficha: a linha com a marca "Teste"; abrir mostra o
    e-mail com o link mascarado (`••••<final>`).
 4. Cliente sem e-mail: o botão aparece desabilitado com o motivo embaixo.
+
+## Como ficou o PR 2 (21/11/2026)
+
+Branch `feat/emails-resumo-diario`, empilhada na `feat/emails-clientes`.
+**Migration 96 não aplicada** (e depende da 95).
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Banco | migration 96 | `clients.email_updates_enabled_at` e `clients.email_updates_opted_out_at`, índice parcial para o cron; `email_message_movements` (e-mail × ato), leitura com `clientes:view`, escrita só da service_role |
+| Regra de quem pode | `src/lib/email/digestEligibility.ts` | Uma regra só para a ficha, o lote e o cron, em lote (três consultas por fatia de 100): cliente, e-mail válido (`pickClientEmail`), endereço não bloqueado, link do portal ativo **e recuperável**, envio configurado |
+| Seleção e envio | `src/lib/email/digest.ts` | `loadPendingProcesses` (os atos novos de cada cliente) e `runProcessDigest` (um e-mail por cliente com novidade). As regras são constantes no topo do arquivo |
+| Template | `src/emails/ProcessDigestEmail.tsx` | Um bloco por processo (nome do caso, número), cada ato com dia e tipo; botão para o portal; dica do "Tirar dúvidas" quando as perguntas do portal estão ligadas; link de descadastro |
+| Cron | `/api/cron/emails`, `vercel.json` (`0 21 * * *`), `src/lib/cron/authorize.ts` | 18h de Brasília. A conferência do `CRON_SECRET` saiu de `/api/cron/diario` para o helper, usado pelas duas rotas |
+| Descadastro | `src/lib/email/unsubscribe.ts`, `POST /api/email/descadastrar`, página `/descadastrar` | Token HMAC do id (chave derivada do segredo do portal, rótulo próprio). A página só confere o token e pede confirmação; quem desliga é o POST — do botão ou do um-clique do Gmail/Outlook (`List-Unsubscribe` + `List-Unsubscribe-Post`, só com origem HTTPS). `/descadastrar` entrou nos prefixos públicos do proxy |
+| Chave na ficha | `GET/PUT /api/clientes/[id]/resumo-email`, `DigestSubscriptionCard` (topo da aba E-mails) | Ligado desde quando e para onde; pausado e por quê; desligado pelo cliente e quando. Religar quem saiu pede confirmação e apaga a data do pedido |
+| Ativação em lote | `POST /api/clientes/resumo-email`, `DigestBulkDialog`, botão **Resumo por e-mail** na lista de Clientes | O recorte da lista (busca + área) pela mesma `search_clients`, com a RLS de quem pede. Abre com a prévia (podem ser ligados, já recebem, pediram para sair, ficam de fora e por quê) e liga no clique. **Nunca religa quem pediu para sair** |
+| Atividades | `client_email_digest_enabled` / `_disabled` | Quem ligou ou desligou, na ficha e no lote. O pedido do cliente fica na coluna, não em `activities` |
+
+Decidido na implementação (diverge do plano acima, com o porquê):
+
+- **Janela de 7 dias** (`DIGEST_MAX_AGE_DAYS`): ato mais velho não entra, mesmo
+  nunca enviado. Protege de duas enxurradas — o cron parado por dias, e o
+  cliente ligado antes de o envio estar configurado.
+- **Um envio por vez**, e não o endpoint de lote do Resend: são poucas dezenas
+  por dia, e cada envio precisa da própria linha, chave de idempotência e
+  `dedupe_key`. Falha de um cliente não para os outros.
+- **Ato ligado a resumo que falhou volta no dia seguinte**; ligado a resumo que
+  saiu (inclusive recusado ou marcado como spam), não. "Já foi" é por cliente:
+  o mesmo processo pode ser de dois.
+- **Rodar duas vezes no mesmo dia não manda dois resumos** (`dedupe_key` por
+  cliente e dia de Brasília); o ato que chegar entre as duas vai no dia
+  seguinte.
+- **A chave ficou na aba E-mails**, não no `CadastroTab` (compartilhado com a
+  ficha de pessoa).
+- **Pedido de saída em coluna** (`email_updates_opted_out_at`), não em
+  `activities`: `actor_id` é obrigatório lá, e quem pede é o cliente.
+- **Ativação em lote exige envio configurado** (503 sem ele); a chave da ficha
+  mostra o mesmo motivo.
+- O lote lê no máximo 1.000 clientes do recorte (`max_rows` do PostgREST) e
+  avisa quando cortou.
+
+Verificação:
+
+- `tsc`, `eslint` (zero problemas nos arquivos tocados), `next build`, todos os
+  arquivos em LF.
+- **A seleção dos atos, com banco simulado em memória** (página temporária,
+  apagada): dois clientes, três processos, onze atos e dois resumos
+  anteriores. Bateu exatamente com o esperado — ato na carência fica para o
+  dia seguinte; ato de 11 dias, petição, ato oculto, ato importado pelo `sync`
+  e processo de outro workflow ficam fora; o cliente ligado às 10h não recebe
+  o ato das 9h; o ato que já foi para A não volta, o que falhou volta; card
+  duplicado vira um bloco; a audiência sai com tipo, data e hora da ficha.
+- As contas de fuso: o dia da `dedupe_key` às 23h de Brasília (2h UTC do dia
+  seguinte) continua sendo o dia de Brasília; a audiência às 17h UTC sai
+  "às 14:00"; `movement_date` gravado como meia-noite UTC sai no dia certo.
+- O e-mail renderizado e a versão em texto puro; o token de descadastro
+  (válido passa, adulterado e de outro cliente não); a página `/descadastrar`
+  sem login, com link válido (pede confirmação, não desliga ao abrir) e
+  adulterado ("Link inválido"); os cinco estados da chave na ficha, com dados
+  injetados no cache.
+- As rotas novas sem sessão ou sem token: cron 401, descadastro 400, ficha e
+  lote 401. Nenhuma chegou ao banco.
+
+Não verificado:
+
+- Nada contra o banco real: as migrations 95 e 96 não estão aplicadas.
+- O cron de verdade na Vercel e um resumo real chegando numa caixa.
+- O um-clique do Gmail/Outlook (exige origem HTTPS e um envio real).
+- A prévia e a ativação em lote com dados reais.
+
+Roteiro de conferência, depois das migrations e das variáveis (com
+`EMAIL_SANDBOX_TO`):
+
+1. Ficha de um cliente com e-mail e link do portal → aba E-mails → **Ligar**.
+   A chave diz "Ligado desde hoje · vai para …".
+2. Num processo desse cliente, adicionar à mão uma movimentação com texto que
+   o classificador da migration 72 lê como decisão (ex.: "Decisão — defiro o
+   pedido"); ela entra como `manual` e visível. Esperar 2 horas (a carência) e
+   chamar o cron à mão:
+   `curl -H "Authorization: Bearer $CRON_SECRET" <base>/api/cron/emails`.
+   A resposta diz `sent: 1`; o e-mail chega na caixa de teste; a aba E-mails
+   mostra o resumo, e abrir mostra o link do portal mascarado.
+3. Chamar o cron de novo: `skipped.duplicate` — nada sai duas vezes.
+4. No e-mail, "Não quero mais receber estes resumos" → confirmar. A ficha
+   passa a dizer "Desligado pelo próprio cliente em …".
+5. Lista de Clientes → **Resumo por e-mail**: a prévia conta esse cliente em
+   "pediram para não receber", e ligar não o religa.
 
 ## Pendências do operador (podem começar já, em paralelo ao código)
 

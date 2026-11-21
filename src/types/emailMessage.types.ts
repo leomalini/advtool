@@ -98,6 +98,54 @@ export const EMAIL_SUPPRESSION_REASON_LABELS: Record<EmailSuppressionReason, str
   provider: 'o Resend já tinha bloqueado o endereço',
 }
 
+// ── Resumo diário (migration 96) ─────────────────────────────────────────────
+
+/** Por que um cliente não pode receber o resumo. A rota confere todos, e a
+ * tela mostra cada um com o que fazer. */
+export type DigestBlocker =
+  | 'email_not_configured'
+  | 'not_client'
+  | 'no_email'
+  | 'suppressed'
+  | 'no_portal_link'
+  | 'portal_link_unrecoverable'
+
+export const DIGEST_BLOCKER_LABELS: Record<DigestBlocker, string> = {
+  email_not_configured: 'O envio de e-mail não está configurado (Configurações → E-mail).',
+  not_client: 'Só clientes recebem o resumo.',
+  no_email: 'O cadastro não tem um e-mail válido.',
+  suppressed: 'O e-mail do cadastro está bloqueado: recusou um envio ou marcou spam.',
+  no_portal_link: 'O cliente não tem link de acompanhamento ativo — o resumo leva a ele.',
+  portal_link_unrecoverable:
+    'O link de acompanhamento atual não pode ser recuperado para envio. Gere um novo.',
+}
+
+/** A situação do resumo de um cliente, como a ficha mostra. */
+export interface DigestSubscription {
+  enabledAt: string | null
+  /** O próprio cliente pediu para sair (link do e-mail). */
+  optedOutAt: string | null
+  /** Para onde o resumo vai — a mesma regra do envio. */
+  recipient: string | null
+  /** Vazio = pode receber. */
+  blockers: DigestBlocker[]
+}
+
+/** A prévia (e o resultado) de ligar o resumo para o recorte da lista. */
+export interface DigestBulkSummary {
+  /** Clientes no recorte (busca + área). */
+  total: number
+  /** O recorte passou do teto de uma leitura e foi cortado. */
+  truncated: boolean
+  alreadyEnabled: number
+  optedOut: number
+  /** Os que seriam (ou foram) ligados agora. */
+  eligible: number
+  blocked: Partial<Record<DigestBlocker, number>>
+  /** Só depois de confirmar: quantos foram de fato ligados. */
+  enabled?: number
+}
+
 /**
  * O que a aba E-mail de Configurações mostra, montado no servidor: nomes de
  * variáveis e endereços de remetente, nunca a chave.

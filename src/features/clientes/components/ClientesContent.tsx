@@ -58,6 +58,7 @@ import type { CreateClientInput } from '@/schemas/cliente.schema'
 import type { CadastroPageQuery } from '../services/clientes.service'
 import { getClientDisplayName, getClientDocument } from '@/types/cliente.types'
 import { Can } from '@/components/shared/Can'
+import { DigestBulkDialog } from '@/features/emails/components/DigestBulkDialog'
 
 const AREA_FILTRO_ITEMS: { id: LegalArea | 'todas'; label: string }[] = [
   { id: 'todas', label: 'Todos' },
@@ -355,7 +356,14 @@ function ClienteRow({
  * A lista de Clientes e a de Pessoas (migration 78). É a mesma tela: Pessoas
  * mostra todo mundo, com selo e filtro; Clientes, só quem é cliente.
  */
-export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListScope }) {
+export function ClientesContent({
+  scope = 'clients',
+  emailEnabled = false,
+}: {
+  scope?: CadastroListScope
+  /** O servidor consegue mandar e-mail — habilita "Resumo por e-mail" (só em Clientes). */
+  emailEnabled?: boolean
+}) {
   const searchParams = useSearchParams()
   // Os filtros partem da URL uma vez, ao montar; daí em diante a URL só os
   // espelha (useSearchParamsMirror). A busca nunca vai para a URL.
@@ -407,6 +415,16 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
   const [deleteClient, setDeleteClient] = useState<ClientWithRelations | null>(null)
   const [convertClient, setConvertClient] = useState<ClientWithRelations | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [digestOpen, setDigestOpen] = useState(false)
+
+  /** O recorte em palavras, para o diálogo dizer a quem está ligando. */
+  const digestFilterLabel = (() => {
+    const term = debouncedSearch.trim()
+    const area = AREA_FILTRO_ITEMS.find((item) => item.id === legalArea)?.label
+    if (!term && !area) return 'todos os clientes'
+    const parts = [area && `da área ${area}`, term && `da busca “${term}”`].filter(Boolean)
+    return `os clientes ${parts.join(' e ')}`
+  })()
 
   const { data: pendencias = [] } = useClientesPendencies()
   const createClientMutation = useCreateCliente()
@@ -471,6 +489,20 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          {!isPeople && emailEnabled && (
+            <Can resource="clientes" action="update">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5"
+                onClick={() => setDigestOpen(true)}
+                title="Ligar o resumo diário por e-mail para os clientes desta lista"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Resumo por e-mail
+              </Button>
+            </Can>
+          )}
           <Can resource="clientes" action="create">
             <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
@@ -619,6 +651,15 @@ export function ClientesContent({ scope = 'clients' }: { scope?: CadastroListSco
           onOpenChange={(open) => !open && setConvertClient(null)}
           personId={convertClient.id}
           personName={getClientDisplayName(convertClient)}
+        />
+      )}
+
+      {!isPeople && emailEnabled && (
+        <DigestBulkDialog
+          open={digestOpen}
+          onOpenChange={setDigestOpen}
+          filter={{ search: debouncedSearch, legalArea }}
+          filterLabel={digestFilterLabel}
         />
       )}
 
