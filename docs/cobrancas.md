@@ -2,9 +2,10 @@
 
 > **Status:** plano aprovado em 2026-11-05 (as oito decisões com o usuário e as
 > "Decididas no plano", sem veto). **Fase 0 feita em 2026-11-23:** o webhook
-> entrega. **Fase 1 implementada** na branch `feat/cobrancas-pagina`, sem commit e
-> sem a migration 95 aplicada (ver "Como ficou"). As migrations 91 a 94 foram usadas
-> por outros módulos: as deste plano começam na **95**.
+> entrega. **Fase 1** em `feat/cobrancas-pagina` (migration 95 aplicada, testada ponta
+> a ponta). **Fase 2** em `feat/cobrancas-regua`, sem commit e sem a migration 96
+> aplicada. As migrations 91 a 94 foram usadas por outros módulos: as deste plano
+> começam na **95**.
 > **Base:** as fases saem da `main`, em `release/cobrancas`.
 > **API relida em 2026-11-05:** a documentação do checkout mudou desde a leitura
 > de outubro, e `docs/integracao-infinitepay.md` ficou desatualizada nesses
@@ -323,6 +324,71 @@ no sino. **Aqui o módulo já serve no dia a dia, sem nenhuma conta nova.**
 
 **Pronto quando:** uma cobrança de teste percorre as etapas (datas simuladas no
 Node), cada aviso aparece uma vez só, e a baixa tira a cobrança da fila.
+
+#### Como ficou (2026-11-23, branch `feat/cobrancas-regua`, sem commit)
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Migration 96 | `20260101000096_billing_reminders.sql` | `billings` ganha lembretes ligados, início, pausa, telefone próprio e o controle dos avisos no sino; `billing_messages` com índice único por etapa e vencimento (`resend` fora dele); `office_settings.billing_reminder_offsets`; `clients.billing_reminders_opt_out` |
+| Régua | `lib/billing/schedule.ts` | Puro: etapas, domingo e feriado nacional para frente, uma por dia, acumuladas viram a mais recente, situação da cobrança |
+| Mensagens | `lib/billing/messages.ts` | Os modelos do plano; sem nome do escritório, "Registramos" |
+| Painel | `lib/billing/panel.ts`, `GET /api/financeiro/cobrancas/painel` | Todas as cobranças com a régua de hoje, a URL e o checkout vivo |
+| Comandos | `lib/billing/reminders.ts`; `PATCH`/`POST` da cobrança, `/cobrancas/avisos`, `/avisos/<id>`, `/cobrancas/lote` | Ligar (exige vencimento), pausar, telefone, cliente que não recebe, registrar `manual`/`skipped` (clique duplo devolve o primeiro), desfazer em 12 h só o próprio, lote |
+| Aba Cobranças | `BillingsPanel`, `ReminderActions` (`?aba=cobrancas`) | Fila do dia (WhatsApp, Copiar, Pular, com Desfazer), lista com situação e filtros, Pausar/Retomar, Mandar de novo, "Já pago na InfinitePay", lote das receitas fora da régua |
+| Detalhe | `BillingReminders` | Ligar e desligar, aviso de hoje, próximo, pausa, telefone, cliente que não recebe, histórico |
+| Entradas | Formulário, prévia do contrato, gerar link no detalhe | "Cobrar automaticamente" junto com o link |
+| Ajustes | `BillingReminderSettingsCard` em Configurações → Pagamentos | Os dias da régua (até 10, de 15 antes a 30 depois) |
+| Sino | `lib/billing/routine.ts` no `/api/cron/diario` | Fila do dia (uma vez por dia), clique sem pagamento em 24 h, régua encerrada; roda antes dos passos de IA |
+
+Decidido na implementação (vale salvo veto):
+
+- **A fila é calculada na hora**, não criada pelo cron: funciona no dev e não depende
+  de o cron ter rodado. O cron só avisa no sino; na fase 5 ele passa a mandar.
+- **O sino usa o cron diário de hoje (7h)**, e não um cron novo às 9h: nesta fase
+  ninguém recebe nada sozinho. O horário das 9h volta com o envio automático.
+- **"O cliente não quer receber"** fica no detalhe da cobrança, e não no cadastro do
+  cliente; vale para todas as cobranças dele.
+- **O lote** fica na aba Cobranças ("Receitas fora da régua"); a lista de lançamentos
+  não ganhou seleção.
+- **Sábado pode ter aviso**; domingo e feriado nacional, não (como no plano).
+- **"Já pago na InfinitePay"** cancela o checkout vivo e dá a baixa com a data de hoje.
+
+Verificado: `tsc`, lint dos arquivos alterados e build; 48 verificações novas no Node
+(régua, mensagens, painel, comandos e a rotina do cron contra banco simulado) e as 77
+da fase 1 de novo; a aba no navegador com dados simulados.
+
+**Teste logado (2026-11-23, migration 96 aplicada e conferida no catálogo):** com uma
+receita de teste de R$ 1,00 sem cliente, vencendo no dia (apagada no fim, com a
+cobrança e os avisos pelo cascade):
+
+- "Cobrar automaticamente" no formulário liga a régua; o aviso de hoje é "no dia do
+  vencimento" (criação e vencimento no mesmo dia: vale a mais recente), o próximo,
+  2 dias depois;
+- Copiar mensagem registra; Mandar de novo registra `resend`; Desfazer apaga o
+  registro; Pausar e Retomar; telefone inválido recusado, válido vira o destino do
+  WhatsApp (`wa.me/55…` com a mensagem e o link `/pagar/`);
+- trocar os dias em Configurações muda o próximo aviso na hora (voltou ao padrão
+  depois); "Já pago na InfinitePay" dá a baixa com a data de hoje.
+
+Corrigido no teste:
+
+- **"Desfazer" inclicável com modal aberto**: o Radix põe `pointer-events: none` no
+  body e o toast herdava; o clique ia para o overlay e fechava o modal. Agora o
+  `Toaster` aceita clique e `Dialog`/`Sheet` não fecham com clique num toast (vale
+  para o app todo).
+- O aviso do "Desfazer" dura 10 s (é o único lugar dele) e diz "o registro foi
+  apagado" (o reenvio não volta para fila nenhuma).
+- O status `manual` aparecia como "Aberto no WhatsApp" também para a mensagem
+  copiada; virou "Feito à mão".
+- Excluir, editar ou dar baixa no lançamento não atualizava a aba Cobranças.
+- O ícone do sino quebrava sozinho numa linha acima do texto da régua.
+
+Observado: no `next dev`, a primeira compilação de uma rota nova chegou a travar até a
+gravação do cache do Turbopack terminar (87 s); não é do código.
+
+**Não verificado:** o cron em produção (os avisos no sino); WhatsApp com cliente
+cadastrado; o lote e a prévia do contrato com dados reais (não há receita pendente na
+base).
 
 ### Fase 3: multa, juros e desconto no Pix (migration 97)
 

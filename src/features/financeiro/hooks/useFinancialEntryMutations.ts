@@ -11,6 +11,7 @@ import {
 } from '../services/financialEntries.service'
 import type { AssessmentRow } from '../utils/successFees'
 import { openBilling } from '../services/billings.service'
+import { billingKeys } from './useBillings'
 import { financialEntryKeys } from './useFinancialEntries'
 import { paymentChargeKeys } from './usePaymentCharges'
 import { notifyPaymentLinkError } from './usePaymentChargeMutations'
@@ -35,6 +36,9 @@ export function useInvalidateFinancialSurfaces() {
     queryClient.invalidateQueries({ queryKey: documentKeys.all })
     // O link pode nascer junto com o lançamento (migration 67).
     queryClient.invalidateQueries({ queryKey: paymentChargeKeys.all })
+    // A aba Cobranças segue o lançamento: valor, vencimento, baixa e exclusão
+    // (cascade, migration 95) mudam a régua.
+    queryClient.invalidateQueries({ queryKey: billingKeys.all })
   }
 }
 
@@ -66,10 +70,12 @@ export function useCreateFinancialEntry() {
     mutationFn: async ({
       attachments,
       generatePaymentLink,
+      billingReminders,
       ...input
     }: FinancialEntryInput & {
       attachments?: PendingAttachments
       generatePaymentLink?: boolean
+      billingReminders?: boolean
     }) => {
       const entry = await createFinancialEntry(input, user!.id)
       const failed = attachments
@@ -81,7 +87,7 @@ export function useCreateFinancialEntry() {
       let paymentLink: CreatedPaymentLink | null = null
       if (generatePaymentLink) {
         try {
-          await openBilling(entry.id)
+          await openBilling(entry.id, { reminders: !!billingReminders })
           paymentLink = { ok: true }
         } catch (error) {
           paymentLink = { ok: false, error }

@@ -12,6 +12,7 @@ import {
   removeLetterhead,
   saveD4SignFeatures,
   saveD4SignSafes,
+  saveBillingReminderOffsets,
   saveInfinitePayHandle,
   saveOfficeSettings,
   uploadLetterhead,
@@ -81,6 +82,13 @@ export function useSaveInfinitePayHandle() {
   return useOfficeMutation(
     (handle: string | null, userId) => saveInfinitePayHandle(handle, userId),
     { success: 'Conta da InfinitePay salva.', error: 'Erro ao salvar a conta da InfinitePay.' },
+  )
+}
+
+export function useSaveBillingReminderOffsets() {
+  return useOfficeMutation(
+    (offsets: number[], userId) => saveBillingReminderOffsets(offsets, userId),
+    { success: 'Dias da régua salvos.', error: 'Erro ao salvar os dias da régua.' },
   )
 }
 

@@ -47,6 +47,23 @@ export async function saveInfinitePayHandle(
   return data as OfficeSettings
 }
 
+/** Os dias da régua de cobrança (migration 96), em relação ao vencimento. */
+export async function saveBillingReminderOffsets(
+  offsets: number[],
+  userId: string,
+): Promise<OfficeSettings> {
+  const { data, error } = await supabase
+    .from('office_settings')
+    .upsert(
+      { id: ROW_ID, billing_reminder_offsets: offsets, updated_by: userId },
+      { onConflict: 'id' },
+    )
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as OfficeSettings
+}
+
 /** O que a InfinitePay respondeu a um link de teste para a tag. */
 export type InfinitePayVerification =
   | { ok: true }
