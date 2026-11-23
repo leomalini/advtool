@@ -41,6 +41,7 @@ import { D4SignSettingsCard } from './D4SignSettingsCard'
 import { D4SignDeliveries } from './D4SignDeliveries'
 import { AiSettingsTab } from './AiSettingsTab'
 import type { D4SignSetupStatus } from '@/types/d4sign.types'
+import type { InfinitePaySetupStatus } from '@/types/paymentCharge.types'
 import type { AreaJuridica, EtiquetaId } from '@/data/mock'
 import { cn } from '@/lib/utils'
 import { Can } from '@/components/shared/Can'
@@ -447,12 +448,13 @@ function TabGeral() {
 
 export function ConfiguracoesContent({
   initialTab,
-  paymentsWebhookEndpoint,
+  paymentsSetup,
   signatureSetup,
 }: {
   initialTab?: string
-  /** Lido do ambiente no servidor — `APP_PUBLIC_URL` não chega ao navegador. */
-  paymentsWebhookEndpoint: string | null
+  /** Lido do ambiente no servidor — `APP_PUBLIC_URL` e a API Key não chegam ao
+   * navegador; só o que elas permitem. */
+  paymentsSetup: InfinitePaySetupStatus
   /** Idem: as variáveis da D4Sign, só os nomes do que falta. */
   signatureSetup: D4SignSetupStatus
 }) {
@@ -504,7 +506,7 @@ export function ConfiguracoesContent({
           </TabsContent>
           <TabsContent value="pagamentos">
             <div className="space-y-5">
-              <PaymentSettingsCard webhookEndpoint={paymentsWebhookEndpoint} />
+              <PaymentSettingsCard setup={paymentsSetup} />
               <InfinitePayDeliveries />
             </div>
           </TabsContent>

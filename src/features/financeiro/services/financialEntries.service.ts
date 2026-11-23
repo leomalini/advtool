@@ -35,7 +35,7 @@ const ENTRY_SELECT = `
   client:clients(id, type, name, company_name, trade_name),
   legal_process:legal_processes(id, cnj_number),
   documents(id),
-  payment_charges(id, status)
+  payment_charges(id, status, expires_at)
 `
 
 /** Controles de formulário devolvem '' quando intocados; Postgres rejeita isso
@@ -353,7 +353,7 @@ export interface FinancialSummary {
 const AGGREGATE_SELECT = 'type, amount, status, settlement_kind, due_date, paid_at'
 
 /** O resumo precisa saber se a baixa veio de um link — o fluxo de caixa, não. */
-const SUMMARY_SELECT = `${AGGREGATE_SELECT}, payment_charges(status)`
+const SUMMARY_SELECT = `${AGGREGATE_SELECT}, payment_charges(status, expires_at)`
 
 /**
  * The dashboard's month (received, expenses) and everything still open

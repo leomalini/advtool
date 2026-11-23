@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
 import {
-  LIVE_CHARGE_STATUSES,
   PAYMENT_CHARGE_COLUMNS,
   PAYMENT_TRANSACTION_COLUMNS,
   type PaymentCharge,
@@ -13,9 +12,10 @@ const supabase = createClient()
 /**
  * Os links de pagamento da InfinitePay (migration 67).
  *
- * Leitura direto do banco — a RLS já limita a `financeiro:view`. Gerar e
- * cancelar passam por rota, porque as tabelas não têm policy de escrita: quem
- * grava é a service_role, depois de a rota conferir a permissão.
+ * Leitura direto do banco — a RLS já limita a `financeiro:view`. Cancelar e
+ * estornar passam por rota, porque as tabelas não têm policy de escrita: quem
+ * grava é a service_role, depois de a rota conferir a permissão. Gerar o link
+ * é da página da cobrança, no clique do cliente (`billings.service.ts`).
  */
 
 /** Erro de uma rota de cobrança, com o que a tela precisa para orientar:
@@ -47,19 +47,6 @@ export async function getPaymentChargesForEntry(
 
   if (error) throw error
   return (data ?? []) as unknown as PaymentChargeWithTransactions[]
-}
-
-/** Links que o cliente ainda consegue pagar, do mais antigo ao mais novo — o
- * que espera há mais tempo vem primeiro. */
-export async function getLiveCharges(): Promise<PaymentCharge[]> {
-  const { data, error } = await supabase
-    .from('payment_charges')
-    .select(PAYMENT_CHARGE_COLUMNS)
-    .in('status', [...LIVE_CHARGE_STATUSES])
-    .order('created_at', { ascending: true })
-
-  if (error) throw error
-  return (data ?? []) as unknown as PaymentCharge[]
 }
 
 /** Pagamentos confirmados nos últimos `days` dias, do mais novo ao mais antigo.
@@ -97,13 +84,6 @@ async function postCharge(path: string, fallback: string): Promise<PaymentCharge
     throw new PaymentLinkError(body?.error ?? fallback, body?.code ?? null, body?.actionUrl ?? null)
   }
   return body.charge
-}
-
-export function createPaymentLink(entryId: string): Promise<PaymentCharge> {
-  return postCharge(
-    `/api/financeiro/lancamentos/${encodeURIComponent(entryId)}/link-pagamento`,
-    'Não foi possível gerar o link de pagamento.',
-  )
 }
 
 export function cancelPaymentLink(chargeId: string): Promise<PaymentCharge> {

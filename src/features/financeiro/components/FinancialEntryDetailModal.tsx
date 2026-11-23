@@ -42,7 +42,7 @@ import { DocumentsTab } from '@/features/documentos/components/DocumentsTab'
 import { getCrmItemClientName } from '@/types/crmItem.types'
 import {
   CHARGE_BLOCK_REASONS,
-  LIVE_CHARGE_STATUSES,
+  isChargeLive,
   summarizePaymentCharges,
 } from '@/types/paymentCharge.types'
 import { useUpdateFinancialEntry, useDeleteFinancialEntry } from '../hooks/useFinancialEntryMutations'
@@ -116,9 +116,7 @@ export function FinancialEntryDetailModal({
   }
 
   const charges = summarizePaymentCharges(entry.payment_charges)
-  const liveChargeId =
-    entry.payment_charges?.find((charge) => LIVE_CHARGE_STATUSES.includes(charge.status))?.id ??
-    null
+  const liveChargeId = entry.payment_charges?.find((charge) => isChargeLive(charge))?.id ?? null
   const chargeLock = charges.paid ? 'paid' : charges.live ? 'live' : null
 
   const isReceita = entry.type === 'receita'

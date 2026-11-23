@@ -20,6 +20,18 @@ const identifier = z.string().trim().min(1)
 
 // ── POST /links ─────────────────────────────────────────────────────────────
 
+/**
+ * `options` do `POST /links` (documentação relida em 2026-11-05). A API só os
+ * aceita com a API Key (`X-Api-Key`): sem ela, o link sai sem nenhum.
+ */
+export interface CreateLinkOptions {
+  /** O link conclui um pagamento e bloqueia as tentativas seguintes. */
+  single_payment?: boolean
+  /** ISO 8601, no futuro e até um ano depois: o link deixa de aceitar
+   * pagamento. */
+  valid_until?: string
+}
+
 /** Corpo do `POST /links`. `items` em inglês: `"itens"`, como num exemplo da
  * documentação, volta 400. */
 export interface CreateLinkRequest {
@@ -30,6 +42,7 @@ export interface CreateLinkRequest {
   webhook_url?: string
   /** Pré-preenche o checkout. Viaja legível dentro da URL do link. */
   customer?: { name?: string; email?: string; phone_number?: string }
+  options?: CreateLinkOptions
 }
 
 /**

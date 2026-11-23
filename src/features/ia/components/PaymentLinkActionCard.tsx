@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Check, Copy, CreditCard, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getFinancialEntryById } from '@/features/financeiro/services/financialEntries.service'
+import { MIN_BILLING_AMOUNT_CENTS } from '@/types/billing.types'
 import { formatCurrency, type FinancialEntryWithRelations } from '@/types/financialEntry.types'
-import { LIVE_CHARGE_STATUSES } from '@/types/paymentCharge.types'
 import type { ActionInput, ActionOutput } from '../tools/actions'
 import { ReinforcedActionFooter } from './ReinforcedActionFooter'
 
@@ -18,13 +18,14 @@ interface PaymentLinkActionCardProps {
   onCancel: () => void
 }
 
-/** O que a rota recusaria, dito antes — a rota confere de novo. */
+/** O que a rota recusaria, dito antes — a rota confere de novo. Link já no ar
+ * não bloqueia: pedir de novo devolve o mesmo endereço. */
 function blockedReason(entry: FinancialEntryWithRelations | null): string | null {
   if (!entry) return 'lançamento não encontrado ou sem acesso'
   if (entry.type !== 'receita') return 'só receita gera link de pagamento'
   if (entry.status !== 'pendente') return 'o lançamento não está pendente'
-  if (entry.payment_charges?.some((charge) => LIVE_CHARGE_STATUSES.includes(charge.status))) {
-    return 'já há um link ativo para este lançamento'
+  if (Math.round(Number(entry.amount) * 100) < MIN_BILLING_AMOUNT_CENTS) {
+    return 'a InfinitePay só aceita pagamentos a partir de R$ 1,00'
   }
   return null
 }
@@ -38,9 +39,10 @@ function clientName(entry: FinancialEntryWithRelations): string | null {
 }
 
 /**
- * O link de pagamento da InfinitePay proposto pela IA. O card mostra o
- * lançamento como está no banco (não os rótulos do modelo) e, gerado, o link
- * para copiar. Nada vai para o cliente sozinho.
+ * O link de pagamento proposto pela IA: a página da cobrança, que leva ao
+ * checkout da InfinitePay. O card mostra o lançamento como está no banco (não
+ * os rótulos do modelo) e, gerado, o link para copiar. Nada vai para o cliente
+ * sozinho.
  */
 export function PaymentLinkActionCard({
   input,
@@ -119,7 +121,7 @@ export function PaymentLinkActionCard({
         output={output}
         blockedReason={blocked}
         loading={entry.isLoading}
-        warning="Gera na InfinitePay um link de pagamento deste valor, ativo até ser pago ou cancelado. Nada é enviado ao cliente: o link aparece aqui e no lançamento, para você mandar."
+        warning="Põe no ar a página de pagamento deste lançamento, ativa até ser paga ou encerrada; o checkout da InfinitePay só é gerado quando o cliente clicar em Pagar. Nada é enviado ao cliente: o link aparece aqui e no lançamento, para você mandar."
         confirmLabel="Gerar link"
         onConfirm={onConfirm}
         onCancel={onCancel}

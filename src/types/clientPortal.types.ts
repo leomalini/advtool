@@ -110,7 +110,9 @@ export type PortalPayment =
       amount_cents: number
       /** Vencimento do lançamento; null na condição especial sem previsão. */
       due_date: string | null
-      checkout_url: string
+      /** Onde pagar: a página da cobrança (`/pagar/<token>`, migration 95), ou
+       * o checkout de um link da InfinitePay de antes dela. */
+      pay_url: string
     }
   | {
       id: string

@@ -322,10 +322,11 @@ export const screenActionTools = {
 
   gerar_link_pagamento: tool({
     description:
-      'Propõe gerar o link de pagamento da InfinitePay para um lançamento a receber pendente ' +
-      '(id de listar_lancamentos). SÓ quando o usuário pedir. O link não é enviado a ninguém: ' +
-      'ele volta aqui e no lançamento, para o usuário mandar. O card pede uma segunda ' +
-      'confirmação.',
+      'Propõe gerar o link de pagamento (a página do escritório que leva ao checkout da ' +
+      'InfinitePay) para um lançamento a receber pendente, a partir de R$ 1,00 (id de ' +
+      'listar_lancamentos). SÓ quando o usuário pedir. Se já existir, devolve o mesmo link. ' +
+      'O link não é enviado a ninguém: ele volta aqui e no lançamento, para o usuário ' +
+      'mandar. O card pede uma segunda confirmação.',
     inputSchema: z.object({
       lancamento_id: z.string().uuid(),
       lancamento_descricao: z.string().max(300).describe('Descrição, para exibição.'),

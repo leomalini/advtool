@@ -1,10 +1,11 @@
 /**
  * O segredo-raiz do portal do cliente.
  *
- * Duas coisas derivam dele, e por caminhos separados: a chave que assina o
- * cookie de sessão (`session.ts`) e a que cifra o token guardado
- * (`vault.ts`). Cada uma passa por um `info` próprio, então uma nunca produz
- * material utilizável pela outra.
+ * Três coisas derivam dele, e por caminhos separados: a chave que assina o
+ * cookie de sessão (`session.ts`), a que cifra o token guardado (`vault.ts`) e
+ * a que deriva o token da página de pagamento (`lib/billing/token.ts`). Cada
+ * uma passa por um `info` próprio, então uma nunca produz material utilizável
+ * pela outra.
  *
  * Mora num módulo só porque as duas precisam da MESMA leitura do ambiente:
  * duplicar a regra de precedência entre `CLIENT_PORTAL_SECRET` e
