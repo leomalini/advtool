@@ -73,8 +73,8 @@ export type FinancialEntryChargeLock = 'live' | 'paid' | null
 
 const CHARGE_LOCK_HINTS: Record<Exclude<FinancialEntryChargeLock, null>, string> = {
   live:
-    'Há um link de pagamento em aberto: valor, tipo e situação ficam travados. Para mudar, ' +
-    'cancele o link no detalhe do lançamento.',
+    'Há um checkout da InfinitePay em aberto: valor, tipo e situação ficam travados até ele ' +
+    'vencer. Para mudar agora, encerre a cobrança (ou cancele o link) no detalhe do lançamento.',
   paid: 'Pago pela InfinitePay: valor, tipo e situação ficam travados.',
 }
 

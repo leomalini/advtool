@@ -26,6 +26,10 @@ const PREFIXOS_PUBLICOS = [
   // pagar, sem sessão. A rota que a página chama confirma o pagamento no
   // `payment_check` (`/api/pagamento/retorno`).
   '/pagamento',
+  // A página da cobrança que o escritório manda ao cliente (`/pagar/<token>`).
+  // Quem autoriza é o token, em `/api/pagar/<token>` (docs/cobrancas.md). Com a
+  // barra: o prefixo não pode abrir sem sessão uma rota futura `/pagar…`.
+  '/pagar/',
 ]
 
 /**

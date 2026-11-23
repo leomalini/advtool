@@ -2,12 +2,13 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { closeBilling, openBilling, updateBillingDescription } from '../services/billings.service'
 import {
   PaymentLinkError,
   cancelPaymentLink,
-  createPaymentLink,
   refundPaymentTransaction,
 } from '../services/paymentCharges.service'
+import { billingKeys } from './useBillings'
 import { financialEntryKeys } from './useFinancialEntries'
 import { paymentChargeKeys } from './usePaymentCharges'
 
@@ -30,24 +31,49 @@ export function notifyPaymentLinkError(error: unknown, fallback: string): void {
   })
 }
 
-/** Cobrança muda o detalhe e a linha da lista (ícone e travas). */
+/** Cobrança muda o detalhe, a linha da lista (ícone e travas) e o card do
+ * dashboard. */
 export function useInvalidatePaymentSurfaces() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: paymentChargeKeys.all })
+    queryClient.invalidateQueries({ queryKey: billingKeys.all })
     queryClient.invalidateQueries({ queryKey: financialEntryKeys.all })
   }
 }
 
-export function useCreatePaymentLink() {
+/** Põe a cobrança no ar, ou a religa — o "Gerar link de pagamento". */
+export function useOpenBilling() {
   const invalidate = useInvalidatePaymentSurfaces()
 
   return useMutation({
-    mutationFn: (entryId: string) => createPaymentLink(entryId),
-    // Também na falha: a cobrança `failed` passa a existir e explica o motivo.
+    mutationFn: ({ entryId, clientDescription }: { entryId: string; clientDescription?: string }) =>
+      openBilling(entryId, clientDescription),
     onSettled: () => invalidate(),
-    onSuccess: () => toast.success('Link de pagamento gerado.'),
+    onSuccess: () => toast.success('Link de pagamento pronto.'),
     onError: (error) => notifyPaymentLinkError(error, 'Não foi possível gerar o link.'),
+  })
+}
+
+export function useUpdateBillingDescription() {
+  const invalidate = useInvalidatePaymentSurfaces()
+
+  return useMutation({
+    mutationFn: ({ entryId, clientDescription }: { entryId: string; clientDescription: string }) =>
+      updateBillingDescription(entryId, clientDescription),
+    onSettled: () => invalidate(),
+    onError: (error) => notifyPaymentLinkError(error, 'Não foi possível trocar a descrição.'),
+  })
+}
+
+export function useCloseBilling() {
+  const invalidate = useInvalidatePaymentSurfaces()
+
+  return useMutation({
+    mutationFn: (entryId: string) => closeBilling(entryId),
+    onSettled: () => invalidate(),
+    onSuccess: () => toast.success('Cobrança encerrada.'),
+    onError: (error) => notifyPaymentLinkError(error, 'Não foi possível encerrar a cobrança.'),
   })
 }
 

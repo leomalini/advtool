@@ -23,7 +23,7 @@ export type TotalsRow = Pick<
   'type' | 'amount' | 'status' | 'settlement_kind' | 'due_date' | 'paid_at'
 > & {
   /** Only to tell a payment by InfinitePay link apart. */
-  payment_charges?: Pick<PaymentChargeSummary, 'status'>[] | null
+  payment_charges?: Pick<PaymentChargeSummary, 'status' | 'expires_at'>[] | null
   /** Only to count the success fees to assess (migration 89); the
    * dashboard's narrow select leaves them out. */
   percent?: number | null

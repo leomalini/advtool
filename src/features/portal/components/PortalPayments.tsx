@@ -73,7 +73,7 @@ export function PortalOpenPayments({ payments }: { payments: PortalPayment[] | n
             </div>
             <div className="flex flex-col gap-1 sm:items-end">
               <Button asChild className="w-full sm:w-auto">
-                <a href={payment.checkout_url} target="_blank" rel="noopener noreferrer">
+                <a href={payment.pay_url} target="_blank" rel="noopener noreferrer">
                   Pagar
                   <ExternalLink aria-hidden />
                 </a>

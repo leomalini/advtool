@@ -3,7 +3,8 @@
  * (migration 67). Valores em centavos, como a API da InfinitePay usa.
  */
 
-/** O ciclo de um link — ver o passo 2 da migration 67. */
+/** O ciclo de um link — ver o passo 2 da migration 67. `superseded` (migration
+ * 95): um link novo tomou o lugar deste, e um pagamento por ele ainda dá baixa. */
 export type PaymentChargeStatus =
   | 'creating'
   | 'open'
@@ -11,13 +12,15 @@ export type PaymentChargeStatus =
   | 'canceled'
   | 'refunded'
   | 'failed'
+  | 'superseded'
 
 /** Por onde a confirmação chegou: entrega do webhook, retorno do cliente ou
  * conferência pedida por alguém do escritório. */
 export type PaymentConfirmationSource = 'webhook' | 'redirect' | 'manual'
 
-/** Link que o cliente ainda consegue pagar: `creating` pode já ter virado link
- * do lado de lá antes de a resposta chegar. */
+/** Status de link que o cliente ainda consegue pagar: `creating` pode já ter
+ * virado link do lado de lá antes de a resposta chegar. Desde a migration 95 o
+ * link também vence — a pergunta inteira é `isChargeLive`. */
 export const LIVE_CHARGE_STATUSES: readonly PaymentChargeStatus[] = ['creating', 'open']
 
 export const PAYMENT_CHARGE_STATUS_LABELS: Record<PaymentChargeStatus, string> = {
@@ -27,6 +30,20 @@ export const PAYMENT_CHARGE_STATUS_LABELS: Record<PaymentChargeStatus, string> =
   canceled: 'Cancelado',
   refunded: 'Estornado',
   failed: 'Falhou',
+  superseded: 'Substituído',
+}
+
+/**
+ * O cliente ainda consegue pagar este link? Status vivo e validade não vencida
+ * (`expires_at` nulo é link sem validade). Espelha a trava
+ * `guard_financial_entry_charges` da migration 95.
+ */
+export function isChargeLive(
+  charge: Pick<PaymentCharge, 'status' | 'expires_at'>,
+  now: Date = new Date(),
+): boolean {
+  if (!LIVE_CHARGE_STATUSES.includes(charge.status)) return false
+  return charge.expires_at === null || new Date(charge.expires_at).getTime() > now.getTime()
 }
 
 /** Rótulo do método de pagamento; texto livre no banco, então o fallback é o
@@ -56,6 +73,11 @@ export interface PaymentCharge {
   status: PaymentChargeStatus
   /** Motivo de `failed`. */
   error: string | null
+  /** Até quando a InfinitePay aceita o link (migration 95). Nulo = sem
+   * validade: os links antigos e os gerados sem a API Key. */
+  expires_at: string | null
+  /** Gerado com `single_payment`: aceita um pagamento só. */
+  single_payment: boolean
   canceled_at: string | null
   canceled_by: string | null
   created_by: string
@@ -67,7 +89,8 @@ export interface PaymentCharge {
  * do token fica de fora. */
 export const PAYMENT_CHARGE_COLUMNS =
   'id, financial_entry_id, provider, handle, description, amount_cents, customer_name, ' +
-  'checkout_url, status, error, canceled_at, canceled_by, created_by, created_at, updated_at'
+  'checkout_url, status, error, expires_at, single_payment, canceled_at, canceled_by, ' +
+  'created_by, created_at, updated_at'
 
 /** As colunas de `PaymentTransaction`. */
 export const PAYMENT_TRANSACTION_COLUMNS =
@@ -114,6 +137,7 @@ export interface RecentPayment extends PaymentTransaction {
 export interface PaymentChargeSummary {
   id: string
   status: PaymentChargeStatus
+  expires_at: string | null
 }
 
 /**
@@ -121,17 +145,31 @@ export interface PaymentChargeSummary {
  * (`paid`)? As duas perguntas são independentes: um link cancelado pode ser
  * pago enquanto outro, novo, está em aberto.
  *
- * Espelha a trava `guard_financial_entry_charges` da migration 67 — a tela
+ * Espelha a trava `guard_financial_entry_charges` (migrations 67 e 95) — a tela
  * trava o que o banco recusaria.
  */
 export function summarizePaymentCharges(
-  charges: readonly Pick<PaymentCharge, 'status'>[] | undefined,
+  charges: readonly Pick<PaymentCharge, 'status' | 'expires_at'>[] | undefined,
+  now: Date = new Date(),
 ): { live: boolean; paid: boolean } {
   const list = charges ?? []
   return {
-    live: list.some((charge) => LIVE_CHARGE_STATUSES.includes(charge.status)),
+    live: list.some((charge) => isChargeLive(charge, now)),
     paid: list.some((charge) => charge.status === 'paid'),
   }
+}
+
+/** O que a aba Configurações → Pagamentos mostra da configuração do servidor
+ * (`infinitePaySetupStatus`). Só o efeito de cada variável, nunca o valor. */
+export interface InfinitePaySetupStatus {
+  /** Onde a InfinitePay entrega os pagamentos. Null sem endereço público. */
+  webhookEndpoint: string | null
+  /** `INFINITEPAY_API_KEY` definida: os links saem com pagamento único e
+   * validade. */
+  apiKeyConfigured: boolean
+  /** A InfiniteTag que o `next dev` usa no lugar da configurada. Sempre null
+   * em produção. */
+  devHandle: string | null
 }
 
 /** SQLSTATE das travas da migration 67 — HTTP 409 pelo PostgREST. */

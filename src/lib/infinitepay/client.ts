@@ -1,6 +1,6 @@
-// Server-side only — nunca importar em componente 'use client'. A API não tem
-// chave, mas o `webhook_url` de cada link carrega um token que só o servidor
-// pode gerar, e o navegador do escritório não é quem deve falar com ela.
+// Server-side only — nunca importar em componente 'use client'. A API Key
+// (`INFINITEPAY_API_KEY`) é segredo, e o `webhook_url` de cada link carrega um
+// token que só o servidor pode gerar.
 import {
   createLinkResponseSchema,
   infinitePayErrorBodySchema,
@@ -62,12 +62,20 @@ function errorFromBody(status: number, path: string, raw: string): InfinitePayAp
  * corpo vazio ou HTML viraria um SyntaxError cru, sem dizer de onde veio.
  * Mesmo cuidado de `lib/buscaprocessos/client.ts`.
  */
-async function post(path: string, body: unknown): Promise<unknown> {
+async function post(
+  path: string,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<unknown> {
   let response: Response
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...extraHeaders,
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
@@ -97,14 +105,32 @@ async function post(path: string, body: unknown): Promise<unknown> {
 }
 
 /**
+ * A API Key da conta (`X-Api-Key`, começa com `inchk_`). Opcional para criar
+ * link, mas é ela que libera os `options` — pagamento único e validade. Null
+ * sem a variável.
+ */
+export function infinitePayApiKey(): string | null {
+  return process.env.INFINITEPAY_API_KEY?.trim() || null
+}
+
+/**
  * Gera o link de checkout. Devolve só a URL — é tudo o que a API responde.
+ *
+ * Com a API Key, ela vai no cabeçalho e os `options` seguem; sem ela, os
+ * `options` são retirados, porque a API os exige com chave. A chave vai só
+ * aqui: o `payment_check` funciona sem ela, e uma chave de outra conta faria a
+ * conferência de um link antigo responder 403.
  *
  * Erros que a tela precisa distinguir saem com `code`: conta sem checkout
  * externo ativado (ou InfiniteTag errada) é `external_checkout_not_enabled`, com
  * `actionUrl` apontando para onde se ativa.
  */
 export async function createCheckoutLink(input: CreateLinkRequest): Promise<string> {
-  const json = await post('/links', input)
+  const apiKey = infinitePayApiKey()
+  const { options, ...rest } = input
+  const json = apiKey
+    ? await post('/links', options ? { ...rest, options } : rest, { 'X-Api-Key': apiKey })
+    : await post('/links', rest)
   const parsed = createLinkResponseSchema.safeParse(json)
 
   if (!parsed.success) {

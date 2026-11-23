@@ -12,10 +12,8 @@ import {
   createFinancialEntry,
   getFinancialEntryById,
 } from '@/features/financeiro/services/financialEntries.service'
-import {
-  PaymentLinkError,
-  createPaymentLink,
-} from '@/features/financeiro/services/paymentCharges.service'
+import { openBilling } from '@/features/financeiro/services/billings.service'
+import { PaymentLinkError } from '@/features/financeiro/services/paymentCharges.service'
 import {
   SUCCESS_FEE_FORM_DEFAULTS,
   assessmentError,
@@ -289,10 +287,13 @@ export async function createPaymentLinkAction(
   input: ActionInput<'gerar_link_pagamento'>,
 ): Promise<ActionOutput> {
   try {
-    const charge = await createPaymentLink(input.lancamento_id)
-    return { ok: true, id: charge.id, link: charge.checkout_url ?? undefined }
+    // A página da cobrança (`/pagar/<token>`): o link da InfinitePay só nasce
+    // quando o cliente clicar em "Pagar". Pedir de novo devolve a mesma URL.
+    const { billing, url } = await openBilling(input.lancamento_id)
+    return { ok: true, id: billing.id, link: url }
   } catch (error) {
-    // A rota explica: não é receita pendente, conta não configurada, já há link.
+    // A rota explica: não é receita pendente, valor abaixo de R$ 1,00, conta
+    // não configurada.
     if (error instanceof PaymentLinkError) return { ok: false, motivo: error.message }
     throw error
   }

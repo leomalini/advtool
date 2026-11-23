@@ -1,17 +1,17 @@
-// Server-side. O client é a service_role da rota, chamada só depois de
-// `requireApiPermission`: as tabelas de cobrança não têm policy de escrita
-// (migration 67), e é aqui que o ciclo creating → open → … é imposto.
+// Server-side. O client é a service_role da rota — chamada depois de
+// `requireApiPermission`, ou pela página pública depois de conferir o token da
+// cobrança: as tabelas de cobrança não têm policy de escrita (migration 67), e
+// é aqui que o ciclo creating → open → … é imposto.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { linkValidity } from '@/lib/billing/officeTime'
 import {
-  LIVE_CHARGE_STATUSES,
   PAYMENT_CHARGE_COLUMNS,
   PAYMENT_CHARGE_STATUS_LABELS,
   type PaymentCharge,
   type PaymentChargeStatus,
 } from '@/types/paymentCharge.types'
-import { createCheckoutLink, InfinitePayApiError } from './client'
+import { createCheckoutLink, InfinitePayApiError, infinitePayApiKey } from './client'
 import { buildCustomer, type PaymentClient } from './customer'
-import { toCents } from './money'
 import { CHECKOUT_NOT_ENABLED, type CreateLinkRequest } from './schemas'
 import { generateWebhookToken } from './token'
 import { infinitePayWebhookUrl } from './urls'
@@ -45,21 +45,48 @@ function failure(
 
 // ── Gerar ───────────────────────────────────────────────────────────────────
 
-const ENTRY_FOR_CHARGE = `
-  id, type, status, amount, description,
-  client:clients(
-    type, name, company_name, trade_name, email, phone,
-    contacts:client_contacts(type, value, is_primary)
-  )
-`
-
-interface EntryForCharge {
+/** O que `createChargeLink` precisa do lançamento, já conferido por quem chama
+ * (receita, pendente, valor mínimo). */
+export interface ChargeLinkEntry {
   id: string
-  type: 'receita' | 'despesa'
-  status: 'pendente' | 'pago'
-  amount: number
-  description: string
+  amountCents: number
   client: PaymentClient | null
+}
+
+export interface ChargeLinkInput {
+  entry: ChargeLinkEntry
+  /** A InfiniteTag que recebe (`resolveInfinitePayHandle`). */
+  handle: string
+  /** O item do checkout: a descrição que o cliente vê (`billings`). */
+  description: string
+  /** Quem responde pelo link. Na página pública, quem criou a cobrança. */
+  createdBy: string
+  /** Para onde o cliente volta depois de pagar. */
+  returnBaseUrl: string
+  now?: Date
+}
+
+/** A falha da InfinitePay dita para a tela, com o atalho quando há um. */
+function linkFailure(error: InfinitePayApiError): ChargeFailure {
+  if (error.code === CHECKOUT_NOT_ENABLED) {
+    return failure(
+      409,
+      'A InfinitePay recusou a conta: o checkout externo não está ativado, ou a InfiniteTag ' +
+        'configurada está errada.',
+      CHECKOUT_NOT_ENABLED,
+      error.actionUrl,
+    )
+  }
+  if (error.status === 403) {
+    // A documentação: chave e handle de contas diferentes respondem 403.
+    return failure(
+      409,
+      'A InfinitePay recusou o pedido: a API Key (INFINITEPAY_API_KEY) não é da conta da ' +
+        'InfiniteTag configurada.',
+      'api_key_account_mismatch',
+    )
+  }
+  return failure(502, `A InfinitePay não gerou o link. ${error.message}`, error.code)
 }
 
 async function markFailed(supabase: SupabaseClient, chargeId: string, reason: string) {
@@ -74,61 +101,40 @@ async function markFailed(supabase: SupabaseClient, chargeId: string, reason: st
 }
 
 /**
- * Gera o link de pagamento de uma receita pendente.
+ * Gera o link da InfinitePay de uma cobrança. Quem decide QUANDO é a página
+ * pública, no clique em "Pagar" (`lib/billing/checkout.ts`); aqui mora o COMO.
  *
  * A linha nasce `creating` ANTES da chamada à InfinitePay: o índice único de
  * link vivo por lançamento barra o clique duplo antes de existir um segundo
  * link, e o id dela é o `order_nsu` que vai no link. Só depois da resposta ela
  * vira `open` (com a URL) ou `failed` (com o motivo).
+ *
+ * Com a API Key, o link nasce com pagamento único e validade até o fim do dia
+ * seguinte (`expires_at`). Sem ela, como antes: sem validade, aceitando mais de
+ * um pagamento.
  */
-export async function issueCharge(
+export async function createChargeLink(
   supabase: SupabaseClient,
-  input: { entryId: string; userId: string; returnBaseUrl: string },
+  input: ChargeLinkInput,
 ): Promise<ChargeResult> {
-  const { data, error: entryError } = await supabase
-    .from('financial_entries')
-    .select(ENTRY_FOR_CHARGE)
-    .eq('id', input.entryId)
-    .maybeSingle()
-  if (entryError) throw entryError
-
-  const entry = data as unknown as EntryForCharge | null
-  if (!entry) return failure(404, 'Lançamento não encontrado.')
-  if (entry.type !== 'receita') return failure(422, 'Só receita pode ser cobrada por link.')
-  if (entry.status !== 'pendente') return failure(409, 'Este lançamento já está pago.')
-
-  const amountCents = toCents(Number(entry.amount))
-  if (amountCents <= 0) return failure(422, 'Lançamento sem valor não gera link.')
-
-  const { data: settings, error: settingsError } = await supabase
-    .from('office_settings')
-    .select('infinitepay_handle')
-    .maybeSingle()
-  if (settingsError) throw settingsError
-
-  const handle = (settings as { infinitepay_handle: string | null } | null)?.infinitepay_handle
-  if (!handle) {
-    return failure(
-      409,
-      'A conta da InfinitePay não está configurada (Configurações → Pagamentos).',
-      'handle_missing',
-    )
-  }
-
-  const description = entry.description.trim()
-  const customer = buildCustomer(entry.client)
+  const description = input.description.trim()
+  const customer = buildCustomer(input.entry.client)
   const { token, tokenHash } = await generateWebhookToken()
+  const withOptions = infinitePayApiKey() !== null
+  const validity = withOptions ? linkValidity(input.now ?? new Date()) : null
 
   const { data: created, error: insertError } = await supabase
     .from('payment_charges')
     .insert({
-      financial_entry_id: entry.id,
-      handle,
+      financial_entry_id: input.entry.id,
+      handle: input.handle,
       description,
-      amount_cents: amountCents,
+      amount_cents: input.entry.amountCents,
       customer_name: customer?.name ?? null,
       webhook_token_hash: tokenHash,
-      created_by: input.userId,
+      expires_at: validity?.expiresAt ?? null,
+      single_payment: withOptions,
+      created_by: input.createdBy,
     })
     .select(PAYMENT_CHARGE_COLUMNS)
     .single()
@@ -145,14 +151,15 @@ export async function issueCharge(
   const charge = created as unknown as PaymentCharge
   const webhookUrl = infinitePayWebhookUrl(token)
   const request: CreateLinkRequest = {
-    handle,
-    items: [{ quantity: 1, price: amountCents, description }],
+    handle: input.handle,
+    items: [{ quantity: 1, price: input.entry.amountCents, description }],
     order_nsu: charge.id,
     redirect_url: `${input.returnBaseUrl.replace(/\/+$/, '')}${PAYMENT_RETURN_PATH}`,
     // Sem endereço público não há como receber o aviso: o link sai sem ele e a
     // baixa fica com o retorno do cliente (ver `infinitePayWebhookUrl`).
     ...(webhookUrl ? { webhook_url: webhookUrl } : {}),
     ...(customer ? { customer } : {}),
+    ...(validity ? { options: { single_payment: true, valid_until: validity.validUntil } } : {}),
   }
 
   let url: string
@@ -163,24 +170,17 @@ export async function issueCharge(
     await markFailed(supabase, charge.id, reason)
 
     if (!(error instanceof InfinitePayApiError)) throw error
-    if (error.code === CHECKOUT_NOT_ENABLED) {
-      return failure(
-        409,
-        'A InfinitePay recusou a conta: o checkout externo não está ativado, ou a InfiniteTag ' +
-          'configurada está errada.',
-        CHECKOUT_NOT_ENABLED,
-        error.actionUrl,
-      )
-    }
-    return failure(502, `A InfinitePay não gerou o link. ${error.message}`, error.code)
+    return linkFailure(error)
   }
 
+  // Só de `creating`: se a cobrança foi encerrada no meio (o link virou
+  // `failed`), a URL nova não pode ressuscitá-lo.
   const { data: opened, error: openError } = await supabase
     .from('payment_charges')
     .update({ status: 'open', checkout_url: url })
     .eq('id', charge.id)
+    .eq('status', 'creating')
     .select(PAYMENT_CHARGE_COLUMNS)
-    .single()
 
   if (openError) {
     // O link existe do lado de lá, mas a URL não chegou a ninguém: sem ela,
@@ -188,7 +188,11 @@ export async function issueCharge(
     await markFailed(supabase, charge.id, `Link gerado, mas não gravado: ${openError.message}`)
     throw openError
   }
-  return { ok: true, charge: opened as unknown as PaymentCharge }
+  const charged = ((opened ?? []) as unknown as PaymentCharge[])[0]
+  if (!charged) {
+    return failure(409, 'A cobrança foi encerrada enquanto o link era gerado.', 'charge_closed')
+  }
+  return { ok: true, charge: charged }
 }
 
 // ── Cancelar ────────────────────────────────────────────────────────────────
@@ -197,8 +201,8 @@ export async function issueCharge(
  * Deixa de oferecer o link. ⚠️ A InfinitePay não cancela link: quem já o tem
  * ainda consegue pagar, e esse pagamento entra registrado, com alerta.
  *
- * `creating` também cancela: é a saída para um link que travou no meio da
- * geração e, sem isso, bloquearia um novo para sempre.
+ * `creating` também sai do caminho, como `failed`: é a saída para um link que
+ * travou no meio da geração e, sem isso, bloquearia um novo para sempre.
  */
 export async function cancelCharge(
   supabase: SupabaseClient,
@@ -212,12 +216,25 @@ export async function cancelCharge(
       canceled_by: input.userId,
     })
     .eq('id', input.chargeId)
-    .in('status', [...LIVE_CHARGE_STATUSES])
+    .eq('status', 'open')
     .select(PAYMENT_CHARGE_COLUMNS)
   if (error) throw error
 
   const canceled = (data ?? []) as unknown as PaymentCharge[]
   if (canceled.length > 0) return { ok: true, charge: canceled[0] }
+
+  // Travado em `creating` não tem URL, e a migration 67 só aceita cancelado
+  // com URL (`payment_charges_url_once_issued`): vira `failed`, com o motivo.
+  const { data: stopped, error: stopError } = await supabase
+    .from('payment_charges')
+    .update({ status: 'failed', error: 'Cancelado durante a geração do link.' })
+    .eq('id', input.chargeId)
+    .eq('status', 'creating')
+    .select(PAYMENT_CHARGE_COLUMNS)
+  if (stopError) throw stopError
+
+  const failedNow = (stopped ?? []) as unknown as PaymentCharge[]
+  if (failedNow.length > 0) return { ok: true, charge: failedNow[0] }
 
   const { data: current, error: currentError } = await supabase
     .from('payment_charges')
@@ -260,6 +277,7 @@ export async function verifyInfinitePayHandle(
         error.actionUrl,
       )
     }
+    if (error.status === 403) return linkFailure(error)
     return failure(502, error.message, error.code)
   }
 }

@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { publicationKeys } from '@/features/publicacoes/hooks/usePublications'
 import { legalProcessKeys } from '@/features/processos/hooks/useLegalProcesses'
 import { financialEntryKeys } from '@/features/financeiro/hooks/useFinancialEntries'
+import { billingKeys } from '@/features/financeiro/hooks/useBillings'
 import { paymentChargeKeys } from '@/features/financeiro/hooks/usePaymentCharges'
 import {
   getRecentNotifications,
@@ -159,6 +160,8 @@ export function useRealtimeNotifications(): void {
       if (batch.some((n) => n.kind === 'pagamento_recebido' || n.kind === 'pagamento_alerta')) {
         queryClient.invalidateQueries({ queryKey: financialEntryKeys.all })
         queryClient.invalidateQueries({ queryKey: paymentChargeKeys.all })
+        // A página da cobrança e o card do dashboard mudam com a baixa.
+        queryClient.invalidateQueries({ queryKey: billingKeys.all })
       }
 
       if (batch.length === 1) {

@@ -17,7 +17,10 @@
  * autorizada pelo token em `access.ts`.
  */
 
+import { billingPagePath } from '@/lib/billing/urls'
+import { toCents } from '@/lib/infinitepay/money'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { MIN_BILLING_AMOUNT_CENTS } from '@/types/billing.types'
 import type {
   PortalMovement,
   PortalPayment,
@@ -233,7 +236,7 @@ export interface PortalChargeRow {
   description: string
   amount_cents: number
   checkout_url: string | null
-  financial_entries: { due_date: string | null } | null
+  financial_entries: { id: string; due_date: string | null } | null
   payment_transactions:
     | {
         confirmed_at: string
@@ -247,9 +250,31 @@ export interface PortalChargeRow {
     | null
 }
 
+/** Uma cobrança no ar do cliente (migration 95), já com o caminho da página. */
+export interface PortalOpenBilling {
+  id: string
+  entry_id: string
+  description: string
+  amount_cents: number
+  due_date: string | null
+  /** `/pagar/<token>`, relativo: o portal está na mesma origem. */
+  pay_url: string
+}
+
+interface PortalBillingRow {
+  id: string
+  client_description: string
+  financial_entries: { id: string; amount: number; due_date: string | null }
+}
+
 /**
- * As cobranças por link do cliente (migration 67): as abertas, para pagar, e as
- * pagas, com o comprovante.
+ * As cobranças do cliente: as abertas, para pagar, e as pagas, com o
+ * comprovante.
+ *
+ * Aberta é a cobrança no ar (`billings`, migration 95), que leva à página
+ * `/pagar/<token>`; o link da InfinitePay de antes dela, ainda aberto, continua
+ * aparecendo enquanto o lançamento não tiver cobrança. Paga vem dos links
+ * (migration 67).
  *
  * O vínculo é o do lançamento (`financial_entries.client_id`), o mesmo que põe
  * a receita na ficha do cliente. Ficam de fora o link cancelado, o falho e o
@@ -260,40 +285,82 @@ export interface PortalChargeRow {
 export async function getPortalPayments(clientId: string): Promise<PortalPayment[]> {
   const admin = createAdminClient()
 
-  const { data, error } = await admin
-    .from('payment_charges')
-    .select(
-      `id, status, description, amount_cents, checkout_url,
-       financial_entries!inner(due_date),
-       payment_transactions(confirmed_at, capture_method, installments, amount_cents,
-         paid_amount_cents, receipt_url, refunded_at)`
-    )
-    .eq('financial_entries.client_id', clientId)
-    .in('status', ['open', 'paid'])
+  const [charges, billings] = await Promise.all([
+    admin
+      .from('payment_charges')
+      .select(
+        `id, status, description, amount_cents, checkout_url,
+         financial_entries!inner(id, due_date),
+         payment_transactions(confirmed_at, capture_method, installments, amount_cents,
+           paid_amount_cents, receipt_url, refunded_at)`
+      )
+      .eq('financial_entries.client_id', clientId)
+      .in('status', ['open', 'paid']),
+    admin
+      .from('billings')
+      .select('id, client_description, financial_entries!inner(id, amount, due_date)')
+      .is('canceled_at', null)
+      .eq('financial_entries.client_id', clientId)
+      .eq('financial_entries.status', 'pendente')
+      .eq('financial_entries.type', 'receita'),
+  ])
 
+  const error = charges.error ?? billings.error
   if (error) {
     console.error('[portal] consulta de pagamentos falhou:', error.message)
     throw new Error('Não foi possível carregar os pagamentos.')
   }
 
-  return toPortalPayments((data ?? []) as unknown as PortalChargeRow[])
+  const open = await Promise.all(
+    ((billings.data ?? []) as unknown as PortalBillingRow[]).map(
+      async (row): Promise<PortalOpenBilling> => ({
+        id: row.id,
+        entry_id: row.financial_entries.id,
+        description: row.client_description,
+        amount_cents: toCents(Number(row.financial_entries.amount)),
+        due_date: row.financial_entries.due_date,
+        pay_url: await billingPagePath(row.id),
+      })
+    )
+  )
+
+  return toPortalPayments((charges.data ?? []) as unknown as PortalChargeRow[], open)
 }
 
 /** Das linhas da consulta para o que a página mostra — puro, sem I/O. */
-export function toPortalPayments(rows: PortalChargeRow[]): PortalPayment[] {
+export function toPortalPayments(
+  rows: PortalChargeRow[],
+  billings: PortalOpenBilling[] = []
+): PortalPayment[] {
   const open: Extract<PortalPayment, { status: 'open' }>[] = []
   const paid: Extract<PortalPayment, { status: 'paid' }>[] = []
 
+  // A cobrança abaixo de R$ 1,00 não abre checkout: a página diria
+  // "indisponível", então nem aparece.
+  const payable = billings.filter((billing) => billing.amount_cents >= MIN_BILLING_AMOUNT_CENTS)
+  const billedEntries = new Set(payable.map((billing) => billing.entry_id))
+  for (const billing of payable) {
+    open.push({
+      id: billing.id,
+      status: 'open',
+      description: billing.description,
+      amount_cents: billing.amount_cents,
+      due_date: billing.due_date,
+      pay_url: billing.pay_url,
+    })
+  }
+
   for (const row of rows) {
     if (row.status === 'open') {
-      if (!row.checkout_url) continue
+      // O checkout que a página gerou é da cobrança, que já está na lista.
+      if (!row.checkout_url || billedEntries.has(row.financial_entries?.id ?? '')) continue
       open.push({
         id: row.id,
         status: 'open',
         description: row.description,
         amount_cents: row.amount_cents,
         due_date: row.financial_entries?.due_date ?? null,
-        checkout_url: row.checkout_url,
+        pay_url: row.checkout_url,
       })
       continue
     }

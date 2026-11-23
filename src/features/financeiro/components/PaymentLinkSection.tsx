@@ -10,35 +10,48 @@ import {
   Copy,
   CreditCard,
   ExternalLink,
+  Eye,
   Link2,
   Loader2,
   MessageCircle,
+  MousePointerClick,
+  Pencil,
   Receipt,
   Undo2,
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useCliente } from '@/features/clientes/hooks/useClientes'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import { pickClientPhone } from '@/lib/infinitepay/customer'
+import {
+  CLIENT_DESCRIPTION_MAX,
+  MIN_BILLING_AMOUNT_CENTS,
+  defaultClientDescription,
+  type Billing,
+} from '@/types/billing.types'
 import { getClientDisplayName, type ClientWithRelations } from '@/types/cliente.types'
 import { formatCurrency, type FinancialEntryWithRelations } from '@/types/financialEntry.types'
 import {
-  LIVE_CHARGE_STATUSES,
   PAYMENT_CHARGE_STATUS_LABELS,
   describeCaptureMethod,
+  isChargeLive,
   type PaymentChargeWithTransactions,
   type PaymentTransaction,
 } from '@/types/paymentCharge.types'
+import { useBillingForEntry } from '../hooks/useBillings'
 import { usePaymentChargesForEntry } from '../hooks/usePaymentCharges'
 import {
   useCancelPaymentLink,
-  useCreatePaymentLink,
+  useCloseBilling,
+  useOpenBilling,
   useRefundPaymentTransaction,
+  useUpdateBillingDescription,
 } from '../hooks/usePaymentChargeMutations'
 import { buildPaymentMessage, buildWhatsAppUrl } from '../utils/paymentLinkMessage'
 
@@ -61,39 +74,70 @@ function greetingName(client: ClientWithRelations | undefined): string | null {
 /**
  * A cobrança por link de uma receita, no detalhe do lançamento.
  *
- * Mostra o link em aberto (com Copiar, WhatsApp e Abrir), os pagamentos que a
- * InfinitePay confirmou e os links anteriores. Gerar e cancelar passam pelas
- * rotas — a tela não escreve em `payment_charges` (migration 67).
+ * O link que o escritório manda é o da página da cobrança (`/pagar/<token>`,
+ * migration 95): o checkout da InfinitePay só nasce quando o cliente clica em
+ * "Pagar". Aqui ficam esse link (Copiar, WhatsApp, Abrir, Encerrar), o que o
+ * cliente já fez com ele, os pagamentos que a InfinitePay confirmou e os links
+ * anteriores. Tudo passa por rota — a tela não escreve em `billings` nem em
+ * `payment_charges`.
+ *
+ * Um link da InfinitePay de antes da página, ainda vivo e sem cobrança no ar,
+ * continua aparecendo como era.
  */
 export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelations }) {
   const { can } = usePermissions()
-  const { data: charges = [], isLoading } = usePaymentChargesForEntry(entry.id)
-  const { data: settings } = useOfficeSettings()
-  const { data: client } = useCliente(entry.client_id ?? '')
-  const createLink = useCreatePaymentLink()
-  const cancelLink = useCancelPaymentLink()
-  const [confirmingCancel, setConfirmingCancel] = useState(false)
-
+  const isIncome = entry.type === 'receita'
   const isPending = entry.status === 'pendente'
   // Despesa não se cobra; receita paga à mão, sem link nenhum, não tem o que
   // mostrar aqui. O resumo embutido na lista responde sem esperar a consulta.
   const hasCharges = (entry.payment_charges?.length ?? 0) > 0
-  // Nor does one with no amount — a success fee to assess: without this the
-  // section would flash its loading state for nothing.
-  const chargeable = isPending && Number(entry.amount) > 0
-  if (entry.type !== 'receita' || (!chargeable && !hasCharges)) return null
+  const { data: charges = [], isLoading: chargesLoading } = usePaymentChargesForEntry(entry.id)
+  const {
+    data: billingData,
+    isLoading: billingLoading,
+    isError: billingFailed,
+  } = useBillingForEntry(isIncome && (isPending || hasCharges) ? entry.id : null)
+  const { data: settings } = useOfficeSettings()
+  const { data: client } = useCliente(entry.client_id ?? '')
+  const cancelLink = useCancelPaymentLink()
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+  // Nor does one under R$ 1,00 — a success fee to assess, at R$ 0: the
+  // InfinitePay refuses it, and the section would flash its loading state.
+  const chargeable =
+    isPending && Math.round(Number(entry.amount) * 100) >= MIN_BILLING_AMOUNT_CENTS
+  if (!isIncome || (!chargeable && !hasCharges)) return null
 
-  const live = charges.find((charge) => LIVE_CHARGE_STATUSES.includes(charge.status)) ?? null
+  const isLoading = chargesLoading || billingLoading
+  const billing = billingData?.billing ?? null
+  const activeBilling = billing && !billing.canceled_at ? billing : null
+  const billingUrl = billingData?.url ?? null
+  const showBilling = isPending && activeBilling !== null && billingUrl !== null
+
+  const now = new Date()
+  const live = charges.find((charge) => isChargeLive(charge, now)) ?? null
   const withPayments = charges.filter((charge) => charge.transactions.length > 0)
   const history = charges.filter(
     (charge) => charge.id !== live?.id && charge.transactions.length === 0,
   )
   const latest = charges[0] ?? null
   const handle = settings?.infinitepay_handle ?? null
+  // Link da InfinitePay vivo sem página no ar: o de antes da migration 95.
+  const legacyLive = showBilling ? null : live
   // Oferecer o link (ou dizer que falta configurar a conta) só faz sentido para
-  // quem pode gerar. Sem isso e sem cobrança nenhuma, a seção nem aparece.
-  const offersIssue = !live && chargeable && can('financeiro', 'create')
-  if (!isLoading && !live && withPayments.length === 0 && history.length === 0 && !offersIssue) {
+  // quem pode gerar. Sem isso e sem cobrança nenhuma, a seção nem aparece. Se
+  // a cobrança não carregou, não dá para saber se já existe: avisa, não oferece.
+  const offersIssue =
+    chargeable && !billingFailed && !activeBilling && !legacyLive && can('financeiro', 'create')
+  const showBillingFailure = billingFailed && isPending
+  if (
+    !isLoading &&
+    !showBilling &&
+    !showBillingFailure &&
+    !legacyLive &&
+    withPayments.length === 0 &&
+    history.length === 0 &&
+    !offersIssue
+  ) {
     return null
   }
 
@@ -120,19 +164,38 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
         <Skeleton className="h-20 w-full" />
       ) : (
         <>
-          {live?.status === 'creating' && (
-            <CreatingCard
-              charge={live}
-              canCancel={can('financeiro', 'update')}
-              canceling={cancelLink.isPending}
-              onCancel={() => cancel(live.id)}
+          {showBillingFailure && (
+            <p className="text-xs text-destructive">
+              Não foi possível carregar o link de pagamento. Feche e abra o lançamento de novo.
+            </p>
+          )}
+
+          {showBilling && activeBilling && billingUrl && (
+            <BillingCard
+              entry={entry}
+              billing={activeBilling}
+              url={billingUrl}
+              liveCharge={live}
+              lastFailure={latest?.status === 'failed' ? latest.error : null}
+              greeting={greetingName(client)}
+              phone={pickClientPhone(client)}
+              canUpdate={can('financeiro', 'update')}
             />
           )}
 
-          {live?.status === 'open' && live.checkout_url && (
+          {legacyLive?.status === 'creating' && (
+            <CreatingCard
+              charge={legacyLive}
+              canCancel={can('financeiro', 'update')}
+              canceling={cancelLink.isPending}
+              onCancel={() => cancel(legacyLive.id)}
+            />
+          )}
+
+          {legacyLive?.status === 'open' && legacyLive.checkout_url && (
             <OpenLinkCard
-              charge={live}
-              url={live.checkout_url}
+              charge={legacyLive}
+              url={legacyLive.checkout_url}
               greeting={greetingName(client)}
               phone={pickClientPhone(client)}
               canCancel={can('financeiro', 'update')}
@@ -140,7 +203,7 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
               canceling={cancelLink.isPending}
               onAskCancel={() => setConfirmingCancel(true)}
               onKeep={() => setConfirmingCancel(false)}
-              onCancel={() => cancel(live.id)}
+              onCancel={() => cancel(legacyLive.id)}
             />
           )}
 
@@ -150,50 +213,314 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
             )),
           )}
 
-          {offersIssue && (
-            <div className="space-y-1.5">
-              {latest?.status === 'failed' && latest.error && (
-                <p className="text-xs text-destructive">
-                  A última tentativa falhou: {latest.error}
-                </p>
-              )}
-              {!handle ? (
-                <p className="text-xs text-muted-foreground">
-                  A conta da InfinitePay ainda não foi configurada.{' '}
-                  {can('configuracoes', 'manage') ? (
-                    <Link href="/configuracoes?aba=pagamentos" className="underline">
-                      Configurar
-                    </Link>
-                  ) : (
-                    'Peça a um administrador: Configurações → Pagamentos.'
-                  )}
-                </p>
-              ) : (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={createLink.isPending}
-                    onClick={() => createLink.mutate(entry.id)}
-                  >
-                    {createLink.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Link2 className="h-3.5 w-3.5" />
-                    )}
-                    Gerar link de pagamento
-                  </Button>
-                  <p className="text-[11px] text-muted-foreground">
-                    Pix ou cartão, na conta ${handle}.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
+          {offersIssue &&
+            (!handle ? (
+              <p className="text-xs text-muted-foreground">
+                A conta da InfinitePay ainda não foi configurada.{' '}
+                {can('configuracoes', 'manage') ? (
+                  <Link href="/configuracoes?aba=pagamentos" className="underline">
+                    Configurar
+                  </Link>
+                ) : (
+                  'Peça a um administrador: Configurações → Pagamentos.'
+                )}
+              </p>
+            ) : (
+              <BillingIssueForm entry={entry} handle={handle} closedBilling={billing} />
+            ))}
 
           {history.length > 0 && <ChargeHistory charges={history} />}
         </>
+      )}
+    </div>
+  )
+}
+
+function formatShortMoment(iso: string): string {
+  return format(parseISO(iso), "dd/MM 'às' HH:mm", { locale: ptBR })
+}
+
+/** Gerar (ou religar) o link: com a descrição que o cliente vai ler. */
+function BillingIssueForm({
+  entry,
+  handle,
+  closedBilling,
+}: {
+  entry: FinancialEntryWithRelations
+  handle: string
+  /** A cobrança encerrada, se houver: religar mantém o endereço. */
+  closedBilling: Billing | null
+}) {
+  const openBilling = useOpenBilling()
+  const [description, setDescription] = useState(
+    closedBilling?.client_description ?? defaultClientDescription(entry),
+  )
+  const fieldId = `billing-description-${entry.id}`
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <label htmlFor={fieldId} className="text-xs text-muted-foreground">
+          Como o cliente vê
+        </label>
+        <Input
+          id={fieldId}
+          value={description}
+          maxLength={CLIENT_DESCRIPTION_MAX}
+          onChange={(event) => setDescription(event.target.value)}
+          className="h-8 text-sm"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Aparece na página, na mensagem e no checkout. Evite citar o processo.
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={openBilling.isPending || !description.trim()}
+        onClick={() => openBilling.mutate({ entryId: entry.id, clientDescription: description })}
+      >
+        {openBilling.isPending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Link2 className="h-3.5 w-3.5" />
+        )}
+        {closedBilling ? 'Reativar o link de pagamento' : 'Gerar link de pagamento'}
+      </Button>
+      <p className="text-[11px] text-muted-foreground">
+        {closedBilling
+          ? 'O mesmo endereço enviado antes volta a valer.'
+          : `Pix ou cartão, na conta $${handle}. O checkout só é gerado quando o cliente clica ` +
+            'em Pagar, com o valor do dia.'}
+      </p>
+    </div>
+  )
+}
+
+/** A cobrança no ar: o link que se manda, o que o cliente já fez com ele e o
+ * encerramento. */
+function BillingCard({
+  entry,
+  billing,
+  url,
+  liveCharge,
+  lastFailure,
+  greeting,
+  phone,
+  canUpdate,
+}: {
+  entry: FinancialEntryWithRelations
+  billing: Billing
+  url: string
+  /** O checkout da InfinitePay ainda pagável, se o cliente já abriu um. */
+  liveCharge: PaymentChargeWithTransactions | null
+  /** Por que a última tentativa de abrir o checkout falhou. */
+  lastFailure: string | null
+  greeting: string | null
+  phone: string | null
+  canUpdate: boolean
+}) {
+  const closeBilling = useCloseBilling()
+  const updateDescription = useUpdateBillingDescription()
+  const [confirmingClose, setConfirmingClose] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(billing.client_description)
+  const amount = Number(entry.amount)
+
+  const message = buildPaymentMessage({
+    greetingName: greeting,
+    description: billing.client_description,
+    amount,
+    url,
+  })
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success('Link copiado')
+    } catch {
+      // Clipboard bloqueada: o link está no campo, à mão para selecionar.
+      toast.error('Não foi possível copiar — selecione o link no campo.')
+    }
+  }
+
+  function saveDescription() {
+    updateDescription.mutate(
+      { entryId: entry.id, clientDescription: draft },
+      {
+        onSuccess: () => {
+          setEditing(false)
+          toast.success('Descrição trocada.')
+        },
+      },
+    )
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-lg border p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <Link2 className="h-3.5 w-3.5 text-info" aria-hidden />
+          Link de pagamento · {formatCurrency(amount)}
+        </p>
+        <span className="text-[11px] text-muted-foreground">
+          criado em {formatMoment(billing.created_at)}
+        </span>
+      </div>
+
+      <input
+        readOnly
+        value={url}
+        aria-label="Link de pagamento"
+        onFocus={(event) => event.currentTarget.select()}
+        className={cn(
+          'w-full rounded-md border bg-muted/40 px-2 py-1',
+          'font-mono text-[11px] text-muted-foreground',
+        )}
+      />
+
+      {editing ? (
+        <div className="space-y-1.5">
+          <Input
+            value={draft}
+            maxLength={CLIENT_DESCRIPTION_MAX}
+            aria-label="Como o cliente vê"
+            onChange={(event) => setDraft(event.target.value)}
+            className="h-8 text-sm"
+          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="xs"
+              disabled={updateDescription.isPending || !draft.trim()}
+              onClick={saveDescription}
+            >
+              {updateDescription.isPending && <Loader2 className="animate-spin" />}
+              Salvar
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={updateDescription.isPending}
+              onClick={() => {
+                setDraft(billing.client_description)
+                setEditing(false)
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs">
+          <span className="text-muted-foreground">Como o cliente vê: </span>
+          {billing.client_description}
+          {canUpdate && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label="Editar como o cliente vê"
+              className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+        </p>
+      )}
+
+      <ul className="space-y-0.5 text-xs text-muted-foreground">
+        <li className="flex items-center gap-1.5">
+          <Eye className="h-3 w-3" aria-hidden />
+          {billing.viewed_at
+            ? `Aberto pelo cliente em ${formatShortMoment(billing.viewed_at)}` +
+              (billing.last_viewed_at && billing.last_viewed_at !== billing.viewed_at
+                ? `; última vez em ${formatShortMoment(billing.last_viewed_at)}`
+                : '')
+            : 'Ainda não aberto pelo cliente.'}
+        </li>
+        {billing.checkout_clicked_at && (
+          <li className="flex items-center gap-1.5">
+            <MousePointerClick className="h-3 w-3" aria-hidden />
+            Foi ao pagamento em {formatShortMoment(billing.checkout_clicked_at)}
+            {liveCharge?.status === 'open' &&
+              (liveCharge.expires_at
+                ? `; checkout aberto até ${formatShortMoment(liveCharge.expires_at)}`
+                : '; checkout aberto, sem validade')}
+          </li>
+        )}
+        {lastFailure && (
+          <li className="text-destructive">
+            A última tentativa de abrir o checkout falhou: {lastFailure}
+          </li>
+        )}
+      </ul>
+
+      {confirmingClose ? (
+        // Confirmação embutida, sem segundo modal: diálogo dentro do diálogo
+        // briga pelo foco (ver PortalLinkDialog).
+        <div className="space-y-2 rounded-md bg-destructive/5 p-2.5">
+          <p className="text-xs">
+            A página passa a dizer ao cliente que a cobrança não está disponível. Quem já abriu o
+            checkout da InfinitePay ainda consegue pagar até ele vencer, e esse pagamento entra
+            com alerta. Gerar de novo religa o mesmo endereço.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="xs"
+              variant="destructive"
+              disabled={closeBilling.isPending}
+              onClick={() =>
+                closeBilling.mutate(entry.id, { onSettled: () => setConfirmingClose(false) })
+              }
+            >
+              {closeBilling.isPending && <Loader2 className="animate-spin" />}
+              Encerrar cobrança
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={closeBilling.isPending}
+              onClick={() => setConfirmingClose(false)}
+            >
+              Manter
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          <Button type="button" size="xs" variant="outline" onClick={() => void copy()}>
+            <Copy />
+            Copiar
+          </Button>
+          <Button type="button" size="xs" variant="outline" asChild>
+            <a href={buildWhatsAppUrl(phone, message)} target="_blank" rel="noopener noreferrer">
+              <MessageCircle />
+              WhatsApp
+            </a>
+          </Button>
+          <Button type="button" size="xs" variant="ghost" asChild>
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink />
+              Abrir
+            </a>
+          </Button>
+          {canUpdate && (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => setConfirmingClose(true)}
+            >
+              <XCircle />
+              Encerrar
+            </Button>
+          )}
+        </div>
       )}
     </div>
   )

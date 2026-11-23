@@ -227,13 +227,15 @@ async function settle(
   }
 
   const wasCanceled = charge.status === 'canceled'
+  // `superseded` (migration 95) segue como `open`: o link foi trocado por um
+  // mais novo, mas fomos nós que o oferecemos — pagar por ele quita.
   let chargeChanged = false
   if (charge.status !== 'paid') {
     const { data, error } = await supabase
       .from('payment_charges')
       .update({ status: 'paid' })
       .eq('id', charge.id)
-      .in('status', ['creating', 'open', 'canceled'])
+      .in('status', ['creating', 'open', 'canceled', 'superseded'])
       .select('id')
     if (error) throw error
     chargeChanged = (data ?? []).length > 0

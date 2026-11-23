@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { usePermissions } from '@/hooks/usePermissions'
 import { infinitePayHandleSchema } from '@/schemas/officeSettings.schema'
+import type { InfinitePaySetupStatus } from '@/types/paymentCharge.types'
 import {
   useOfficeSettings,
   useSaveInfinitePayHandle,
@@ -23,9 +24,8 @@ import type { InfinitePayVerification } from '../services/officeSettings.service
 import { StatusRow } from './StatusRow'
 
 interface PaymentSettingsCardProps {
-  /** Onde a InfinitePay entrega os pagamentos, montado no servidor a partir de
-   * `APP_PUBLIC_URL`. Null quando a aplicação não tem endereço público. */
-  webhookEndpoint: string | null
+  /** Montado no servidor a partir do ambiente (`infinitePaySetupStatus`). */
+  setup: InfinitePaySetupStatus
 }
 
 /**
@@ -35,7 +35,8 @@ interface PaymentSettingsCardProps {
  * Só quem administra Configurações troca a conta: é ela que decide para onde
  * vai o dinheiro dos clientes.
  */
-export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProps) {
+export function PaymentSettingsCard({ setup }: PaymentSettingsCardProps) {
+  const { webhookEndpoint, apiKeyConfigured, devHandle } = setup
   const { data: settings = null, isLoading } = useOfficeSettings()
   const { can } = usePermissions()
   const canEdit = can('configuracoes', 'manage')
@@ -104,6 +105,34 @@ export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProp
             )}
           </StatusRow>
 
+          <StatusRow
+            ok={apiKeyConfigured}
+            title={
+              apiKeyConfigured
+                ? 'Links com pagamento único e validade'
+                : 'Links sem validade nem pagamento único'
+            }
+          >
+            {apiKeyConfigured ? (
+              'Cada checkout aceita um pagamento só e vence no fim do dia seguinte ao clique.'
+            ) : (
+              <>
+                Sem a chave, o checkout aceita mais de um pagamento e nunca vence. Crie uma API Key
+                nas Configurações do Checkout da InfinitePay, na mesma conta acima, e defina{' '}
+                <code className="rounded bg-muted px-1 py-0.5">INFINITEPAY_API_KEY</code> no
+                servidor.
+              </>
+            )}
+          </StatusRow>
+
+          {devHandle && (
+            <StatusRow ok title={`Em desenvolvimento: links na conta $${devHandle}`}>
+              <code className="rounded bg-muted px-1 py-0.5">INFINITEPAY_DEV_HANDLE</code> vale só
+              no <code className="rounded bg-muted px-1 py-0.5">next dev</code>: a produção
+              continua usando a conta configurada acima.
+            </StatusRow>
+          )}
+
           {handle && (
             <VerificationRow
               result={verification}
@@ -115,8 +144,9 @@ export function PaymentSettingsCard({ webhookEndpoint }: PaymentSettingsCardProp
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Parcelamento máximo e repasse dos juros ao cliente são definidos no app da InfinitePay,
-          não por link.
+          O link que o escritório manda é a página da cobrança; o checkout da InfinitePay é gerado
+          quando o cliente clica em Pagar. Parcelamento máximo e repasse dos juros ao cliente são
+          definidos no app da InfinitePay.
         </p>
       </CardContent>
     </Card>

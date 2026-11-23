@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Bar, BarChart, XAxis } from 'recharts'
-import { differenceInCalendarDays, format, parseISO } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
@@ -25,17 +25,15 @@ import { cn } from '@/lib/utils'
 import { formatRelative } from '@/utils/date'
 import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency } from '@/types/financialEntry.types'
-import {
-  describeCaptureMethod,
-  type PaymentCharge,
-  type RecentPayment,
-} from '@/types/paymentCharge.types'
+import type { OpenBilling } from '@/types/billing.types'
+import { describeCaptureMethod, type RecentPayment } from '@/types/paymentCharge.types'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
 import {
   useFinancialSummary,
   useMonthlyCashFlow,
 } from '@/features/financeiro/hooks/useFinancialEntries'
-import { useLiveCharges, useRecentPayments } from '@/features/financeiro/hooks/usePaymentCharges'
+import { useOpenBillings } from '@/features/financeiro/hooks/useBillings'
+import { useRecentPayments } from '@/features/financeiro/hooks/usePaymentCharges'
 import type { FinancialSummary } from '@/features/financeiro/services/financialEntries.service'
 import {
   buildPaymentMessage,
@@ -160,20 +158,22 @@ function MonthBlock({ summary }: { summary: FinancialSummary }) {
 
 // ── Cobranças InfinitePay ────────────────────────────────────────────────────
 
-function OpenChargeRow({ charge }: { charge: PaymentCharge }) {
-  const amount = charge.amount_cents / 100
-  const url = charge.checkout_url
-  const days = differenceInCalendarDays(new Date(), parseISO(charge.created_at))
-  const age =
-    charge.status === 'creating'
-      ? 'gerando o link'
-      : days === 0
-        ? 'link de hoje'
-        : `link há ${pluralize(days, 'dia', 'dias')}`
+/** Uma cobrança no ar (`/pagar/<token>`): o lançamento, de quem, o que o
+ * cliente já fez, e o link para mandar de novo. */
+function OpenBillingRow({ item }: { item: OpenBilling }) {
+  const { billing, entry, url } = item
+  const status = billing.checkout_clicked_at
+    ? 'foi ao pagamento'
+    : billing.viewed_at
+      ? 'aberto pelo cliente'
+      : 'não aberto'
+  const due = entry.due_date
+    ? `vence ${format(parseISO(entry.due_date), 'dd/MM', { locale: ptBR })}`
+    : null
 
-  async function copy(link: string) {
+  async function copy() {
     try {
-      await navigator.clipboard.writeText(link)
+      await navigator.clipboard.writeText(url)
       toast.success('Link copiado')
     } catch {
       toast.error('Não foi possível copiar o link.')
@@ -183,46 +183,46 @@ function OpenChargeRow({ charge }: { charge: PaymentCharge }) {
   return (
     <li className={ROW}>
       <div className="min-w-0 flex-1">
-        <Link href={entryHref(charge.financial_entry_id)} className={ROW_LINK}>
-          {charge.description}
+        <Link href={entryHref(entry.id)} className={ROW_LINK}>
+          {entry.description}
         </Link>
         <p className="truncate text-xs text-muted-foreground">
-          {[charge.customer_name, age].filter(Boolean).join(' · ')}
+          {[item.client_name, due, status].filter(Boolean).join(' · ')}
         </p>
       </div>
-      {url && (
-        <div className={ROW_ACTIONS}>
-          <button
-            type="button"
-            onClick={() => void copy(url)}
-            aria-label={`Copiar o link de "${charge.description}"`}
-            className={ICON_ACTION}
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-          {/* Sem telefone: o WhatsApp abre para escolher o contato, com a
-              mensagem pronta. O telefone do cliente exigiria carregar o
-              cadastro de cada um; o detalhe do lançamento já faz isso. */}
-          <a
-            href={buildWhatsAppUrl(
-              null,
-              buildPaymentMessage({
-                greetingName: charge.customer_name,
-                description: charge.description,
-                amount,
-                url,
-              })
-            )}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Enviar o link de "${charge.description}" pelo WhatsApp`}
-            className={ICON_ACTION}
-          >
-            <MessageCircle className="h-3.5 w-3.5" />
-          </a>
-        </div>
-      )}
-      <span className="shrink-0 text-sm font-bold tabular-nums">{formatCurrency(amount)}</span>
+      <div className={ROW_ACTIONS}>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label={`Copiar o link de "${entry.description}"`}
+          className={ICON_ACTION}
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+        {/* Sem telefone: o WhatsApp abre para escolher o contato, com a
+            mensagem pronta. O telefone do cliente exigiria carregar o
+            cadastro de cada um; o detalhe do lançamento já faz isso. */}
+        <a
+          href={buildWhatsAppUrl(
+            null,
+            buildPaymentMessage({
+              greetingName: item.client_name,
+              description: billing.client_description,
+              amount: entry.amount,
+              url,
+            })
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Enviar o link de "${entry.description}" pelo WhatsApp`}
+          className={ICON_ACTION}
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      <span className="shrink-0 text-sm font-bold tabular-nums">
+        {formatCurrency(entry.amount)}
+      </span>
     </li>
   )
 }
@@ -277,13 +277,14 @@ function PaymentRow({ payment }: { payment: RecentPayment }) {
 function ChargesBlock() {
   const { can } = usePermissions()
   const { data: settings, isLoading: settingsLoading } = useOfficeSettings()
-  const live = useLiveCharges()
+  const open = useOpenBillings()
   const payments = useRecentPayments(RECENT_DAYS)
 
-  const charges = live.data ?? []
+  const billings = open.data ?? []
   const received = payments.data ?? []
-  const loading = settingsLoading || live.isLoading || payments.isLoading
-  const openTotal = charges.reduce((sum, charge) => sum + charge.amount_cents, 0) / 100
+  const loading = settingsLoading || open.isLoading || payments.isLoading
+  const openTotal =
+    billings.reduce((sum, item) => sum + Math.round(item.entry.amount * 100), 0) / 100
 
   const heading = (
     <h3 className={cn(HEADING, 'flex items-center justify-between gap-2 px-2')}>
@@ -308,7 +309,7 @@ function ChargesBlock() {
 
   // Sem conta e sem histórico: o convite. Com histórico, as listas aparecem
   // mesmo depois de a tag ser removida — os links continuam pagáveis.
-  if (!settings?.infinitepay_handle && charges.length === 0 && received.length === 0) {
+  if (!settings?.infinitepay_handle && billings.length === 0 && received.length === 0) {
     return (
       <section className="space-y-1 px-2 py-3">
         {heading}
@@ -337,32 +338,32 @@ function ChargesBlock() {
     <section className="px-2 py-3">
       {heading}
 
-      {(live.isError || payments.isError) && (
+      {(open.isError || payments.isError) && (
         <p className="px-2 py-2 text-sm text-muted-foreground">
           Não foi possível carregar as cobranças.
         </p>
       )}
 
       <div className={cn(SUBHEADING, 'flex items-baseline justify-between gap-2')}>
-        <span>Em aberto · {formatCount(charges.length)}</span>
-        {charges.length > 0 && (
+        <span>Em aberto · {formatCount(billings.length)}</span>
+        {billings.length > 0 && (
           <span className="font-semibold normal-case tracking-normal tabular-nums">
             {formatCurrency(openTotal)}
           </span>
         )}
       </div>
-      {charges.length === 0 ? (
+      {billings.length === 0 ? (
         <p className="px-2 py-1 text-xs text-muted-foreground">Nenhum link esperando pagamento.</p>
       ) : (
         <ul>
-          {charges.slice(0, LIST_ROWS).map((charge) => (
-            <OpenChargeRow key={charge.id} charge={charge} />
+          {billings.slice(0, LIST_ROWS).map((item) => (
+            <OpenBillingRow key={item.billing.id} item={item} />
           ))}
         </ul>
       )}
-      {charges.length > LIST_ROWS && (
+      {billings.length > LIST_ROWS && (
         <p className="px-2 text-xs text-muted-foreground">
-          e mais {pluralize(charges.length - LIST_ROWS, 'link', 'links')}
+          e mais {pluralize(billings.length - LIST_ROWS, 'link', 'links')}
         </p>
       )}
 

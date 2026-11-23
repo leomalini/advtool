@@ -10,7 +10,7 @@ import {
   deleteFinancialEntry,
 } from '../services/financialEntries.service'
 import type { AssessmentRow } from '../utils/successFees'
-import { createPaymentLink } from '../services/paymentCharges.service'
+import { openBilling } from '../services/billings.service'
 import { financialEntryKeys } from './useFinancialEntries'
 import { paymentChargeKeys } from './usePaymentCharges'
 import { notifyPaymentLinkError } from './usePaymentChargeMutations'
@@ -81,7 +81,7 @@ export function useCreateFinancialEntry() {
       let paymentLink: CreatedPaymentLink | null = null
       if (generatePaymentLink) {
         try {
-          await createPaymentLink(entry.id)
+          await openBilling(entry.id)
           paymentLink = { ok: true }
         } catch (error) {
           paymentLink = { ok: false, error }

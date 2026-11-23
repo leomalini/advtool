@@ -1,48 +1,10 @@
 'use client'
 
-import { CircleAlert, CircleCheck, Clock, Loader2, Receipt } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { CircleAlert, CircleCheck, Clock, Loader2 } from 'lucide-react'
 import { formatCurrency } from '@/types/financialEntry.types'
 import { describeCaptureMethod } from '@/types/paymentCharge.types'
 import { usePaymentReturn, type PaymentReturnParams } from '../hooks/usePaymentReturn'
-
-function Card({
-  icon,
-  title,
-  children,
-}: {
-  icon: React.ReactNode
-  title: string
-  children?: React.ReactNode
-}) {
-  return (
-    <div
-      className={cn(
-        'mx-auto flex w-full max-w-md flex-col items-center gap-3',
-        'px-4 py-16 text-center',
-      )}
-    >
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted">{icon}</div>
-      <h1 className="text-xl font-semibold">{title}</h1>
-      {children}
-    </div>
-  )
-}
-
-function ReceiptLink({ url }: { url: string | null }) {
-  if (!url) return null
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-    >
-      <Receipt className="size-4" aria-hidden />
-      Ver o comprovante
-    </a>
-  )
-}
+import { PaymentCard as Card, ReceiptLink } from './PaymentCard'
 
 /**
  * A página para onde o cliente volta depois de pagar.
