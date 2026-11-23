@@ -1,6 +1,7 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
+import type { ClientMessageInput } from '@/schemas/clientMessage.schema'
 import {
   EMAIL_MESSAGE_LIST_COLUMNS,
   type EmailMessageContent,
@@ -117,6 +118,57 @@ export function sendPortalLinkEmail(clientId: string): Promise<EmailMessageSumma
     `/api/clientes/${clientId}/portal-link/email`,
     'Não foi possível enviar o link por e-mail.',
   )
+}
+
+/** Como a mensagem avulsa vai chegar — monta no servidor, não grava nada. */
+export interface ClientMessagePreview {
+  to: string
+  subject: string
+  html: string
+}
+
+export async function previewClientMessage(
+  clientId: string,
+  input: ClientMessageInput,
+): Promise<ClientMessagePreview> {
+  const response = await fetch(`/api/clientes/${clientId}/emails`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, preview: true }),
+  })
+  const body = (await response.json().catch(() => null)) as {
+    error?: unknown
+    preview?: ClientMessagePreview
+  } | null
+  if (!response.ok || !body?.preview) {
+    throw new EmailSendError(
+      typeof body?.error === 'string' ? body.error : 'Não foi possível montar a prévia.',
+      null,
+    )
+  }
+  return body.preview
+}
+
+export async function sendClientMessage(
+  clientId: string,
+  input: ClientMessageInput,
+): Promise<EmailMessageSummary> {
+  const response = await fetch(`/api/clientes/${clientId}/emails`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, preview: false }),
+  })
+  const body = (await response.json().catch(() => null)) as {
+    error?: unknown
+    message?: EmailMessageSummary | null
+  } | null
+  if (!response.ok || !body?.message) {
+    throw new EmailSendError(
+      typeof body?.error === 'string' ? body.error : 'Não foi possível enviar a mensagem.',
+      body?.message ?? null,
+    )
+  }
+  return body.message
 }
 
 export function sendChargeLinkEmail(chargeId: string): Promise<EmailMessageSummary> {

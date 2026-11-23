@@ -31,10 +31,15 @@ import {
 import { PortalLinkButton } from './PortalLinkDialog'
 import { pickClientEmail } from '@/utils/clientContacts'
 import { ClientEmailsTab } from '@/features/emails/components/ClientEmailsTab'
+import { ClientMessageButton } from '@/features/emails/components/ClientMessageButton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { CreateClientInput } from '@/schemas/cliente.schema'
 import type { CreateTaskInput } from '@/schemas/task.schema'
-import { getClientDisplayName, getClientDocument } from '@/types/cliente.types'
+import {
+  getClientDisplayName,
+  getClientDocument,
+  getClientGreetingName,
+} from '@/types/cliente.types'
 import { getCrmItemDisplayTitle } from '@/types/crmItem.types'
 import { getInitials } from '@/utils/profile'
 import { useCliente, useClientComments, useClientesPendencies } from '../hooks/useClientes'
@@ -458,6 +463,14 @@ export function ClienteDetailPage({
                   emailEnabled={emailEnabled}
                   emailTo={pickClientEmail(cliente)}
                 />
+                <Can resource="clientes" action="update">
+                  <ClientMessageButton
+                    clientId={clienteId}
+                    recipient={pickClientEmail(cliente)}
+                    emailEnabled={emailEnabled}
+                    greetingName={getClientGreetingName(cliente)}
+                  />
+                </Can>
                 <Can resource="documentos" action="view">
                   <Button size="sm" variant="outline" onClick={() => setGenerateOpen(true)}>
                     <FileSignature className="h-3.5 w-3.5 mr-1.5" />

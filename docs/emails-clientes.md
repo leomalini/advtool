@@ -1,12 +1,12 @@
 # E-mails para clientes — plano
 
 > **Status:** planejado em 21/11/2026 e **revisado no mesmo dia contra a `main`
-> em `52ab3ca` (PR #80)**. **PRs 1, 2 e 3 implementados** (ver "Como ficou");
-> migrations 95 e 96 ainda não aplicadas. PR 4 por fazer.
-> **Branches:** PR 1 em `feat/emails-clientes`, criada da `main` em `52ab3ca`;
-> PR 2 em `feat/emails-resumo-diario`, empilhada na do PR 1; PR 3 em
-> `feat/emails-cobranca`, empilhada na do PR 2. As migrations 72–75
-> (movimentações) que a primeira versão esperava já estão na `main`.
+> em `52ab3ca` (PR #80)**. **Os quatro PRs implementados** (ver "Como ficou"
+> de cada um); migrations 95 e 96 ainda não aplicadas, nenhum envio real feito.
+> **Branches, empilhadas nesta ordem:** `feat/emails-clientes` (PR 1, da `main`
+> em `52ab3ca`) → `feat/emails-resumo-diario` (PR 2) → `feat/emails-cobranca`
+> (PR 3) → `feat/emails-mensagem` (PR 4). As migrations 72–75 (movimentações)
+> que a primeira versão esperava já estão na `main`.
 
 O escritório passa a falar com o cliente por e-mail, a partir do domínio
 `cordeiropessigato.com.br`: um resumo diário do que andou nos processos, o link
@@ -326,8 +326,9 @@ ideia da decisão 3, aplicada por cobrança.
 
 Na ficha do cliente, **Enviar e-mail**: assunto e texto (quebras de linha
 preservadas, sem HTML do usuário — escapado). Sai no layout do escritório com
-assinatura de quem enviou (`profiles.full_name` + `profiles.oab_number`).
-Exige `clientes:update`. Anexo fica para depois.
+assinatura de quem enviou (`profiles.full_name` e a OAB como
+`OAB/<oab_state> <oab_number>`). Antes de enviar, a tela mostra o e-mail pronto
+(**Revisar**). Exige `clientes:update`. Anexo fica para depois.
 
 ## Telas
 
@@ -397,7 +398,7 @@ supabase/migrations/20260101000096_client_email_digest.sql
    ficha, ativação pelo filtro. **Feito — ver "Como ficou o PR 2".**
 3. **Cobrança.** Envio do link, lembretes no cron, confirmação no
    `confirmPayment`. **Feito — ver "Como ficou o PR 3".**
-4. **Mensagem avulsa.**
+4. **Mensagem avulsa.** **Feito — ver "Como ficou o PR 4".**
 
 Verificação de cada PR: `npx tsc --noEmit`, `npx eslint src`, `npx next build`;
 templates no preview do React Email; telas numa página temporária sob
@@ -630,6 +631,63 @@ Roteiro de conferência, depois das migrations e das variáveis (com
    <base>/api/cron/emails`) → `reminders.sent: 1`. Chamar de novo → nada sai.
 4. Um link mandado só pelo WhatsApp: nenhum lembrete nem confirmação por
    e-mail.
+
+## Como ficou o PR 4 (23/11/2026)
+
+Branch `feat/emails-mensagem`, empilhada na `feat/emails-cobranca`. Sem
+migration (a 95 já tinha o tipo `custom_message`).
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Validação | `src/schemas/clientMessage.schema.ts` | Assunto de 1 a 150 caracteres, numa linha só (quebra viraria cabeçalho novo); mensagem de 1 a 10.000. O mesmo schema no formulário e na rota |
+| Template | `src/emails/ClientMessageEmail.tsx` | Parágrafos por linha em branco, `<br>` dentro deles; tudo escapado pelo React. Assinatura com nome, OAB e escritório |
+| Rota | `POST /api/clientes/[id]/emails` | `clientes:update`. `preview: true` monta e devolve o HTML sem gravar (funciona mesmo sem o envio configurado); sem ele, manda e registra. Quem assina vem da conta de quem pede, nunca do corpo |
+| Tela | `ClientMessageButton`, no cabeçalho da ficha do cliente | Escrever → **Revisar** (o e-mail como o cliente vai ler, num iframe isolado) → **Enviar**. Começa com "Olá, <nome>!". Fechar não apaga o rascunho; só o envio limpa. Sem e-mail ou sem envio configurado, o diálogo diz por quê e não deixa revisar |
+
+Decidido na implementação:
+
+- **A revisão é a confirmação.** O e-mail sai em nome do escritório e não
+  volta; ninguém manda sem ver a mensagem pronta, com a assinatura.
+- **Texto puro, sem Markdown nem link clicável.** Endereço digitado aparece
+  como texto; o cliente de e-mail do destinatário costuma torná-lo clicável.
+- **O formulário fica fora do diálogo** (no componente do botão), para o
+  rascunho sobreviver a um clique fora da janela.
+- **A caixa de texto tem altura mínima própria**: o `Textarea` do projeto
+  cresce com o conteúdo (`field-sizing-content`) e ignora `rows` — com ele, a
+  caixa tinha 78 px para escrever uma carta.
+
+Verificação:
+
+- `tsc`, `eslint` (zero problemas nos arquivos tocados), `next build`, fim de
+  linha conferido pela comparação das estatísticas do diff.
+- **Escape e formatação**, renderizando uma mensagem com
+  `<script>alert(1)</script>`, `<b>`, um `<a href>`, lista, duas linhas em
+  branco seguidas e quebras CRLF: nenhuma tag injetada no HTML (tudo vira
+  `&lt;…&gt;`), quatro parágrafos, a lista com `<br>`, a assinatura certa.
+  Junto, o schema: assunto com quebra de linha, mensagem só com espaços e
+  assunto de 151 caracteres recusados; espaços nas pontas aparados. 12 de 12.
+  (Um primeiro teste deu falso negativo: contava o começo da mensagem também
+  na prévia oculta do e-mail. O DOM confirmou os quatro parágrafos, e o teste
+  foi corrigido.)
+- **O diálogo, no navegador**, sem sessão: revisar sem assunto mostra
+  "Escreva o assunto."; com assunto, o pedido vai à rota, que responde 401, e
+  o toast aparece; fechar e reabrir mantém assunto e mensagem; cliente sem
+  e-mail mostra o motivo e desabilita "Revisar".
+
+Não verificado:
+
+- A prévia de verdade (exige sessão) e o envio real.
+
+Roteiro de conferência (com `EMAIL_SANDBOX_TO`):
+
+1. Ficha de um cliente com e-mail → **Enviar e-mail** → escrever o assunto e
+   dois parágrafos → **Revisar**: o e-mail aparece com a sua assinatura (nome
+   e OAB, se o perfil tiver).
+2. **Voltar a editar**, mudar o texto, revisar de novo, **Enviar**. A
+   mensagem chega na caixa de teste e aparece na aba E-mails como
+   "Mensagem do escritório", com você como remetente.
+3. Responder ao e-mail recebido: a resposta vai para o e-mail do escritório
+   (Configurações → Geral).
 
 ## Pendências do operador (podem começar já, em paralelo ao código)
 
