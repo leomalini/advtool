@@ -3,9 +3,10 @@
 > **Status:** planejado em 21/11/2026 e **revisado no mesmo dia contra a `main`
 > em `52ab3ca` (PR #80)**. **Os quatro PRs implementados** (ver "Como ficou"
 > de cada um); migrations 95 e 96 ainda não aplicadas, nenhum envio real feito.
-> **Branches, empilhadas nesta ordem:** `feat/emails-clientes` (PR 1, da `main`
-> em `52ab3ca`) → `feat/emails-resumo-diario` (PR 2) → `feat/emails-cobranca`
-> (PR 3) → `feat/emails-mensagem` (PR 4). As migrations 72–75 (movimentações)
+> **Para continuar:** branch `feat/emails-clientes-completo`, com os quatro PRs
+> (um commit cada, sobre a `main` em `52ab3ca`) e o mapa de retomada em
+> [`emails-clientes-retomada.md`](emails-clientes-retomada.md) — o que falta,
+> em ordem, e o que se aprendeu no caminho. As migrations 72–75 (movimentações)
 > que a primeira versão esperava já estão na `main`.
 
 O escritório passa a falar com o cliente por e-mail, a partir do domínio
@@ -625,7 +626,9 @@ Roteiro de conferência, depois das migrations e das variáveis (com
    → **E-mail** → confirmar. O e-mail chega com "Pagar"; o cartão mostra
    "Link de pagamento · Enviado".
 2. Pagar pelo link (valor mínimo, de teste). Na volta, a confirmação chega e
-   aparece no cartão e na aba E-mails do cliente (para quem vê o Financeiro).
+   aparece na aba E-mails do cliente (para quem vê o Financeiro) e em
+   Configurações → E-mail. O cartão do link some, porque a cobrança deixou de
+   estar em aberto.
 3. Outra receita com vencimento daqui a 2 dias, link enviado há mais de 24 h:
    chamar o cron à mão (`curl -H "Authorization: Bearer $CRON_SECRET"
    <base>/api/cron/emails`) → `reminders.sent: 1`. Chamar de novo → nada sai.
