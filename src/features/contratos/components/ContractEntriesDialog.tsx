@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { cn } from '@/lib/utils'
 import type { Contract } from '@/types/contract.types'
 import { formatCurrency, formatPercent } from '@/types/financialEntry.types'
+import { useEnableRemindersBatch } from '@/features/financeiro/hooks/usePaymentChargeMutations'
 import { useCreateContractEntries } from '../hooks/useContractMutations'
 import {
   buildContractEntryDrafts,
@@ -48,6 +50,7 @@ export function ContractEntriesDialog({
   afterSigning = false,
 }: ContractEntriesDialogProps) {
   const createEntries = useCreateContractEntries()
+  const enableReminders = useEnableRemindersBatch()
 
   return (
     <Dialog open={open} onOpenChange={(value) => !createEntries.isPending && onOpenChange(value)}>
@@ -62,12 +65,30 @@ export function ContractEntriesDialog({
           <EntriesForm
             contract={contract}
             afterSigning={afterSigning}
-            isLoading={createEntries.isPending}
+            isLoading={createEntries.isPending || enableReminders.isPending}
             onCancel={() => onOpenChange(false)}
-            onConfirm={(drafts) =>
+            onConfirm={(drafts, withReminders) =>
               createEntries.mutate(
                 { contract, drafts },
-                { onSuccess: () => onOpenChange(false) }
+                {
+                  onSuccess: (created) => {
+                    // Só as parcelas com vencimento: a régua conta a partir dele.
+                    const installments = created
+                      .filter(
+                        (entry) =>
+                          entry.type === 'receita' &&
+                          entry.settlement_kind === 'scheduled' &&
+                          !!entry.due_date &&
+                          Number(entry.amount) >= 1
+                      )
+                      .map((entry) => entry.id)
+                    if (withReminders && installments.length > 0) {
+                      enableReminders.mutate(installments, { onSettled: () => onOpenChange(false) })
+                    } else {
+                      onOpenChange(false)
+                    }
+                  },
+                }
               )
             }
           />
@@ -88,10 +109,11 @@ function EntriesForm({
   afterSigning: boolean
   isLoading: boolean
   onCancel: () => void
-  onConfirm: (drafts: ContractEntryDraft[]) => void
+  onConfirm: (drafts: ContractEntryDraft[], withReminders: boolean) => void
 }) {
   const { can, isLoading: permissionsLoading } = usePermissions()
   const [drafts, setDrafts] = useState(() => buildContractEntryDrafts(contract))
+  const [withReminders, setWithReminders] = useState(false)
   const kind = contractEntryKind(contract.kind)
 
   const intro = [
@@ -280,13 +302,29 @@ function EntriesForm({
         </p>
       )}
 
+      {kind.type === 'receita' && can('financeiro', 'create') && (
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            checked={withReminders}
+            onCheckedChange={(checked) => setWithReminders(checked === true)}
+            className="mt-0.5"
+          />
+          <span>
+            Gerar o link e cobrar automaticamente as parcelas
+            <span className="block text-xs text-muted-foreground">
+              Cada parcela ganha a página de pagamento e os lembretes da régua.
+            </span>
+          </span>
+        </label>
+      )}
+
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={isLoading}>
           Agora não
         </Button>
         <Button
           disabled={isLoading || permissionsLoading || hasErrors || drafts.length === 0}
-          onClick={() => onConfirm(drafts)}
+          onClick={() => onConfirm(drafts, withReminders)}
         >
           {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
           {drafts.length === 1 ? 'Criar o lançamento' : `Criar ${drafts.length} lançamentos`}

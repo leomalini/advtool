@@ -144,7 +144,7 @@ export function FinancialEntriesTab({
   async function handleCreate(
     data: FinancialEntryInput,
     attachments: PendingAttachments,
-    { generatePaymentLink }: FinancialEntrySubmitOptions
+    { generatePaymentLink, billingReminders }: FinancialEntrySubmitOptions
   ) {
     const created = await createEntry.mutateAsync({
       ...data,
@@ -154,6 +154,7 @@ export function FinancialEntriesTab({
       contract_id: lockedContractId ?? data.contract_id,
       attachments,
       generatePaymentLink,
+      billingReminders,
     })
     setCreateOpen(false)
     // Link pedido: o detalhe abre já com Copiar e WhatsApp.

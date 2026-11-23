@@ -34,6 +34,9 @@ export interface OfficeSettings {
   d4sign_balance_credit?: number | null
   d4sign_balance_sent?: number | null
   d4sign_balance_checked_at?: string | null
+  /** Dias da régua de cobrança em relação ao vencimento (migration 96).
+   * Opcional pelo mesmo motivo dos campos da D4Sign. */
+  billing_reminder_offsets?: number[]
   updated_by: string | null
   updated_at: string
 }
@@ -50,6 +53,7 @@ export type OfficeSettingsInput = Omit<
   | 'd4sign_balance_credit'
   | 'd4sign_balance_sent'
   | 'd4sign_balance_checked_at'
+  | 'billing_reminder_offsets'
   | 'updated_by'
   | 'updated_at'
 >

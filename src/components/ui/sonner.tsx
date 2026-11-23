@@ -16,7 +16,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      // Um modal aberto põe `pointer-events: none` no body; sem isto, o botão
+      // do aviso (ex.: "Desfazer") fica inclicável por cima dele.
+      className="toaster group pointer-events-auto"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,

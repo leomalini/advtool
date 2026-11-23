@@ -49,6 +49,7 @@ import { FinancialCashFlowChart } from './FinancialCashFlowChart'
 import { FinancialSituationBadge } from './FinancialSituationBadge'
 import { AttachmentCountBadge } from './AttachmentCountBadge'
 import { PaymentLinkBadge } from './PaymentLinkBadge'
+import { BillingsPanel } from './BillingsPanel'
 import { SuccessFeesPanel } from './SuccessFeesPanel'
 import { AssessSuccessFeeDialog } from './AssessSuccessFeeDialog'
 import {
@@ -183,9 +184,14 @@ export function FinanceiroContent() {
   async function handleCreate(
     data: FinancialEntryInput,
     attachments: PendingAttachments,
-    { generatePaymentLink }: FinancialEntrySubmitOptions
+    { generatePaymentLink, billingReminders }: FinancialEntrySubmitOptions
   ) {
-    const created = await createEntry.mutateAsync({ ...data, attachments, generatePaymentLink })
+    const created = await createEntry.mutateAsync({
+      ...data,
+      attachments,
+      generatePaymentLink,
+      billingReminders,
+    })
     setCreateOpen(false)
     // Com o link pedido, o próximo passo é mandá-lo: o detalhe abre já com
     // Copiar e WhatsApp.
@@ -218,6 +224,7 @@ export function FinanceiroContent() {
           <TabsList>
             <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
             <TabsTrigger value="exitos">Êxitos</TabsTrigger>
+            <TabsTrigger value="cobrancas">Cobranças</TabsTrigger>
           </TabsList>
 
           <TabsContent value="lancamentos" className="space-y-6">
@@ -548,6 +555,10 @@ export function FinanceiroContent() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="cobrancas">
+            <BillingsPanel entries={entries} onOpenEntry={setSelectedId} />
           </TabsContent>
 
           {/* Every success fee, no period: its own filters and cards. */}

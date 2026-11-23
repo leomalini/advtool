@@ -30,6 +30,7 @@ import {
  *     ?tipo=receita&situacao=pago&cliente=<id>&processo=<id>
  *     ?id=<id>                         the entry open in the detail
  *     ?aba=exitos                      the Êxitos tab
+ *     ?aba=cobrancas                   the Cobranças tab (docs/cobrancas.md)
  *
  * With no period at all the screen opens on the current month — except a link
  * with `situacao`, written before the period existed (the Assistant's chat
@@ -85,7 +86,7 @@ function parsePeriod(params: ParamReader, today: string, hasSituation: boolean):
 
 /** The screen's tabs (`?aba=exitos`). The filters belong to Lançamentos; the
  * Êxitos tab has its own. */
-export type FinanceiroTab = 'lancamentos' | 'exitos'
+export type FinanceiroTab = 'lancamentos' | 'exitos' | 'cobrancas'
 
 export interface FinancialUrlState {
   filters: FinancialFilters
@@ -115,7 +116,7 @@ export function parseFinancialUrl(
       undatedOnly,
     },
     entryId: parseId(params.get('id')),
-    tab: params.get('aba') === 'exitos' ? 'exitos' : 'lancamentos',
+    tab: parseTab(params.get('aba')),
   }
 }
 
@@ -128,7 +129,7 @@ export function serializeFinancialUrl(
   const params = new URLSearchParams()
   const period = periodOf(filters)
 
-  if (tab === 'exitos') params.set('aba', 'exitos')
+  if (tab !== 'lancamentos') params.set('aba', tab)
 
   if (filters.undatedOnly) {
     params.set('periodo', ALL_DATES_PARAM)
@@ -152,4 +153,9 @@ export function serializeFinancialUrl(
   if (entryId) params.set('id', entryId)
 
   return params.toString()
+}
+
+/** `?aba=exitos` and `?aba=cobrancas`; anything else is Lançamentos. */
+function parseTab(value: string | null): FinanceiroTab {
+  return value === 'exitos' || value === 'cobrancas' ? value : 'lancamentos'
 }

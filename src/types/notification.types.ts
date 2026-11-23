@@ -25,6 +25,11 @@ export type NotificationKind =
   // A publication fixed a value on a process with a success fee to assess
   // (migration 90): the sum is ready, someone confirms it in "Apurar".
   | 'exito_apuravel'
+  // Régua de cobrança (migration 96), pelo cron diário: a fila do dia, o
+  // cliente que foi ao pagamento e nada chegou em 24 h, a régua que acabou.
+  | 'cobranca_fila'
+  | 'cobranca_clique_sem_pagamento'
+  | 'cobranca_regua_encerrada'
   | (string & {})
 
 export interface Notification {

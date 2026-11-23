@@ -66,6 +66,8 @@ const VALUE_MODES = Object.keys(VALUE_MODE_LABELS) as FinancialValueMode[]
 export interface FinancialEntrySubmitOptions {
   /** Gerar o link da InfinitePay logo depois de criar — só receita pendente. */
   generatePaymentLink: boolean
+  /** Com o link, ligar os lembretes da régua (fase 2 de docs/cobrancas.md). */
+  billingReminders: boolean
 }
 
 /** Por que valor, tipo e situação estão travados (migration 67). */
@@ -124,6 +126,7 @@ export function FinancialEntryForm({
     category: 'comprovante',
   })
   const [generatePaymentLink, setGeneratePaymentLink] = useState(false)
+  const [billingReminders, setBillingReminders] = useState(true)
   const hadPercent = (defaultValues?.percent ?? null) !== null
   const [valueMode, setValueMode] = useState<FinancialValueMode>(
     initialValueMode ?? (hadPercent ? 'percentual' : 'fixo')
@@ -247,6 +250,8 @@ export function FinancialEntryForm({
         data.status === 'pendente' &&
         !toAssess &&
         generatePaymentLink,
+      billingReminders:
+        generatePaymentLink && data.settlement_kind === 'scheduled' && !!data.due_date && billingReminders,
     })
   )
 
@@ -688,6 +693,15 @@ export function FinancialEntryForm({
             <p className="text-[11px] text-muted-foreground">
               Link da InfinitePay (Pix ou cartão), pronto para copiar ou mandar pelo WhatsApp.
             </p>
+            {generatePaymentLink && settlementKind === 'scheduled' && (
+              <label className="flex items-center gap-2 pt-1 text-xs">
+                <Checkbox
+                  checked={billingReminders}
+                  onCheckedChange={(checked) => setBillingReminders(checked === true)}
+                />
+                Cobrar automaticamente: lembretes ao cliente nos dias da régua
+              </label>
+            )}
           </div>
         </div>
       )}

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -51,9 +52,10 @@ import {
   useCloseBilling,
   useOpenBilling,
   useRefundPaymentTransaction,
-  useUpdateBillingDescription,
+  useUpdateBilling,
 } from '../hooks/usePaymentChargeMutations'
 import { buildPaymentMessage, buildWhatsAppUrl } from '../utils/paymentLinkMessage'
+import { BillingReminders } from './BillingReminders'
 
 /** `creating` há mais que isso travou no meio da geração: oferece cancelar. */
 const STUCK_AFTER_MINUTES = 2
@@ -183,6 +185,15 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
             />
           )}
 
+          {showBilling && billingData?.item && (
+            <BillingReminders
+              item={billingData.item}
+              officeName={billingData.officeName}
+              officePhone={billingData.officePhone}
+              canUpdate={can('financeiro', 'update')}
+            />
+          )}
+
           {legacyLive?.status === 'creating' && (
             <CreatingCard
               charge={legacyLive}
@@ -256,6 +267,9 @@ function BillingIssueForm({
     closedBilling?.client_description ?? defaultClientDescription(entry),
   )
   const fieldId = `billing-description-${entry.id}`
+  // A régua conta do vencimento: sem ele, a opção nem aparece.
+  const canRemind = entry.settlement_kind === 'scheduled' && !!entry.due_date
+  const [reminders, setReminders] = useState(canRemind)
 
   return (
     <div className="space-y-2">
@@ -274,12 +288,27 @@ function BillingIssueForm({
           Aparece na página, na mensagem e no checkout. Evite citar o processo.
         </p>
       </div>
+      {canRemind && (
+        <label className="flex items-center gap-2 text-xs">
+          <Checkbox
+            checked={reminders}
+            onCheckedChange={(checked) => setReminders(checked === true)}
+          />
+          Cobrar automaticamente: lembretes ao cliente nos dias da régua
+        </label>
+      )}
       <Button
         type="button"
         size="sm"
         variant="outline"
         disabled={openBilling.isPending || !description.trim()}
-        onClick={() => openBilling.mutate({ entryId: entry.id, clientDescription: description })}
+        onClick={() =>
+          openBilling.mutate({
+            entryId: entry.id,
+            clientDescription: description,
+            reminders: canRemind && reminders,
+          })
+        }
       >
         {openBilling.isPending ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -322,7 +351,7 @@ function BillingCard({
   canUpdate: boolean
 }) {
   const closeBilling = useCloseBilling()
-  const updateDescription = useUpdateBillingDescription()
+  const updateDescription = useUpdateBilling()
   const [confirmingClose, setConfirmingClose] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(billing.client_description)
@@ -347,7 +376,7 @@ function BillingCard({
 
   function saveDescription() {
     updateDescription.mutate(
-      { entryId: entry.id, clientDescription: draft },
+      { entryId: entry.id, changes: { clientDescription: draft } },
       {
         onSuccess: () => {
           setEditing(false)

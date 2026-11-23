@@ -35,6 +35,7 @@ import { UsersManager } from './UsersManager'
 import { OabMonitoringManager } from './OabMonitoringManager'
 import { WebhooksManager } from './WebhooksManager'
 import { OfficeSettingsCard } from './OfficeSettingsCard'
+import { BillingReminderSettingsCard } from './BillingReminderSettingsCard'
 import { PaymentSettingsCard } from './PaymentSettingsCard'
 import { InfinitePayDeliveries } from './InfinitePayDeliveries'
 import { D4SignSettingsCard } from './D4SignSettingsCard'
@@ -507,6 +508,7 @@ export function ConfiguracoesContent({
           <TabsContent value="pagamentos">
             <div className="space-y-5">
               <PaymentSettingsCard setup={paymentsSetup} />
+              <BillingReminderSettingsCard />
               <InfinitePayDeliveries />
             </div>
           </TabsContent>
