@@ -277,8 +277,35 @@ Verificado: `tsc`, lint e build; 36 verificações das funções puras e 41 do f
 clique contra banco e InfinitePay simulados; os seis estados da página no navegador,
 inclusive no celular; a página abre sem sessão, e as rotas do escritório não.
 
-**Não verificado:** nada rodou contra o banco real (a migration 95 não estava aplicada)
-nem com um pagamento real; a tela do escritório logada não foi aberta.
+**Teste ponta a ponta (2026-11-23):** migration 95 aplicada pelo usuário e conferida
+no catálogo. No `next dev`, com `INFINITEPAY_DEV_HANDLE` na conta pessoal e sem API
+Key, o usuário criou uma receita de R$ 1,00, gerou o link, abriu numa janela anônima,
+pagou por Pix e fechou a aba sem "Continuar". No banco:
+
+| Momento (UTC) | O quê |
+|---|---|
+| 14:50:36 | Cobrança no ar, "Honorários advocatícios" |
+| 14:50:55 | Aberta pelo cliente (janela sem sessão) |
+| 14:51:05 | Clique em "Pagar"; link de R$ 1,00 na conta pessoal, sem validade (sem chave) |
+| 14:52:30 | Aviso da InfinitePay na rota de **produção**, token válido, `processed` |
+| 14:52:31 | `payment_check` confirmou; transação Pix, `confirmed_via: webhook` |
+| 14:52:32 | Lançamento pago; aviso "Pagamento recebido" no sino |
+
+Reabrir o link sem sessão mostra "pago" com o recibo, e clicar em "Pagar" de novo
+devolve "pago" sem gerar outro link (continua 1 link para o lançamento). É a primeira
+baixa pelo aviso da InfinitePay, que a fase 0 não tinha coberto.
+
+Observado:
+
+- **A rota do aviso levou 3,7 s** para gravar a entrega (provável partida a frio na
+  Vercel), acima do 1 s que a InfinitePay pede. Não houve reenvio desta vez. Se
+  virar problema: responder antes de consultar a cobrança.
+- **O nome do escritório está vazio** em `office_settings`: a página sai sem a linha
+  de quem cobra. Preencher em Configurações → Escritório.
+
+**Não verificado:** o que o cliente vê ao reabrir um checkout já usado, com
+`single_payment` (precisa de uma API Key; o teste foi sem); a tela do escritório
+logada não foi aberta por mim.
 
 Antes do deploy: aplicar a migration 95; criar a API Key na conta do escritório e pôr
 `INFINITEPAY_API_KEY` na Vercel. Para o teste ponta a ponta no dev: `INFINITEPAY_DEV_HANDLE`
