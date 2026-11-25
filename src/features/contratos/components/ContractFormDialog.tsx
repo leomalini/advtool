@@ -32,6 +32,8 @@ function toFormValues(contract: Contract): Partial<ContractInput> {
     installments: contract.installments,
     first_due_date: contract.first_due_date ?? '',
     success_fee_percent: contract.success_fee_percent,
+    late_fee_percent: contract.late_fee_percent,
+    monthly_interest_percent: contract.monthly_interest_percent,
     start_date: contract.start_date ?? '',
     end_date: contract.end_date ?? '',
     notice_days: contract.notice_days,

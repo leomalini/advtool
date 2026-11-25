@@ -72,6 +72,10 @@ export const readerContractSchema = z.object({
   parcelas: text('Número de parcelas; ""'),
   primeiro_vencimento: text('Primeiro vencimento em AAAA-MM-DD; ""'),
   exito_percentual: text('Percentual de êxito, só o número, ex.: 20; ""'),
+  multa_percentual: text('Multa por atraso no pagamento, % da parcela, só o número, ex.: 2; ""'),
+  juros_mensal_percentual: text(
+    'Juros de mora por atraso, % ao mês, só o número, ex.: 1 ("1% ao mês"); ""',
+  ),
   inicio: text('Início da vigência em AAAA-MM-DD; ""'),
   fim: text('Fim da vigência em AAAA-MM-DD; ""'),
   reajuste: text('Índice de reajuste, ex.: IPCA; ""'),

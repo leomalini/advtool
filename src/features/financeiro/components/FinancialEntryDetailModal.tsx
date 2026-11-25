@@ -308,6 +308,21 @@ export function FinancialEntryDetailModal({
 
                 <InfoRow icon={<Tag className="h-4 w-4 text-muted-foreground/60" />}>
                   <p className="text-sm">{FINANCIAL_CATEGORY_LABELS[entry.category]}</p>
+                  {entry.parent_entry_id && (
+                    <Link
+                      href={`/financeiro?id=${entry.parent_entry_id}`}
+                      className="text-[11px] text-muted-foreground underline"
+                    >
+                      Multa e juros pagos com o lançamento original
+                    </Link>
+                  )}
+                  {Number(entry.discount_amount) > 0 && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Recebido com {formatCurrency(Number(entry.discount_amount))} de desconto no
+                      Pix: o valor original era{' '}
+                      {formatCurrency(Number(entry.amount) + Number(entry.discount_amount))}.
+                    </p>
+                  )}
                 </InfoRow>
 
                 {entry.client && (

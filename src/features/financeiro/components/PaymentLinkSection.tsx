@@ -56,6 +56,7 @@ import {
 } from '../hooks/usePaymentChargeMutations'
 import { buildPaymentMessage, buildWhatsAppUrl } from '../utils/paymentLinkMessage'
 import { BillingReminders } from './BillingReminders'
+import { BillingTerms } from './BillingTerms'
 
 /** `creating` há mais que isso travou no meio da geração: oferece cancelar. */
 const STUCK_AFTER_MINUTES = 2
@@ -192,6 +193,10 @@ export function PaymentLinkSection({ entry }: { entry: FinancialEntryWithRelatio
               officePhone={billingData.officePhone}
               canUpdate={can('financeiro', 'update')}
             />
+          )}
+
+          {showBilling && billingData?.item && (
+            <BillingTerms item={billingData.item} canUpdate={can('financeiro', 'update')} />
           )}
 
           {legacyLive?.status === 'creating' && (
@@ -730,6 +735,8 @@ function TransactionCard({
   // Cancelado e pago assim mesmo: a baixa ficou para o escritório decidir.
   const paidAfterCancel = !divergent && charge.canceled_at !== null
   const installments = transaction.installments ?? 1
+  // Pix com desconto (migration 97): o link é cheio, o cliente pagou menos.
+  const discounted = !divergent && transaction.paid_amount_cents < transaction.amount_cents
 
   return (
     <div
@@ -751,7 +758,9 @@ function TransactionCard({
         )}
         Pago via {describeCaptureMethod(transaction.capture_method)}
         {installments > 1 ? ` em ${installments}x` : ''} ·{' '}
-        {formatCurrency(fromCents(transaction.amount_cents))}
+        {formatCurrency(
+          fromCents(discounted ? transaction.paid_amount_cents : transaction.amount_cents),
+        )}
       </p>
       <p className="text-xs text-muted-foreground">
         Confirmado em {formatMoment(transaction.confirmed_at)}
@@ -766,6 +775,27 @@ function TransactionCard({
         <p className="text-xs text-muted-foreground">
           O cliente pagou {formatCurrency(fromCents(transaction.paid_amount_cents))} com os juros
           do parcelamento.
+        </p>
+      )}
+      {discounted && (
+        <p className="text-xs text-muted-foreground">
+          Link de {formatCurrency(fromCents(transaction.amount_cents))}, com{' '}
+          {formatCurrency(fromCents(transaction.amount_cents - transaction.paid_amount_cents))} de
+          desconto no Pix.
+        </p>
+      )}
+      {!divergent && charge.late_fee_cents + charge.interest_cents > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Inclui{' '}
+          {[
+            charge.late_fee_cents > 0 &&
+              `multa de ${formatCurrency(fromCents(charge.late_fee_cents))}`,
+            charge.interest_cents > 0 &&
+              `juros de ${formatCurrency(fromCents(charge.interest_cents))}`,
+          ]
+            .filter(Boolean)
+            .join(' e ')}
+          , lançados à parte em Encargos.
         </p>
       )}
       {paidAfterCancel && (
@@ -785,7 +815,8 @@ function TransactionCard({
         <div className="space-y-2 rounded-md bg-destructive/5 p-2.5">
           <p className="text-xs">
             Registre só depois de estornar no app da InfinitePay — o sistema não estorna, só
-            anota. Se este pagamento tinha dado baixa, o lançamento volta a pendente.
+            anota. Se este pagamento tinha dado baixa, o lançamento volta a pendente, com o valor
+            original, e os Encargos dele saem.
           </p>
           <div className="flex gap-2">
             <Button

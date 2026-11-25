@@ -330,6 +330,8 @@ function toNumber(value: string): number | null {
 export function contractDataFromReader(contract: ReaderContract): ImportedContractData {
   const installments = toNumber(contract.parcelas)
   const fee = toNumber(contract.exito_percentual)
+  const percent = (value: number | null) =>
+    value !== null && value >= 0 && value <= 100 ? value : null
   const kind = clean(contract.tipo) as ContractKind | null
   return {
     title: clean(contract.titulo),
@@ -340,7 +342,9 @@ export function contractDataFromReader(contract: ReaderContract): ImportedContra
         ? installments
         : null,
     first_due_date: toIsoDate(contract.primeiro_vencimento),
-    success_fee_percent: fee !== null && fee >= 0 && fee <= 100 ? fee : null,
+    success_fee_percent: percent(fee),
+    late_fee_percent: percent(toNumber(contract.multa_percentual)),
+    monthly_interest_percent: percent(toNumber(contract.juros_mensal_percentual)),
     start_date: toIsoDate(contract.inicio),
     end_date: toIsoDate(contract.fim),
     adjustment_index: clean(contract.reajuste),

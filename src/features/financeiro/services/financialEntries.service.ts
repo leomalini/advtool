@@ -353,7 +353,7 @@ export interface FinancialSummary {
 const AGGREGATE_SELECT = 'type, amount, status, settlement_kind, due_date, paid_at'
 
 /** O resumo precisa saber se a baixa veio de um link — o fluxo de caixa, não. */
-const SUMMARY_SELECT = `${AGGREGATE_SELECT}, payment_charges(status, expires_at)`
+const SUMMARY_SELECT = `${AGGREGATE_SELECT}, parent_entry_id, payment_charges(status, expires_at)`
 
 /**
  * The dashboard's month (received, expenses) and everything still open

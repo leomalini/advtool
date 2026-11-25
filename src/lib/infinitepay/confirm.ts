@@ -8,7 +8,9 @@ import {
   type PaymentConfirmationSource,
 } from '@/types/paymentCharge.types'
 import type { WebhookEventDestination } from '@/types/webhookEvent.types'
+import { isDiscountedPixPayment } from '@/lib/billing/lateCharges'
 import { checkPayment } from './client'
+import { toCents } from './money'
 
 /**
  * Confirma um pagamento e, quando for o caso, dá baixa no lançamento.
@@ -65,6 +67,11 @@ interface ChargeForConfirmation {
   status: PaymentChargeStatus
   description: string
   customer_name: string | null
+  /** Composição do link (migration 97); nula nos links de antes dela. */
+  principal_cents: number | null
+  late_fee_cents: number
+  interest_cents: number
+  pix_discount_percent: number | null
 }
 
 interface StoredTransaction {
@@ -78,7 +85,8 @@ interface StoredTransaction {
 }
 
 const CHARGE_FOR_CONFIRMATION =
-  'id, financial_entry_id, handle, amount_cents, status, description, customer_name'
+  'id, financial_entry_id, handle, amount_cents, status, description, customer_name, ' +
+  'principal_cents, late_fee_cents, interest_cents, pix_discount_percent'
 const STORED_TRANSACTION =
   'id, charge_id, amount_cents, paid_amount_cents, capture_method, installments, confirmed_at'
 
@@ -267,9 +275,38 @@ async function settle(
     return result(false, 'Cobrança sem lançamento.', destinations)
   }
 
+  const entry = await loadSettlingEntry(supabase, entryId)
+  if (!entry) return result(false, 'Cobrança sem lançamento.', destinations)
+  const paidOn = officeDate(new Date(transaction.confirmed_at))
+
+  // Desconto (migration 97): o `payment_check` devolve `amount` cheio e
+  // `paid_amount` com o desconto. O lançamento passa a valer o recebido, e a
+  // diferença vai para `discount_amount` — a soma continua sendo o original.
+  const discountCents = Math.max(0, transaction.amount_cents - transaction.paid_amount_cents)
+  const entryCents = toCents(Number(entry.amount))
+  const withDiscount = discountCents > 0 && discountCents < entryCents
+  if (withDiscount && isNew && !isExpectedDiscount(charge, transaction)) {
+    await alert(
+      'Pago com desconto não previsto',
+      `Chegou ${payment}${who} por um link de ${formatCurrency(charge.amount_cents / 100)} ` +
+        `("${charge.description}"). O lançamento recebeu baixa com o desconto de ` +
+        `${formatCurrency(discountCents / 100)}: confira o desconto configurado no app da ` +
+        'InfinitePay.',
+    )
+  }
+
   const { data: updated, error: entryError } = await supabase
     .from('financial_entries')
-    .update({ status: 'pago', paid_at: officeDate(new Date(transaction.confirmed_at)) })
+    .update({
+      status: 'pago',
+      paid_at: paidOn,
+      ...(withDiscount
+        ? {
+            amount: (entryCents - discountCents) / 100,
+            discount_amount: (toCents(Number(entry.discount_amount)) + discountCents) / 100,
+          }
+        : {}),
+    })
     .eq('id', entryId)
     .eq('status', 'pendente')
     .select('id')
@@ -284,19 +321,143 @@ async function settle(
         `"${charge.description}" já estava pago quando chegou ${payment}${who}. ` +
           'Confira se é caso de estorno.',
       )
+    } else if (!isNew && entry.status === 'pago') {
+      // Reprocessamento de uma baixa que parou antes dos encargos.
+      const chargesId = await ensureChargesEntry(supabase, charge, entry, paidOn)
+      if (chargesId) {
+        destinations.push({
+          table: 'financial_entries',
+          id: chargesId,
+          action: 'inserted',
+          detail: 'encargos',
+        })
+      }
     }
     return result(false, 'O lançamento já estava pago.', destinations)
   }
 
   destinations.push({ table: 'financial_entries', id: entryId, action: 'updated', detail: 'pago' })
+  const chargesId = await ensureChargesEntry(supabase, charge, entry, paidOn)
+  if (chargesId) {
+    destinations.push({
+      table: 'financial_entries',
+      id: chargesId,
+      action: 'inserted',
+      detail: 'encargos',
+    })
+  }
   await notify(supabase, {
     kind: 'pagamento_recebido',
     title: 'Pagamento recebido',
-    body: `${payment}${who} — "${charge.description}".`,
+    body:
+      `${payment}${who} — "${charge.description}".` +
+      describeComposition(charge, discountCents),
     entryId,
     via,
   })
   return { settled: true, entryId, reason: null, destinations }
+}
+
+// ── Encargos e desconto (migration 97) ──────────────────────────────────────
+
+interface SettlingEntry {
+  id: string
+  status: 'pendente' | 'pago'
+  amount: number
+  discount_amount: number
+  description: string
+  client_id: string | null
+  legal_process_id: string | null
+  contract_id: string | null
+  created_by: string
+}
+
+const SETTLING_ENTRY =
+  'id, status, amount, discount_amount, description, client_id, legal_process_id, contract_id, ' +
+  'created_by'
+
+/** Limite de `description` que o formulário respeita (`DESCRIPTION_MAX`). */
+const CHARGES_DESCRIPTION_MAX = 300
+
+async function loadSettlingEntry(
+  supabase: SupabaseClient,
+  entryId: string,
+): Promise<SettlingEntry | null> {
+  const { data, error } = await supabase
+    .from('financial_entries')
+    .select(SETTLING_ENTRY)
+    .eq('id', entryId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as unknown as SettlingEntry | null) ?? null
+}
+
+/** O desconto que o próprio link ofereceu: Pix, com o percentual dele. */
+function isExpectedDiscount(charge: ChargeForConfirmation, transaction: StoredTransaction) {
+  return isDiscountedPixPayment({
+    linkCents: charge.amount_cents,
+    paidCents: transaction.paid_amount_cents,
+    captureMethod: transaction.capture_method,
+    pixDiscountPercent:
+      charge.pix_discount_percent === null ? null : Number(charge.pix_discount_percent),
+  })
+}
+
+function chargesCentsOf(charge: ChargeForConfirmation): number {
+  if (charge.principal_cents === null) return 0
+  return Number(charge.late_fee_cents) + Number(charge.interest_cents)
+}
+
+/**
+ * Os encargos pagos num lançamento próprio, categoria Encargos, ligado ao
+ * original: o original não muda de valor, e o "Recebido" continua sendo soma
+ * de linhas. Um por original (índice único): a reentrega não duplica.
+ */
+async function ensureChargesEntry(
+  supabase: SupabaseClient,
+  charge: ChargeForConfirmation,
+  entry: SettlingEntry,
+  paidOn: string,
+): Promise<string | null> {
+  const cents = chargesCentsOf(charge)
+  if (cents <= 0) return null
+
+  const { data, error } = await supabase
+    .from('financial_entries')
+    .insert({
+      type: 'receita',
+      category: 'encargos',
+      description: `Encargos — ${entry.description}`.slice(0, CHARGES_DESCRIPTION_MAX),
+      amount: cents / 100,
+      status: 'pago',
+      settlement_kind: 'scheduled',
+      due_date: paidOn,
+      paid_at: paidOn,
+      client_id: entry.client_id,
+      legal_process_id: entry.legal_process_id,
+      contract_id: entry.contract_id,
+      parent_entry_id: entry.id,
+      created_by: entry.created_by,
+    })
+    .select('id')
+    .single()
+  if (error?.code === UNIQUE_VIOLATION) return null
+  if (error) throw error
+  return (data as { id: string }).id
+}
+
+/** O sino diz de que se compõe o que entrou, quando não é só o principal. */
+function describeComposition(charge: ChargeForConfirmation, discountCents: number): string {
+  const parts: string[] = []
+  if (Number(charge.late_fee_cents) > 0) {
+    parts.push(`multa de ${formatCurrency(Number(charge.late_fee_cents) / 100)}`)
+  }
+  if (Number(charge.interest_cents) > 0) {
+    parts.push(`juros de ${formatCurrency(Number(charge.interest_cents) / 100)}`)
+  }
+  if (parts.length > 0) return ` Inclui ${parts.join(' e ')}, lançados em Encargos.`
+  if (discountCents > 0) return ` Desconto de ${formatCurrency(discountCents / 100)} no Pix.`
+  return ''
 }
 
 // ── Confirmação ─────────────────────────────────────────────────────────────

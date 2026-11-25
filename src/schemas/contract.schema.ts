@@ -44,6 +44,16 @@ export const contractSchema = z
       .min(0, 'Entre 0 e 100')
       .max(100, 'Entre 0 e 100')
       .nullable(),
+    late_fee_percent: z
+      .number({ error: 'Informe um número' })
+      .min(0, 'Entre 0 e 100')
+      .max(100, 'Entre 0 e 100')
+      .nullable(),
+    monthly_interest_percent: z
+      .number({ error: 'Informe um número' })
+      .min(0, 'Entre 0 e 100')
+      .max(100, 'Entre 0 e 100')
+      .nullable(),
 
     start_date: optionalDate,
     end_date: optionalDate,

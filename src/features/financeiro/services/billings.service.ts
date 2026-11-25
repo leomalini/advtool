@@ -98,6 +98,12 @@ export interface BillingChanges {
   paused?: boolean
   recipientPhone?: string | null
   clientOptOut?: boolean
+  /** Multa, juros ao mês e desconto no Pix, em %; null ou 0 desliga. */
+  terms?: {
+    lateFeePercent?: number | null
+    monthlyInterestPercent?: number | null
+    pixDiscountPercent?: number | null
+  }
 }
 
 export async function updateBilling(

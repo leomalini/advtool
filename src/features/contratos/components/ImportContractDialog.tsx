@@ -65,6 +65,8 @@ interface ContractDraft {
   installments: string
   first_due_date: string
   success_fee_percent: string
+  late_fee_percent: string
+  monthly_interest_percent: string
   start_date: string
   end_date: string
   adjustment_index: string
@@ -81,6 +83,9 @@ function draftFrom(data: ImportedContractData | null, fallbackTitle: string): Co
     installments: data?.installments ? String(data.installments) : '',
     first_due_date: data?.first_due_date ?? '',
     success_fee_percent: data?.success_fee_percent != null ? String(data.success_fee_percent) : '',
+    late_fee_percent: data?.late_fee_percent != null ? String(data.late_fee_percent) : '',
+    monthly_interest_percent:
+      data?.monthly_interest_percent != null ? String(data.monthly_interest_percent) : '',
     start_date: data?.start_date ?? '',
     end_date: data?.end_date ?? '',
     adjustment_index: data?.adjustment_index ?? '',
@@ -191,6 +196,8 @@ function ImportBody({ onClose }: { onClose: () => void }) {
           installments: null,
           first_due_date: '',
           success_fee_percent: null,
+          late_fee_percent: null,
+          monthly_interest_percent: null,
           start_date: '',
           end_date: '',
           notice_days: 30,
@@ -259,6 +266,8 @@ function ImportBody({ onClose }: { onClose: () => void }) {
         installments: optionalInt(draft.installments),
         first_due_date: draft.first_due_date,
         success_fee_percent: kind === 'honorarios' ? optionalPercent(draft.success_fee_percent) : null,
+        late_fee_percent: optionalPercent(draft.late_fee_percent),
+        monthly_interest_percent: optionalPercent(draft.monthly_interest_percent),
         start_date: draft.start_date,
         end_date: draft.end_date,
         adjustment_index: draft.adjustment_index,
@@ -574,6 +583,24 @@ function ImportBody({ onClose }: { onClose: () => void }) {
                     />
                   </div>
                 )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="import-late-fee">Multa por atraso (%)</Label>
+                  <Input
+                    id="import-late-fee"
+                    inputMode="decimal"
+                    value={draft.late_fee_percent}
+                    onChange={(event) => setField({ late_fee_percent: event.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="import-interest">Juros por atraso (% ao mês)</Label>
+                  <Input
+                    id="import-interest"
+                    inputMode="decimal"
+                    value={draft.monthly_interest_percent}
+                    onChange={(event) => setField({ monthly_interest_percent: event.target.value })}
+                  />
+                </div>
               </div>
             </section>
 

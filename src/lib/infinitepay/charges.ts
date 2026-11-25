@@ -12,6 +12,7 @@ import {
 } from '@/types/paymentCharge.types'
 import { createCheckoutLink, InfinitePayApiError, infinitePayApiKey } from './client'
 import { buildCustomer, type PaymentClient } from './customer'
+import { toCents } from './money'
 import { CHECKOUT_NOT_ENABLED, type CreateLinkRequest } from './schemas'
 import { generateWebhookToken } from './token'
 import { infinitePayWebhookUrl } from './urls'
@@ -49,8 +50,19 @@ function failure(
  * (receita, pendente, valor mínimo). */
 export interface ChargeLinkEntry {
   id: string
+  /** O preço do link: principal + multa + juros. */
   amountCents: number
   client: PaymentClient | null
+}
+
+/** A composição do preço e o desconto do Pix (migration 97). Sem ela, o link é
+ * só o principal, sem desconto. */
+export interface ChargeLinkComposition {
+  principalCents: number
+  lateFeeCents: number
+  interestCents: number
+  /** Só sem encargo; vai em `options.discounts.pix` e exige a API Key. */
+  pixDiscountPercent: number | null
 }
 
 export interface ChargeLinkInput {
@@ -63,6 +75,7 @@ export interface ChargeLinkInput {
   createdBy: string
   /** Para onde o cliente volta depois de pagar. */
   returnBaseUrl: string
+  composition?: ChargeLinkComposition
   now?: Date
 }
 
@@ -122,6 +135,15 @@ export async function createChargeLink(
   const { token, tokenHash } = await generateWebhookToken()
   const withOptions = infinitePayApiKey() !== null
   const validity = withOptions ? linkValidity(input.now ?? new Date()) : null
+  const composition = input.composition ?? null
+  // Desconto e encargo nunca juntos (check da migration 97); sem a chave, a
+  // InfinitePay não aceita `options` e o desconto não existe.
+  const pixDiscount =
+    withOptions &&
+    composition?.pixDiscountPercent &&
+    composition.lateFeeCents + composition.interestCents === 0
+      ? composition.pixDiscountPercent
+      : null
 
   const { data: created, error: insertError } = await supabase
     .from('payment_charges')
@@ -134,6 +156,14 @@ export async function createChargeLink(
       webhook_token_hash: tokenHash,
       expires_at: validity?.expiresAt ?? null,
       single_payment: withOptions,
+      ...(composition
+        ? {
+            principal_cents: composition.principalCents,
+            late_fee_cents: composition.lateFeeCents,
+            interest_cents: composition.interestCents,
+          }
+        : {}),
+      pix_discount_percent: pixDiscount,
       created_by: input.createdBy,
     })
     .select(PAYMENT_CHARGE_COLUMNS)
@@ -159,7 +189,15 @@ export async function createChargeLink(
     // baixa fica com o retorno do cliente (ver `infinitePayWebhookUrl`).
     ...(webhookUrl ? { webhook_url: webhookUrl } : {}),
     ...(customer ? { customer } : {}),
-    ...(validity ? { options: { single_payment: true, valid_until: validity.validUntil } } : {}),
+    ...(validity
+      ? {
+          options: {
+            single_payment: true,
+            valid_until: validity.validUntil,
+            ...(pixDiscount ? { discounts: { pix: pixDiscount } } : {}),
+          },
+        }
+      : {}),
   }
 
   let url: string
@@ -367,9 +405,34 @@ export async function refundTransaction(
   if (otherError) throw otherError
   if ((otherPaid ?? 0) > 0) return { ok: true, entryReopened: false }
 
+  // Desfaz o que a baixa fez (migration 97): os Encargos saem, e o desconto
+  // volta para o valor. O lançamento de Encargos não tem link, e a trava
+  // deixa excluí-lo.
+  const { error: chargesError } = await supabase
+    .from('financial_entries')
+    .delete()
+    .eq('parent_entry_id', charge.financial_entry_id)
+    .eq('category', 'encargos')
+  if (chargesError) throw chargesError
+
+  const { data: entryRow, error: entryError } = await supabase
+    .from('financial_entries')
+    .select('amount, discount_amount')
+    .eq('id', charge.financial_entry_id)
+    .maybeSingle()
+  if (entryError) throw entryError
+  const entry = entryRow as { amount: number; discount_amount: number } | null
+  const restored =
+    entry && Number(entry.discount_amount) > 0
+      ? {
+          amount: (toCents(Number(entry.amount)) + toCents(Number(entry.discount_amount))) / 100,
+          discount_amount: 0,
+        }
+      : {}
+
   const { data: reopened, error: reopenError } = await supabase
     .from('financial_entries')
-    .update({ status: 'pendente', paid_at: null })
+    .update({ status: 'pendente', paid_at: null, ...restored })
     .eq('id', charge.financial_entry_id)
     .eq('status', 'pago')
     .select('id')

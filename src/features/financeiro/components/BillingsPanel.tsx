@@ -77,6 +77,24 @@ export function BillingStateBadge({ state }: { state: BillingReminderState }) {
   )
 }
 
+/** O valor de hoje; com multa e juros, o original embaixo (migration 97). */
+function AmountToday({ item }: { item: BillingPanelItem }) {
+  const today = item.amountToday
+  const updated = item.entry.status === 'pendente' && today.totalCents > today.principalCents
+  return (
+    <span className="shrink-0 text-right">
+      <span className="block text-sm font-bold tabular-nums">
+        {formatCurrency(updated ? today.totalCents / 100 : item.entry.amount)}
+      </span>
+      {updated && (
+        <span className="block text-[11px] text-muted-foreground tabular-nums">
+          original {formatCurrency(item.entry.amount)}
+        </span>
+      )}
+    </span>
+  )
+}
+
 type PanelFilter = 'running' | 'overdue' | 'stopped' | 'link_only' | 'paid' | 'all'
 
 const FILTERS: { value: PanelFilter; label: string }[] = [
@@ -259,9 +277,7 @@ function QueueCard({
                       {item.entry.description}
                     </p>
                   </div>
-                  <span className="text-sm font-bold tabular-nums">
-                    {formatCurrency(item.entry.amount)}
-                  </span>
+                  <AmountToday item={item} />
                 </div>
                 <p className="text-xs">
                   <span className="font-medium">
@@ -362,7 +378,7 @@ function BillingRow({
             <p className="text-[11px] text-muted-foreground">{activity.join(' · ')}</p>
           )}
         </div>
-        <span className="text-sm font-bold tabular-nums">{formatCurrency(item.entry.amount)}</span>
+        <AmountToday item={item} />
       </div>
 
       {confirmingPaid ? (

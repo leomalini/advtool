@@ -3,7 +3,7 @@
 import { Copy, MessageCircle, SkipForward } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { buildReminderMessage, greetingNameFor } from '@/lib/billing/messages'
+import { amountFieldsFor, buildReminderMessage, greetingNameFor } from '@/lib/billing/messages'
 import type { BillingMessage, BillingPanelItem } from '@/types/billing.types'
 import { useRecordReminder, useUndoReminder } from '../hooks/usePaymentChargeMutations'
 import { buildWhatsAppUrl } from '../utils/paymentLinkMessage'
@@ -62,6 +62,7 @@ export function ReminderActions({
     amount: item.entry.amount,
     dueDate: item.entry.due_date,
     url: item.url,
+    ...amountFieldsFor(item.amountToday),
   })
   const whatsAppUrl = buildWhatsAppUrl(item.recipientPhone, message)
   // O vencimento da época vai junto: se ele mudar, a régua recomeça.

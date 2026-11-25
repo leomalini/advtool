@@ -1,7 +1,14 @@
 import { z } from 'zod'
 
 export const financialTypeSchema = z.enum(['receita', 'despesa'])
-export const financialCategorySchema = z.enum(['honorario', 'exito', 'custas', 'pericia', 'outros'])
+export const financialCategorySchema = z.enum([
+  'honorario',
+  'exito',
+  'custas',
+  'pericia',
+  'encargos',
+  'outros',
+])
 export const financialStatusSchema = z.enum(['pendente', 'pago'])
 export const financialSettlementKindSchema = z.enum(['scheduled', 'conditional'])
 

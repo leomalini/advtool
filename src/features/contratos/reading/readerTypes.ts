@@ -64,6 +64,8 @@ export interface ImportedContractData {
   installments: number | null
   first_due_date: string | null
   success_fee_percent: number | null
+  late_fee_percent: number | null
+  monthly_interest_percent: number | null
   start_date: string | null
   end_date: string | null
   adjustment_index: string | null

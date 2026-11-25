@@ -81,6 +81,19 @@ function describeTerm(contract: ContractWithRelations): string | null {
   return null
 }
 
+/** "Multa 2% · juros 1% ao mês" — o que as cobranças das parcelas herdam. */
+function describeLateTerms(contract: ContractWithRelations): string | null {
+  const parts = [
+    contract.late_fee_percent ? `multa ${formatPercent(contract.late_fee_percent)}` : null,
+    contract.monthly_interest_percent
+      ? `juros ${formatPercent(contract.monthly_interest_percent)} ao mês`
+      : null,
+  ].filter((part): part is string => part !== null)
+  if (parts.length === 0) return null
+  const text = parts.join(' · ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2 text-sm">
@@ -400,6 +413,12 @@ export function ContractDetailPage({
                           ? formatPercent(contract.success_fee_percent)
                           : null
                       }
+                    />
+                  )}
+                  {contract.kind === 'honorarios' && (
+                    <DetailRow
+                      label="Por atraso"
+                      value={describeLateTerms(contract)}
                     />
                   )}
                   <DetailRow

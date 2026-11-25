@@ -24,6 +24,9 @@ export type TotalsRow = Pick<
 > & {
   /** Only to tell a payment by InfinitePay link apart. */
   payment_charges?: Pick<PaymentChargeSummary, 'status' | 'expires_at'>[] | null
+  /** Late charges paid with a billing (migration 97) came in through the
+   * original's link: they have no charge of their own. */
+  parent_entry_id?: string | null
   /** Only to count the success fees to assess (migration 89); the
    * dashboard's narrow select leaves them out. */
   percent?: number | null
@@ -97,7 +100,7 @@ export function summarizeEntries(rows: TotalsRow[], today: string = todayISO()):
     if (situation === 'pago') {
       if (row.type === 'receita') {
         totals.received += amount
-        if (summarizePaymentCharges(row.payment_charges ?? []).paid) {
+        if (row.parent_entry_id || summarizePaymentCharges(row.payment_charges ?? []).paid) {
           totals.receivedViaInfinitePay += amount
           totals.receivedViaInfinitePayCount += 1
         }

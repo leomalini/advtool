@@ -61,6 +61,10 @@ export interface Contract {
   installments: number | null
   first_due_date: string | null
   success_fee_percent: number | null
+  /** Multa por atraso (% da parcela, uma vez) e juros de mora (% ao mês),
+   * quando o contrato prevê (migration 97). A cobrança copia ao nascer. */
+  late_fee_percent: number | null
+  monthly_interest_percent: number | null
   start_date: string | null
   end_date: string | null
   notice_days: number
