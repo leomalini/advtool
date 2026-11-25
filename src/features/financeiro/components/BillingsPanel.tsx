@@ -34,6 +34,11 @@ import {
   type BillingPanelItem,
 } from '@/types/billing.types'
 import { clientDisplayName } from '@/lib/billing/entries'
+import {
+  BILLING_PANEL_FILTERS,
+  matchesBillingFilter,
+  type BillingPanelFilter,
+} from '@/lib/billing/panelFilters'
 import { formatCurrency, type FinancialEntryWithRelations } from '@/types/financialEntry.types'
 import { useBillingPanel } from '../hooks/useBillings'
 import {
@@ -96,34 +101,6 @@ function AmountToday({ item }: { item: BillingPanelItem }) {
   )
 }
 
-type PanelFilter = 'running' | 'overdue' | 'stopped' | 'link_only' | 'paid' | 'all'
-
-const FILTERS: { value: PanelFilter; label: string }[] = [
-  { value: 'running', label: 'Na régua' },
-  { value: 'overdue', label: 'Atrasadas' },
-  { value: 'stopped', label: 'Pausadas ou encerradas' },
-  { value: 'link_only', label: 'Só o link' },
-  { value: 'paid', label: 'Pagas' },
-  { value: 'all', label: 'Todas' },
-]
-
-function matchesFilter(item: BillingPanelItem, filter: PanelFilter): boolean {
-  switch (filter) {
-    case 'running':
-      return remindersRunning(item.state)
-    case 'overdue':
-      return item.state === 'overdue' || item.state === 'ended'
-    case 'stopped':
-      return ['paused', 'opted_out', 'closed', 'ended', 'no_due_date'].includes(item.state)
-    case 'link_only':
-      return item.state === 'link_only'
-    case 'paid':
-      return item.state === 'paid'
-    case 'all':
-      return true
-  }
-}
-
 function clientLabel(item: BillingPanelItem): string {
   return item.client?.displayName ?? 'Sem cliente'
 }
@@ -145,7 +122,7 @@ export function BillingsPanel({
 }) {
   const { can } = usePermissions()
   const panel = useBillingPanel()
-  const [filter, setFilter] = useState<PanelFilter>('running')
+  const [filter, setFilter] = useState<BillingPanelFilter>('running')
 
   if (panel.isLoading) {
     return (
@@ -170,7 +147,7 @@ export function BillingsPanel({
 
   const data = panel.data
   const queue = data.items.filter((item) => item.dueStep !== null)
-  const listed = data.items.filter((item) => matchesFilter(item, filter))
+  const listed = data.items.filter((item) => matchesBillingFilter(item, filter))
 
   return (
     <div className="space-y-6">
@@ -195,7 +172,7 @@ export function BillingsPanel({
         <CardHeader className="space-y-3 pb-3">
           <CardTitle className="text-sm font-medium">Cobranças</CardTitle>
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar cobranças">
-            {FILTERS.map((option) => (
+            {BILLING_PANEL_FILTERS.map((option) => (
               <Button
                 key={option.value}
                 type="button"
@@ -206,7 +183,7 @@ export function BillingsPanel({
               >
                 {option.label}
                 <span className="tabular-nums opacity-70">
-                  {data.items.filter((item) => matchesFilter(item, option.value)).length}
+                  {data.items.filter((item) => matchesBillingFilter(item, option.value)).length}
                 </span>
               </Button>
             ))}

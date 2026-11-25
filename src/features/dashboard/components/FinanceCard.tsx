@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { formatRelative } from '@/utils/date'
 import { usePermissions } from '@/hooks/usePermissions'
-import { formatCurrency } from '@/types/financialEntry.types'
+import { formatCurrency, todayISO } from '@/types/financialEntry.types'
 import type { OpenBilling } from '@/types/billing.types'
 import { describeCaptureMethod, type RecentPayment } from '@/types/paymentCharge.types'
 import { useOfficeSettings } from '@/features/configuracoes/hooks/useOfficeSettings'
@@ -285,6 +285,14 @@ function ChargesBlock() {
   const loading = settingsLoading || open.isLoading || payments.isLoading
   const openTotal =
     billings.reduce((sum, item) => sum + Math.round(item.entry.amount * 100), 0) / 100
+  // Inadimplência (fase 7 de docs/cobrancas.md): no ar e com o vencimento
+  // passado. Valor original; multa e juros aparecem na aba Cobranças.
+  const today = todayISO()
+  const pastDue = billings.filter(
+    (item) => item.entry.due_date !== null && item.entry.due_date < today,
+  )
+  const pastDueTotal =
+    pastDue.reduce((sum, item) => sum + Math.round(item.entry.amount * 100), 0) / 100
 
   const heading = (
     <h3 className={cn(HEADING, 'flex items-center justify-between gap-2 px-2')}>
@@ -352,6 +360,21 @@ function ChargesBlock() {
           </span>
         )}
       </div>
+      {pastDue.length > 0 && (
+        <Link
+          href="/financeiro?aba=cobrancas"
+          className={cn(
+            'mx-2 mb-1 flex items-center justify-between gap-2 rounded-md bg-destructive/10',
+            'px-2 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/15',
+          )}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <AlertTriangle aria-hidden className="size-3.5" />
+            {pluralize(pastDue.length, 'vencida', 'vencidas')}
+          </span>
+          <span className="tabular-nums">{formatCurrency(pastDueTotal)}</span>
+        </Link>
+      )}
       {billings.length === 0 ? (
         <p className="px-2 py-1 text-xs text-muted-foreground">Nenhum link esperando pagamento.</p>
       ) : (

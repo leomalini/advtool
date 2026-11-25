@@ -337,6 +337,44 @@ export const screenActionTools = {
   }),
 }
 
+// ── Cobranças (docs/cobrancas.md, fase 7) ────────────────────────────────────
+
+/** Lembretes da régua: nada sai sozinho — a fila do dia é manual, na aba
+ * Cobranças. Por isso o card não pede a segunda confirmação. */
+const billingDisplay = {
+  lancamento_descricao: z.string().max(300).describe('A descrição, para exibição.'),
+  cliente_nome: displayFields.cliente_nome,
+  valor: z.number().positive().optional().describe('Valor, para exibição.'),
+}
+
+export const billingActionTools = {
+  ligar_lembretes: tool({
+    description:
+      'Propõe ligar os lembretes da régua numa receita pendente com vencimento (id de ' +
+      'ver_cobrancas ou listar_lancamentos). Sem cobrança ainda, põe a página de pagamento no ' +
+      'ar junto. Nenhuma mensagem sai sozinha: os avisos aparecem na fila da aba Cobranças. ' +
+      'SÓ quando o usuário pedir. O usuário confirma.',
+    inputSchema: z.object({
+      lancamento_id: z.string().uuid(),
+      ...billingDisplay,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+
+  pausar_lembretes: tool({
+    description:
+      'Propõe pausar (pausar: true) ou retomar (pausar: false) os lembretes de uma cobrança — ' +
+      'por exemplo, quando o cliente combinou outra data. A página de pagamento continua no ar. ' +
+      'O usuário confirma.',
+    inputSchema: z.object({
+      lancamento_id: z.string().uuid(),
+      pausar: z.boolean(),
+      ...billingDisplay,
+    }),
+    outputSchema: actionOutputSchema,
+  }),
+}
+
 /** As ações que gravam fora do escritório (e-mail aos signatários, cobrança):
  * o card pede uma segunda confirmação. */
 export const REINFORCED_ACTION_TOOLS = ['enviar_para_assinatura', 'gerar_link_pagamento'] as const
@@ -449,6 +487,7 @@ export const actionTools = {
 
   ...contractActionTools,
   ...screenActionTools,
+  ...billingActionTools,
 }
 
 export type ActionToolName = keyof typeof actionTools

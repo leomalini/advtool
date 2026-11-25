@@ -50,8 +50,10 @@ import {
   completeTask,
   createHearingAction,
   createPaymentLinkAction,
+  enableRemindersAction,
   handlePublication,
   linkPublication,
+  pauseRemindersAction,
   reassignTask,
   registerFinancialEntry,
   registerSuccessFee,
@@ -86,6 +88,8 @@ export type PendingAction =
   | { tool: 'tratar_publicacao'; input: ActionInput<'tratar_publicacao'> }
   | { tool: 'enviar_para_assinatura'; input: ActionInput<'enviar_para_assinatura'> }
   | { tool: 'gerar_link_pagamento'; input: ActionInput<'gerar_link_pagamento'> }
+  | { tool: 'ligar_lembretes'; input: ActionInput<'ligar_lembretes'> }
+  | { tool: 'pausar_lembretes'; input: ActionInput<'pausar_lembretes'> }
 
 /** Invalida só quando gravou: uma recusa não mudou nada na tela. */
 function afterOk(output: ActionOutput, invalidate: () => void): ActionOutput {
@@ -361,6 +365,12 @@ export function useExecuteAction() {
           invalidatePayments()
           return output
         }
+
+        case 'ligar_lembretes':
+          return afterOk(await enableRemindersAction(action.input), invalidatePayments)
+
+        case 'pausar_lembretes':
+          return afterOk(await pauseRemindersAction(action.input), invalidatePayments)
       }
     },
   })

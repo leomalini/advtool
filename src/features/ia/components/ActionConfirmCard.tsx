@@ -47,6 +47,8 @@ const ACTION_TITLES: Record<PendingAction['tool'], string> = {
   tratar_publicacao: 'Marcar publicação como tratada',
   enviar_para_assinatura: 'Enviar para assinatura',
   gerar_link_pagamento: 'Gerar link de pagamento',
+  ligar_lembretes: 'Ligar os lembretes da cobrança',
+  pausar_lembretes: 'Pausar ou retomar os lembretes da cobrança',
 }
 
 /** "12/11/2026 às 14:20" a partir de data e hora do input. */
@@ -78,6 +80,25 @@ function personRows(data: PartyToolData): [string, string][] {
 /** Ações com dados aninhados (pessoa, partes) têm linhas próprias. */
 function specificRows(action: PendingAction): [string, string][] | null {
   switch (action.tool) {
+    case 'ligar_lembretes':
+    case 'pausar_lembretes': {
+      const { input } = action
+      const pausing = action.tool === 'pausar_lembretes' && action.input.pausar
+      const rows: [string, string | undefined][] = [
+        ['Lançamento', input.lancamento_descricao],
+        ['Cliente', input.cliente_nome],
+        ['Valor', input.valor !== undefined ? formatCurrency(input.valor) : undefined],
+        [
+          'O que muda',
+          action.tool === 'ligar_lembretes'
+            ? 'os avisos entram na fila da aba Cobranças nos dias da régua; nada é enviado sozinho'
+            : pausing
+              ? 'os avisos param até retomar; a página de pagamento continua no ar'
+              : 'os avisos voltam a entrar na fila nos dias da régua',
+        ],
+      ]
+      return rows.filter((row): row is [string, string] => !!row[1])
+    }
     case 'cadastrar_cliente':
       return personRows(action.input.dados)
     case 'completar_cliente':

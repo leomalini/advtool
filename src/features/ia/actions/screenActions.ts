@@ -12,7 +12,7 @@ import {
   createFinancialEntry,
   getFinancialEntryById,
 } from '@/features/financeiro/services/financialEntries.service'
-import { openBilling } from '@/features/financeiro/services/billings.service'
+import { openBilling, updateBilling } from '@/features/financeiro/services/billings.service'
 import { PaymentLinkError } from '@/features/financeiro/services/paymentCharges.service'
 import {
   SUCCESS_FEE_FORM_DEFAULTS,
@@ -294,6 +294,35 @@ export async function createPaymentLinkAction(
   } catch (error) {
     // A rota explica: não é receita pendente, valor abaixo de R$ 1,00, conta
     // não configurada.
+    if (error instanceof PaymentLinkError) return { ok: false, motivo: error.message }
+    throw error
+  }
+}
+
+/** Liga a régua — e põe a cobrança no ar, se ainda não estiver — pelo mesmo
+ * service do "Cobrar automaticamente" da tela. Nada é enviado: o aviso entra
+ * na fila da aba Cobranças. */
+export async function enableRemindersAction(
+  input: ActionInput<'ligar_lembretes'>,
+): Promise<ActionOutput> {
+  try {
+    const { billing } = await openBilling(input.lancamento_id, { reminders: true })
+    return { ok: true, id: billing.id, link: `/financeiro?id=${input.lancamento_id}` }
+  } catch (error) {
+    // Sem vencimento, já paga, abaixo de R$ 1,00, conta não configurada.
+    if (error instanceof PaymentLinkError) return { ok: false, motivo: error.message }
+    throw error
+  }
+}
+
+export async function pauseRemindersAction(
+  input: ActionInput<'pausar_lembretes'>,
+): Promise<ActionOutput> {
+  try {
+    const { billing } = await updateBilling(input.lancamento_id, { paused: input.pausar })
+    return { ok: true, id: billing.id, link: `/financeiro?id=${input.lancamento_id}` }
+  } catch (error) {
+    // Sem cobrança no ar, ou com os lembretes desligados.
     if (error instanceof PaymentLinkError) return { ok: false, motivo: error.message }
     throw error
   }

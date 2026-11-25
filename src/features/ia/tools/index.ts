@@ -5,6 +5,7 @@ import { interfaceTools } from './interface'
 import { createAgendaTools } from './read/agenda'
 import { createClientTools } from './read/clients'
 import { createFileTools, type FileToolsContext } from './read/files'
+import { createBillingTools } from './read/billings'
 import { createFinancialTools } from './read/financial'
 import { createHearingTools } from './read/hearings'
 import { createProcessTools } from './read/processes'
@@ -33,6 +34,7 @@ export function createAssistantTools(supabase: ToolClient, context: AssistantToo
     ...createHearingTools(supabase),
     ...createPublicationTools(supabase),
     ...createFinancialTools(supabase),
+    ...createBillingTools(supabase),
     ...createTeamTools(supabase, context.userId),
     ...createFileTools(supabase, context),
     ...createTemplateTools(supabase, context),
