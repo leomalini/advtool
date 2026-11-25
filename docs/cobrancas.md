@@ -2,10 +2,10 @@
 
 > **Status:** plano aprovado em 2026-11-05 (as oito decisões com o usuário e as
 > "Decididas no plano", sem veto). **Fase 0 feita em 2026-11-23:** o webhook
-> entrega. **Fase 1** em `feat/cobrancas-pagina` (migration 95 aplicada, testada ponta
-> a ponta). **Fase 2** em `feat/cobrancas-regua`, sem commit e sem a migration 96
-> aplicada. As migrations 91 a 94 foram usadas por outros módulos: as deste plano
-> começam na **95**.
+> entrega. **Fases 1 e 2** na `release/cobrancas` (PRs #84 e #85; migrations 95 e 96
+> aplicadas, testadas). **Fase 3** em `feat/cobrancas-encargos` (migration 97 aplicada,
+> testada com Pix real em 2026-11-24). As migrations 91 a 94 foram usadas por outros
+> módulos: as deste plano começam na **95**.
 > **Base:** as fases saem da `main`, em `release/cobrancas`.
 > **API relida em 2026-11-05:** a documentação do checkout mudou desde a leitura
 > de outubro, e `docs/integracao-infinitepay.md` ficou desatualizada nesses
@@ -392,7 +392,22 @@ base).
 
 ### Fase 3: multa, juros e desconto no Pix (migration 97)
 
-Começa medindo: um Pix real com desconto, para ver como o valor volta no
+**Medido em 2026-11-23** (conta pessoal, link de R$ 1,20 com `options.discounts`
+`{ "pix": 10 }`, `single_payment` e `valid_until`; sem cobrança no banco, a entrega
+ficou `unmatched`): o checkout abre em R$ 1,20 e mostra R$ 1,08 (desconto de R$ 0,12)
+ao escolher Pix. Pago por Pix:
+
+| Onde | `amount` | `paid_amount` | Outros |
+|---|---|---|---|
+| Webhook | 120 | 108 | `capture_method: pix`; o corpo devolve `options.discounts` |
+| `payment_check` (sem chave) | 120 | 108 | `success` e `paid` `true` |
+
+`amount` continua sendo o preço cheio do link e o desconto só aparece em
+`paid_amount`. A regra 2 de `confirm.ts` (preço do link = valor da cobrança) segue
+valendo; o que muda é aceitar `paid_amount` menor só em Pix de link com desconto. Com
+opções, a URL do checkout vem curta, sem `lenc`.
+
+O plano original começava medindo: um Pix real com desconto, para ver como o valor volta no
 `payment_check`. A baixa de hoje exige `paid_amount >= amount` e recusaria esse
 pagamento, então a regra passa a aceitar o valor com o desconto gravado na própria
 cobrança. Cartão num link com desconto só no Pix continua pedindo o valor cheio.
@@ -404,6 +419,49 @@ e `discount_amount` na baixa e no estorno, conferência em `contractEntries.ts`.
 **Pronto quando:** um atraso mostra a conta na página, o pagamento gera o principal
 e os Encargos, um Pix até o vencimento paga com desconto e dá baixa, a conferência
 do contrato não acusa diferença, e o estorno desfaz tudo.
+
+#### Como ficou (2026-11-24, branch `feat/cobrancas-encargos`, sem commit)
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Migration 97 | `20260101000097_billing_late_charges.sql` | Percentuais em `contracts` e `billings` (+ desconto no Pix); composição do link em `payment_charges` (soma conferida; desconto e encargo nunca juntos); categoria `encargos`, `parent_entry_id` (um por original) e `discount_amount` em `financial_entries`; a trava aceita a troca valor → desconto só da `service_role` e com a soma igual, e passa a vigiar `discount_amount` |
+| Conta | `lib/billing/lateCharges.ts` | Pura, em centavos: folga até o dia útil (`businessDayOnOrAfter`, sem recesso), multa uma vez, juros de 1/30 do mensal por dia corrido desde o vencimento, desconto só sem encargo; confere o Pix com desconto (±1 centavo) |
+| Link | `checkout.ts`, `charges.ts` | Preço do dia; `options.discounts.pix` só com API Key; grava a composição; o link do dia só é reaproveitado com o mesmo desconto |
+| Baixa | `confirm.ts` | Pix com desconto: `amount` = recebido, `discount_amount` = diferença; desconto não previsto dá baixa e alerta; multa e juros viram o lançamento de Encargos, pago, ligado ao original (reentrega não duplica; reprocessar completa) |
+| Estorno | `refundTransaction` | Apaga os Encargos e devolve o desconto ao valor |
+| Cobrança | `billings.ts`, PATCH `terms`, `BillingTerms` | Herda multa e juros do contrato ao nascer; o detalhe mostra o valor de hoje e troca os três percentuais |
+| Página | `BillingPayPage` | Composição depois do vencimento; "No Pix, R$ X" antes |
+| Aba e mensagem | `BillingsPanel`, `messages.ts` | Valor de hoje com o original embaixo; depois do vencimento, "Com multa e juros, hoje fica R$ X"; antes, o preço no Pix |
+| Contrato | form, detalhe, importação, leitor (`multa_percentual`, `juros_mensal_percentual`) | Os dois campos, em honorários; o Assistente cria sem eles |
+| Financeiro | detalhe, card do pagamento, resumo | Desconto e link do Encargos para o original; "Pago via Pix" mostra o que o cliente pagou; Encargos contam em "pela InfinitePay"; a conferência do contrato soma o desconto e ignora Encargos |
+
+Decidido na implementação (vale salvo veto): juros desde o vencimento original, 1/30 do
+mensal por dia; o desconto vale na mesma folga; Encargos também podem ser escolhidos à mão
+no formulário; o Assistente não cria contrato com multa e juros.
+
+Verificado: `tsc`, lint e build; 52 verificações no Node (conta, mensagens, link, baixa,
+estorno, conferência) e as 125 das fases 1 e 2; `auth.role()` existe no banco. **Teste
+real (2026-11-24)**, migration 97 aplicada e conferida, num `next dev` na 3002 com
+`APP_PUBLIC_URL=http://localhost:3002` (sem webhook: a baixa vem do "Continuar", pelo
+código desta branch, e não da produção):
+
+| Receita | Link | Pago | Resultado |
+|---|---|---|---|
+| R$ 1,00, venceu 18/11, multa 10%, juros 30% a.m. | 116 = 100 + 10 + 6 | Pix R$ 1,16 | Original pago com R$ 1,00; Encargos de R$ 0,16 pago, ligado |
+| R$ 1,20, vence 30/11, Pix 10% | 120, `discounts.pix: 10` | Pix R$ 1,08 | Pago com R$ 1,08 e desconto R$ 0,12 (a trava aceitou a troca) |
+
+O estorno registrado nas duas voltou a pendente com o valor original e apagou os Encargos.
+As receitas de teste foram excluídas; os dois links e as transações estornadas ficam sem
+lançamento, como em qualquer exclusão depois de pagamento.
+
+Corrigido no teste: "Pago via Pix" mostrava o preço do link e não o pago; Encargos não
+entravam em "pela InfinitePay".
+
+**Não verificado:** a baixa pelo webhook, que é o mesmo `confirmPayment` do retorno mas
+roda na produção. Até o deploy, a produção não gera link com desconto nem com encargo;
+só um link gerado por esta branch no `next dev` comum (aviso indo para a produção) daria
+baixa lá sem gravar o desconto ou sem criar os Encargos. Também não: a importação de um
+contrato com multa e juros pela IA, e a herança do contrato na tela (coberta no Node).
 
 ### Fase 4: mensalidades (migration 98)
 

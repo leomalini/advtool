@@ -30,6 +30,10 @@ export interface CreateLinkOptions {
   /** ISO 8601, no futuro e até um ano depois: o link deixa de aceitar
    * pagamento. */
   valid_until?: string
+  /** Desconto em % por meio, maior que 0 e menor que 100: `{ "pix": 10 }`. O
+   * `payment_check` devolve `amount` cheio e `paid_amount` com o desconto
+   * (medido em 2026-11-23). */
+  discounts?: { pix?: number; credit_card?: number }
 }
 
 /** Corpo do `POST /links`. `items` em inglês: `"itens"`, como num exemplo da

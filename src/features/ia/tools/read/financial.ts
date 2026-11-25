@@ -33,7 +33,9 @@ export function createFinancialTools(supabase: ToolClient) {
         'valor da base: esses ficam em R$ 0, e a estimativa não é dinheiro a receber.',
       inputSchema: z.object({
         tipo: z.enum(['receita', 'despesa']).optional(),
-        categoria: z.enum(['honorario', 'exito', 'custas', 'pericia', 'outros']).optional(),
+        categoria: z
+          .enum(['honorario', 'exito', 'custas', 'pericia', 'encargos', 'outros'])
+          .optional(),
         status: z.enum(['pendente', 'pago']).optional(),
         so_a_apurar: z.boolean().optional().describe('Só percentuais sem o valor da base.'),
         vence_de: dateSchema.optional(),

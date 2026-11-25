@@ -170,22 +170,30 @@ export function contractEntryInputs(
  */
 export function describeEntriesDivergence(
   contract: Pick<Contract, 'kind' | 'total_amount' | 'installments'>,
-  entries: Pick<FinancialEntry, 'type' | 'category' | 'settlement_kind' | 'amount'>[]
+  entries: Pick<
+    FinancialEntry,
+    'type' | 'category' | 'settlement_kind' | 'amount' | 'discount_amount'
+  >[]
 ): string | null {
   const kind = contractEntryKind(contract.kind)
   if (!kind || contract.total_amount === null) return null
   // A success fee assessed with a due date is scheduled too, and it is not an
-  // installment of the contract's total.
+  // installment of the contract's total. Nor are late charges (migration 97):
+  // they are paid on top of an installment.
   const installments = entries.filter(
     (entry) =>
       entry.type === kind.type &&
       entry.settlement_kind === 'scheduled' &&
-      entry.category !== 'exito'
+      entry.category !== 'exito' &&
+      entry.category !== 'encargos'
   )
   if (installments.length === 0) return null
 
+  // A Pix discount lowers `amount` to what was received; the installment is
+  // still worth the original (migration 97).
   const launchedCents = installments.reduce(
-    (sum, entry) => sum + Math.round(Number(entry.amount) * 100),
+    (sum, entry) =>
+      sum + Math.round((Number(entry.amount) + Number(entry.discount_amount)) * 100),
     0
   )
   const differences: string[] = []

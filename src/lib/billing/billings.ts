@@ -58,6 +58,34 @@ export async function getBillingForEntry(
  * conta da InfinitePay configurada — conferidas aqui para o escritório saber
  * na hora, e não quando o cliente clicar em "Pagar".
  */
+/**
+ * Multa e juros que o contrato do lançamento prevê, para a cobrança nascer com
+ * eles (migration 97). Copiados, não ligados: mudar o contrato depois não muda
+ * a cobrança, como não muda o lançamento. Sem contrato, nada — "só se o
+ * contrato prever" (docs/cobrancas.md).
+ */
+async function contractTermsOf(
+  supabase: SupabaseClient,
+  entryId: string,
+): Promise<{ late_fee_percent?: number; monthly_interest_percent?: number }> {
+  const { data, error } = await supabase
+    .from('financial_entries')
+    .select('contract:contracts(late_fee_percent, monthly_interest_percent)')
+    .eq('id', entryId)
+    .maybeSingle()
+  if (error) throw error
+  const contract = (data as unknown as {
+    contract: { late_fee_percent: number | null; monthly_interest_percent: number | null } | null
+  } | null)?.contract
+  if (!contract) return {}
+  return {
+    ...(contract.late_fee_percent ? { late_fee_percent: Number(contract.late_fee_percent) } : {}),
+    ...(contract.monthly_interest_percent
+      ? { monthly_interest_percent: Number(contract.monthly_interest_percent) }
+      : {}),
+  }
+}
+
 export async function openBilling(
   supabase: SupabaseClient,
   input: { entryId: string; userId: string; clientDescription?: string },
@@ -110,6 +138,7 @@ export async function openBilling(
       financial_entry_id: entry.id,
       token_hash: await hashBillingToken(await deriveBillingToken(id)),
       client_description: description ?? defaultClientDescription(entry),
+      ...(await contractTermsOf(supabase, entry.id)),
       created_by: input.userId,
     })
     .select(BILLING_COLUMNS)

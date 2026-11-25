@@ -120,6 +120,39 @@ export async function setPaused(
   }
 }
 
+/** Os percentuais da cobrança (migration 97). Null desliga; o que não vier
+ * fica como está. Valem no próximo clique em "Pagar": o link já aberto segue
+ * com o preço que tinha até vencer. */
+export interface BillingTermsChange {
+  lateFeePercent?: number | null
+  monthlyInterestPercent?: number | null
+  pixDiscountPercent?: number | null
+}
+
+export async function setBillingTerms(
+  supabase: SupabaseClient,
+  input: { entryId: string; terms: BillingTermsChange },
+): Promise<BillingResult> {
+  const billing = await activeBillingOf(supabase, input.entryId)
+  if (!billing) return failure(404, NO_ACTIVE)
+
+  const { lateFeePercent, monthlyInterestPercent, pixDiscountPercent } = input.terms
+  // 0 é o mesmo que sem: a coluna guarda null, e a tela mostra "sem".
+  const orNull = (value: number | null) => (value === null || value === 0 ? null : value)
+  return {
+    ok: true,
+    billing: await updateBilling(supabase, billing.id, {
+      ...(lateFeePercent !== undefined ? { late_fee_percent: orNull(lateFeePercent) } : {}),
+      ...(monthlyInterestPercent !== undefined
+        ? { monthly_interest_percent: orNull(monthlyInterestPercent) }
+        : {}),
+      ...(pixDiscountPercent !== undefined
+        ? { pix_discount_percent: orNull(pixDiscountPercent) }
+        : {}),
+    }),
+  }
+}
+
 /** O telefone desta cobrança; null volta ao contato principal do cliente. */
 export async function setRecipientPhone(
   supabase: SupabaseClient,

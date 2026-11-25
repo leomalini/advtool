@@ -1,3 +1,4 @@
+import type { AmountOnDay, BillingTerms } from '@/lib/billing/lateCharges'
 import type { BillingReminderState, PlannedStep } from '@/lib/billing/schedule'
 import type {
   FinancialEntryCategory,
@@ -35,6 +36,12 @@ export interface Billing {
   /** Para qual clique e qual vencimento o sino já avisou. */
   click_alert_for: string | null
   ended_alert_for: string | null
+  /** Multa (% uma vez) e juros (% ao mês) depois do vencimento, copiados do
+   * contrato ao criar; desconto no Pix até o vencimento (migration 97).
+   * numeric — o PostgREST devolve number. */
+  late_fee_percent: number | null
+  monthly_interest_percent: number | null
+  pix_discount_percent: number | null
   created_by: string
   created_at: string
   updated_at: string
@@ -43,8 +50,20 @@ export interface Billing {
 export const BILLING_COLUMNS =
   'id, financial_entry_id, client_description, viewed_at, last_viewed_at, ' +
   'checkout_clicked_at, canceled_at, canceled_by, reminders_enabled, reminders_enabled_at, ' +
-  'paused_at, recipient_phone, click_alert_for, ended_alert_for, created_by, created_at, ' +
-  'updated_at'
+  'paused_at, recipient_phone, click_alert_for, ended_alert_for, late_fee_percent, ' +
+  'monthly_interest_percent, pix_discount_percent, created_by, created_at, updated_at'
+
+/** Os percentuais da cobrança como a conta (`lib/billing/lateCharges.ts`) os lê. */
+export function billingTerms(
+  billing: Pick<Billing, 'late_fee_percent' | 'monthly_interest_percent' | 'pix_discount_percent'>,
+): BillingTerms {
+  const read = (value: number | null) => (value === null ? null : Number(value))
+  return {
+    lateFeePercent: read(billing.late_fee_percent),
+    monthlyInterestPercent: read(billing.monthly_interest_percent),
+    pixDiscountPercent: read(billing.pix_discount_percent),
+  }
+}
 
 // ── Régua de avisos (migration 96) ──────────────────────────────────────────
 
@@ -125,6 +144,8 @@ export interface BillingPanelItem {
   nextStep: PlannedStep | null
   /** O checkout da InfinitePay ainda pagável, se o cliente abriu um. */
   liveChargeId: string | null
+  /** O valor de hoje, com multa, juros ou o desconto do Pix (migration 97). */
+  amountToday: AmountOnDay
 }
 
 export interface BillingPanel {
@@ -167,6 +188,7 @@ const CATEGORY_DESCRIPTIONS: Record<FinancialEntryCategory, string> = {
   exito: 'Honorários de êxito',
   custas: 'Custas processuais',
   pericia: 'Honorários periciais',
+  encargos: 'Encargos por atraso',
   outros: 'Serviços advocatícios',
 }
 
@@ -194,7 +216,15 @@ export type PublicBillingView =
       status: 'open'
       officeName: string | null
       description: string
+      /** O valor de hoje: principal + multa + juros (migration 97). */
       amountCents: number
+      principalCents: number
+      lateFeeCents: number
+      interestCents: number
+      /** Dias desde o vencimento, quando já há encargo. */
+      daysLate: number
+      /** Desconto no Pix que vale hoje, e quanto fica no Pix. */
+      pixDiscount: { percent: number; cents: number } | null
       /** Vencimento, só quando o lançamento tem data ('scheduled'). */
       dueDate: string | null
     }

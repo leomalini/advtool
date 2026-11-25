@@ -17,6 +17,8 @@ import type {
   FinancialSettlementKind,
 } from '@/types/financialEntry.types'
 import { isChargeLive, type PaymentChargeStatus } from '@/types/paymentCharge.types'
+import { infinitePayApiKey } from '@/lib/infinitepay/client'
+import { billingAmountToday } from './checkout'
 import { clientDisplayName } from './entries'
 import { officeDateOf } from './officeTime'
 import {
@@ -59,6 +61,8 @@ export interface PanelContext {
   today: string
   now: Date
   offsets: readonly number[]
+  /** Há API Key: o desconto no Pix pode ir no link (migration 97). */
+  discountAvailable: boolean
 }
 
 /** Uma linha do banco, com a régua aplicada. Puro, a não ser a URL. */
@@ -141,6 +145,9 @@ export function toPanelItem(
     liveChargeId:
       (entry.payment_charges ?? []).find((charge) => isChargeLive(charge, context.now))?.id ??
       null,
+    amountToday: billingAmountToday(billing, entry, context.now, {
+      discountAvailable: context.discountAvailable,
+    }),
   }
 }
 
@@ -182,7 +189,12 @@ export async function loadBillingPanel(
     .limit(PANEL_LIMIT)
   if (error) throw error
 
-  const context: PanelContext = { today, now, offsets: office.offsets }
+  const context: PanelContext = {
+    today,
+    now,
+    offsets: office.offsets,
+    discountAvailable: infinitePayApiKey() !== null,
+  }
   const items = await Promise.all(
     ((data ?? []) as unknown as PanelRow[]).map(async (row) =>
       toPanelItem(row, await billingPageUrl(row.id, input.requestOrigin), context),
@@ -213,6 +225,7 @@ export async function loadBillingPanelItem(
     today: officeDateOf(now),
     now,
     offsets: office.offsets,
+    discountAvailable: infinitePayApiKey() !== null,
   })
   return { item, officeName: office.name, officePhone: office.phone }
 }

@@ -2,8 +2,16 @@ import type { Profile } from './common.types'
 import type { PaymentChargeSummary } from './paymentCharge.types'
 
 export type FinancialEntryType = 'receita' | 'despesa'
-/** `exito` (migration 89): the success fee, which the Êxitos tab lists. */
-export type FinancialEntryCategory = 'honorario' | 'exito' | 'custas' | 'pericia' | 'outros'
+/** `exito` (migration 89): the success fee, which the Êxitos tab lists.
+ * `encargos` (migration 97): late fee and interest paid with a billing, in an
+ * entry of their own linked to the original by `parent_entry_id`. */
+export type FinancialEntryCategory =
+  | 'honorario'
+  | 'exito'
+  | 'custas'
+  | 'pericia'
+  | 'encargos'
+  | 'outros'
 /** "Atrasado" não é um estado guardado — ver getFinancialSituation. */
 export type FinancialEntryStatus = 'pendente' | 'pago'
 /**
@@ -24,6 +32,7 @@ export const FINANCIAL_CATEGORY_LABELS: Record<FinancialEntryCategory, string> =
   exito: 'Êxito',
   custas: 'Custas',
   pericia: 'Perícia',
+  encargos: 'Encargos',
   outros: 'Outros',
 }
 
@@ -67,6 +76,12 @@ export interface FinancialEntry {
   /** An estimate of the base while to assess. It only informs: never summed
    * into "A receber". */
   estimated_base_amount: number | null
+  /** The original entry whose late charges this `encargos` entry holds
+   * (migration 97). */
+  parent_entry_id: string | null
+  /** Pix discount given at settlement (migration 97): `amount` is what was
+   * received, `amount + discount_amount` the original value. */
+  discount_amount: number
   created_by: string
   created_at: string
   updated_at: string

@@ -98,6 +98,8 @@ export function ContractForm({
       installments: null,
       first_due_date: '',
       success_fee_percent: null,
+      late_fee_percent: null,
+      monthly_interest_percent: null,
       start_date: '',
       end_date: '',
       notice_days: 30,
@@ -385,6 +387,42 @@ export function ContractForm({
             {errors.success_fee_percent && (
               <p className="text-xs text-destructive">{errors.success_fee_percent.message}</p>
             )}
+          </div>
+        )}
+        {kind === 'honorarios' && (
+          <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="contract-late-fee">Multa por atraso (%)</Label>
+                <Input
+                  id="contract-late-fee"
+                  inputMode="decimal"
+                  placeholder="Ex: 2"
+                  {...register('late_fee_percent', { setValueAs: toOptionalNumber })}
+                />
+                {errors.late_fee_percent && (
+                  <p className="text-xs text-destructive">{errors.late_fee_percent.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contract-interest">Juros por atraso (% ao mês)</Label>
+                <Input
+                  id="contract-interest"
+                  inputMode="decimal"
+                  placeholder="Ex: 1"
+                  {...register('monthly_interest_percent', { setValueAs: toOptionalNumber })}
+                />
+                {errors.monthly_interest_percent && (
+                  <p className="text-xs text-destructive">
+                    {errors.monthly_interest_percent.message}
+                  </p>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Só se o contrato prever. As cobranças das parcelas nascem com eles: a multa uma vez
+              e os juros por dia, depois do vencimento.
+            </p>
           </div>
         )}
       </section>

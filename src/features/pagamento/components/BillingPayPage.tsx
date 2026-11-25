@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { PublicBillingView } from '@/types/billing.types'
-import { formatCurrency, todayISO } from '@/types/financialEntry.types'
+import { formatCurrency, formatPercent, todayISO } from '@/types/financialEntry.types'
 import { useBillingCheckout, useBillingView } from '../hooks/useBillingPage'
 import { PaymentCard, ReceiptLink } from './PaymentCard'
 
@@ -122,6 +122,31 @@ function BillingState({ token, data }: { token: string; data: PublicBillingView 
   return <OpenBilling token={token} data={data} />
 }
 
+/** De onde vem o valor do dia, quando o atraso o mudou (migration 97). */
+function AmountBreakdown({ data }: { data: Extract<PublicBillingView, { status: 'open' }> }) {
+  if (data.lateFeeCents + data.interestCents === 0) return null
+  const rows = [
+    { key: 'principal', label: 'Valor original', cents: data.principalCents },
+    { key: 'fee', label: 'Multa', cents: data.lateFeeCents },
+    {
+      key: 'interest',
+      label: `Juros (${data.daysLate} ${data.daysLate === 1 ? 'dia' : 'dias'})`,
+      cents: data.interestCents,
+    },
+  ].filter((row) => row.key === 'principal' || row.cents > 0)
+
+  return (
+    <dl className="space-y-1 rounded-md border px-3 py-2 text-sm">
+      {rows.map((row) => (
+        <div key={row.key} className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">{row.label}</dt>
+          <dd className="tabular-nums">{formatCurrency(row.cents / 100)}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 function OpenBilling({
   token,
   data,
@@ -146,6 +171,16 @@ function OpenBilling({
         <p className={cn('text-sm', overdue ? 'text-warning' : 'text-muted-foreground')}>
           {overdue ? 'Venceu em ' : 'Vence em '}
           {formatDate(data.dueDate)}
+        </p>
+      )}
+      <AmountBreakdown data={data} />
+      {data.pixDiscount && (
+        <p className="rounded-md bg-success/12 px-3 py-2 text-sm text-success">
+          No Pix,{' '}
+          <strong className="tabular-nums">
+            {formatCurrency(data.pixDiscount.cents / 100)}
+          </strong>{' '}
+          ({formatPercent(data.pixDiscount.percent)} de desconto até o vencimento).
         </p>
       )}
 

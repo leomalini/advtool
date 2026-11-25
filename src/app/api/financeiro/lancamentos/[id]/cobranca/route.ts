@@ -9,6 +9,7 @@ import {
 } from '@/lib/billing/billings'
 import { loadBillingPanelItem } from '@/lib/billing/panel'
 import {
+  setBillingTerms,
   setClientOptOut,
   setPaused,
   setRecipientPhone,
@@ -25,8 +26,8 @@ import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
  *   POST  põe no ar — cria, ou religa a encerrada — e, com `reminders`, liga
  *         os lembretes (`financeiro:create`).
  *   PATCH troca a descrição, liga ou desliga os lembretes, pausa, troca o
- *         telefone ou registra que o cliente não quer receber
- *         (`financeiro:update`).
+ *         telefone, registra que o cliente não quer receber ou troca multa,
+ *         juros e desconto no Pix (`financeiro:update`).
  *
  * A permissão é conferida com a sessão; a gravação vai pela service_role,
  * porque `billings` não tem policy de escrita (migrations 95 e 96).
@@ -37,6 +38,16 @@ const postSchema = z.object({
   reminders: z.boolean().optional(),
 })
 
+/** Duas casas, como as colunas `numeric` da migration 97. */
+const percent = (max: number) =>
+  z
+    .number()
+    .min(0)
+    .max(max)
+    .refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6, {
+      message: 'Até duas casas decimais.',
+    })
+
 const patchSchema = z
   .object({
     clientDescription: z.string().max(500).optional(),
@@ -44,6 +55,14 @@ const patchSchema = z
     paused: z.boolean().optional(),
     recipientPhone: z.string().max(30).nullable().optional(),
     clientOptOut: z.boolean().optional(),
+    terms: z
+      .object({
+        lateFeePercent: percent(100).nullable().optional(),
+        monthlyInterestPercent: percent(100).nullable().optional(),
+        // A InfinitePay pede maior que 0 e menor que 100; 0 desliga.
+        pixDiscountPercent: percent(99.99).nullable().optional(),
+      })
+      .optional(),
   })
   .refine((body) => Object.values(body).some((value) => value !== undefined), {
     message: 'Nada a mudar.',
@@ -168,6 +187,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (body.clientOptOut !== undefined) {
       const optOut = body.clientOptOut
       steps.push(() => setClientOptOut(admin, { entryId, optOut }))
+    }
+    if (body.terms !== undefined) {
+      const terms = body.terms
+      steps.push(() => setBillingTerms(admin, { entryId, terms }))
     }
 
     let result: BillingResult | null = null

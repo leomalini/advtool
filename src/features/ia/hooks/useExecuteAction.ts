@@ -424,6 +424,10 @@ async function registerContract(
       installments: input.parcelas ?? null,
       first_due_date: input.primeiro_vencimento ?? '',
       success_fee_percent: input.exito_percentual ?? null,
+      // O Assistente não cria com multa e juros (migration 97): ficam para o
+      // formulário do contrato.
+      late_fee_percent: null,
+      monthly_interest_percent: null,
       start_date: input.inicio ?? '',
       end_date: input.fim ?? '',
       notice_days: 30,

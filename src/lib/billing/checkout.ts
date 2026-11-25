@@ -3,9 +3,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { publicAppBaseUrl } from '@/lib/appUrl'
 import { createChargeLink } from '@/lib/infinitepay/charges'
+import { infinitePayApiKey } from '@/lib/infinitepay/client'
 import { resolveInfinitePayHandle } from '@/lib/infinitepay/handle'
 import {
   BILLING_COLUMNS,
+  billingTerms,
   type Billing,
   type BillingCheckoutResult,
   type PublicBillingView,
@@ -21,6 +23,7 @@ import {
   ENTRY_FOR_BILLING_COLUMNS,
   type EntryForBilling,
 } from './entries'
+import { amountOnDay, type AmountOnDay } from './lateCharges'
 import { officeDateOf } from './officeTime'
 import { hashBillingToken, looksLikeBillingToken } from './token'
 
@@ -114,10 +117,31 @@ async function findSettlingPayment(
  * O estado da cobrança como o cliente o vê. Pago vem antes de encerrado: um
  * lançamento quitado depois de a cobrança sair do ar ainda mostra o recibo.
  */
+/**
+ * O valor de hoje da cobrança (migration 97). O desconto no Pix só existe com
+ * a API Key: sem ela a InfinitePay não aceita `options`, e a página não pode
+ * prometer o que o link não vai dar.
+ */
+export function billingAmountToday(
+  billing: Pick<Billing, 'late_fee_percent' | 'monthly_interest_percent' | 'pix_discount_percent'>,
+  entry: Pick<EntryForBilling, 'amount' | 'settlement_kind' | 'due_date'>,
+  now: Date,
+  options: { discountAvailable: boolean },
+): AmountOnDay {
+  const terms = billingTerms(billing)
+  return amountOnDay({
+    principalCents: entryAmountCents(entry) ?? 0,
+    dueDate: entry.settlement_kind === 'scheduled' ? entry.due_date : null,
+    today: officeDateOf(now),
+    terms: options.discountAvailable ? terms : { ...terms, pixDiscountPercent: null },
+  })
+}
+
 async function toPublicView(
   supabase: SupabaseClient,
   row: BillingWithEntry,
   office: OfficeForPage,
+  now: Date,
 ): Promise<PublicBillingView> {
   const entry = row.financial_entries
 
@@ -137,11 +161,19 @@ async function toPublicView(
     return { status: 'unavailable', officeName: office.name, officePhone: office.phone }
   }
 
+  const today = billingAmountToday(row, entry, now, {
+    discountAvailable: infinitePayApiKey() !== null,
+  })
   return {
     status: 'open',
     officeName: office.name,
     description: row.client_description,
-    amountCents: entryAmountCents(entry) ?? 0,
+    amountCents: today.totalCents,
+    principalCents: today.principalCents,
+    lateFeeCents: today.lateFeeCents,
+    interestCents: today.interestCents,
+    daysLate: today.daysLate,
+    pixDiscount: today.pixDiscount,
     dueDate: entry.settlement_kind === 'scheduled' ? entry.due_date : null,
   }
 }
@@ -158,9 +190,10 @@ export async function getPublicBillingView(
   const row = await findBillingByToken(supabase, input.token)
   if (!row) return { status: 'not_found' }
 
-  const view = await toPublicView(supabase, row, await loadOffice(supabase))
+  const now = input.now ?? new Date()
+  const view = await toPublicView(supabase, row, await loadOffice(supabase), now)
   if (view.status === 'open' && input.recordView) {
-    await recordView(supabase, row, input.now ?? new Date())
+    await recordView(supabase, row, now)
   }
   return view
 }
@@ -190,6 +223,7 @@ interface LiveChargeRow {
   id: string
   status: PaymentChargeStatus
   amount_cents: number
+  pix_discount_percent: number | null
   checkout_url: string | null
   expires_at: string | null
   created_at: string
@@ -211,22 +245,25 @@ function checkoutError(httpStatus: number, message: string = TRY_AGAIN): Checkou
 }
 
 /**
- * O link do dia que ainda serve: em aberto, do valor de hoje, gerado hoje (em
- * Brasília) e não vencido. Um link de ontem vale até o fim de hoje, mas o de
- * hoje dá ao cliente o dia de amanhã inteiro.
+ * O link do dia que ainda serve: em aberto, do valor e do desconto de hoje,
+ * gerado hoje (em Brasília) e não vencido. Um link de ontem vale até o fim de
+ * hoje, mas o de hoje dá ao cliente o dia de amanhã inteiro.
  */
 function reusableLink(
   charges: readonly LiveChargeRow[],
   amountCents: number,
+  pixDiscountPercent: number | null,
   now: Date,
 ): LiveChargeRow | null {
   const today = officeDateOf(now)
+  const discount = (value: number | null) => (value === null ? null : Number(value))
   return (
     charges.find(
       (charge) =>
         charge.status === 'open' &&
         charge.checkout_url !== null &&
         charge.amount_cents === amountCents &&
+        discount(charge.pix_discount_percent) === discount(pixDiscountPercent) &&
         officeDateOf(new Date(charge.created_at)) === today &&
         isChargeLive(charge, now),
     ) ?? null
@@ -236,7 +273,7 @@ function reusableLink(
 async function liveChargesOf(supabase: SupabaseClient, entryId: string) {
   const { data, error } = await supabase
     .from('payment_charges')
-    .select('id, status, amount_cents, checkout_url, expires_at, created_at')
+    .select('id, status, amount_cents, pix_discount_percent, checkout_url, expires_at, created_at')
     .eq('financial_entry_id', entryId)
     .in('status', [...LIVE_CHARGE_STATUSES])
   if (error) throw error
@@ -281,11 +318,12 @@ export async function startBillingCheckout(
   const row = await findBillingByToken(supabase, input.token)
   if (!row) return { status: 'not_found' }
 
-  const view = await toPublicView(supabase, row, await loadOffice(supabase))
+  const view = await toPublicView(supabase, row, await loadOffice(supabase), now)
   if (view.status !== 'open') return view
 
   const entry = row.financial_entries
   const amountCents = view.amountCents
+  const pixDiscountPercent = view.pixDiscount?.percent ?? null
 
   const handle = await resolveInfinitePayHandle(supabase)
   if (!handle) {
@@ -294,7 +332,7 @@ export async function startBillingCheckout(
   }
 
   const live = await liveChargesOf(supabase, entry.id)
-  const reusable = reusableLink(live, amountCents, now)
+  const reusable = reusableLink(live, amountCents, pixDiscountPercent, now)
   if (reusable?.checkout_url) {
     if (input.recordClick) await recordClick(supabase, row.id, now)
     return { status: 'redirect', url: reusable.checkout_url }
@@ -328,13 +366,24 @@ export async function startBillingCheckout(
     description: row.client_description,
     createdBy: row.created_by,
     returnBaseUrl: publicAppBaseUrl() ?? input.requestOrigin,
+    composition: {
+      principalCents: view.principalCents,
+      lateFeeCents: view.lateFeeCents,
+      interestCents: view.interestCents,
+      pixDiscountPercent,
+    },
     now,
   })
 
   if (!result.ok) {
     if (result.code === 'live_charge_exists') {
       // Outro clique gerou primeiro: vale o link dele, se já estiver pronto.
-      const winner = reusableLink(await liveChargesOf(supabase, entry.id), amountCents, now)
+      const winner = reusableLink(
+        await liveChargesOf(supabase, entry.id),
+        amountCents,
+        pixDiscountPercent,
+        now,
+      )
       if (winner?.checkout_url) {
         if (input.recordClick) await recordClick(supabase, row.id, now)
         return { status: 'redirect', url: winner.checkout_url }

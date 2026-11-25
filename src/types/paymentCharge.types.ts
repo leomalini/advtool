@@ -78,6 +78,13 @@ export interface PaymentCharge {
   expires_at: string | null
   /** Gerado com `single_payment`: aceita um pagamento só. */
   single_payment: boolean
+  /** Composição do preço (migration 97): principal + multa + juros =
+   * `amount_cents`. Principal nulo nos links de antes dela. */
+  principal_cents: number | null
+  late_fee_cents: number
+  interest_cents: number
+  /** Desconto no Pix que foi no link; a baixa aceita o Pix abaixo do preço. */
+  pix_discount_percent: number | null
   canceled_at: string | null
   canceled_by: string | null
   created_by: string
@@ -89,8 +96,9 @@ export interface PaymentCharge {
  * do token fica de fora. */
 export const PAYMENT_CHARGE_COLUMNS =
   'id, financial_entry_id, provider, handle, description, amount_cents, customer_name, ' +
-  'checkout_url, status, error, expires_at, single_payment, canceled_at, canceled_by, ' +
-  'created_by, created_at, updated_at'
+  'checkout_url, status, error, expires_at, single_payment, principal_cents, late_fee_cents, ' +
+  'interest_cents, pix_discount_percent, canceled_at, canceled_by, created_by, created_at, ' +
+  'updated_at'
 
 /** As colunas de `PaymentTransaction`. */
 export const PAYMENT_TRANSACTION_COLUMNS =
