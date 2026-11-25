@@ -30,6 +30,8 @@ export type NotificationKind =
   | 'cobranca_fila'
   | 'cobranca_clique_sem_pagamento'
   | 'cobranca_regua_encerrada'
+  // Mensalidades (migration 98): o ciclo saiu, mas a cobrança não.
+  | 'cobranca_mensalidade_sem_cobranca'
   | (string & {})
 
 export interface Notification {

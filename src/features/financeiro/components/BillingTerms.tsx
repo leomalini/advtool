@@ -10,6 +10,7 @@ import { hasLateCharges } from '@/lib/billing/lateCharges'
 import { billingTerms, type BillingPanelItem } from '@/types/billing.types'
 import { formatCurrency, formatPercent } from '@/types/financialEntry.types'
 import { useUpdateBilling } from '../hooks/usePaymentChargeMutations'
+import { parsePercentInput, percentToInput } from '../utils/percentInput'
 
 type TermKey = 'lateFeePercent' | 'monthlyInterestPercent' | 'pixDiscountPercent'
 
@@ -18,20 +19,6 @@ const FIELDS: { key: TermKey; label: string; hint: string; max: number }[] = [
   { key: 'monthlyInterestPercent', label: 'Juros (% ao mês)', hint: 'por dia de atraso', max: 100 },
   { key: 'pixDiscountPercent', label: 'Desconto no Pix (%)', hint: 'até o vencimento', max: 99.99 },
 ]
-
-/** '' é sem; aceita vírgula. Null quando não é um percentual válido. */
-function parsePercent(raw: string, max: number): number | null | 'invalid' {
-  const text = raw.trim().replace(',', '.')
-  if (text === '') return null
-  const value = Number(text)
-  if (!Number.isFinite(value) || value < 0 || value > max) return 'invalid'
-  if (Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) return 'invalid'
-  return value === 0 ? null : value
-}
-
-function toField(value: number | null): string {
-  return value === null ? '' : String(value).replace('.', ',')
-}
 
 /**
  * Multa, juros e desconto no Pix de uma cobrança (fase 3 de
@@ -131,13 +118,13 @@ function TermsForm({ item, onDone }: { item: BillingPanelItem; onDone: () => voi
   const update = useUpdateBilling()
   const current = billingTerms(item.billing)
   const [values, setValues] = useState<Record<TermKey, string>>({
-    lateFeePercent: toField(current.lateFeePercent),
-    monthlyInterestPercent: toField(current.monthlyInterestPercent),
-    pixDiscountPercent: toField(current.pixDiscountPercent),
+    lateFeePercent: percentToInput(current.lateFeePercent),
+    monthlyInterestPercent: percentToInput(current.monthlyInterestPercent),
+    pixDiscountPercent: percentToInput(current.pixDiscountPercent),
   })
 
   const parsed = Object.fromEntries(
-    FIELDS.map((field) => [field.key, parsePercent(values[field.key], field.max)]),
+    FIELDS.map((field) => [field.key, parsePercentInput(values[field.key], field.max)]),
   ) as Record<TermKey, number | null | 'invalid'>
   const invalid = FIELDS.find((field) => parsed[field.key] === 'invalid')
 

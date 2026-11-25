@@ -41,6 +41,7 @@ import {
   useMarkPaidOutside,
   useUpdateBilling,
 } from '../hooks/usePaymentChargeMutations'
+import { BillingSeriesCard } from './BillingSeriesCard'
 import { ReminderActions } from './ReminderActions'
 
 function shortDate(isoDate: string): string {
@@ -230,6 +231,8 @@ export function BillingsPanel({
           )}
         </CardContent>
       </Card>
+
+      <BillingSeriesCard />
 
       {can('financeiro', 'create') && <BatchCard entries={entries} panel={data} />}
     </div>
