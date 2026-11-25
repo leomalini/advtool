@@ -4,8 +4,10 @@
 > "Decididas no plano", sem veto). **Fase 0 feita em 2026-11-23:** o webhook
 > entrega. **Fases 1 e 2** na `release/cobrancas` (PRs #84 e #85; migrations 95 e 96
 > aplicadas, testadas). **Fase 3** na `release/cobrancas` (PR #86; migration 97
-> aplicada, testada com Pix real). **Fase 4** em `feat/cobrancas-mensalidades`
-> (migration 98 aplicada, testada na tela). As migrations 91 a 94 foram usadas por outros
+> aplicada, testada com Pix real). **Fase 4** na `release/cobrancas` (PR #87;
+> migration 98 aplicada). **Fase 7** em `feat/cobrancas-assistente`, testada na tela.
+> **Fases 5 e 6** esperam o usuário (número do WhatsApp e conta da Meta; domínio de
+> e-mail). As migrations 91 a 94 foram usadas por outros
 > módulos: as deste plano começam na **95**.
 > **Base:** as fases saem da `main`, em `release/cobrancas`.
 > **API relida em 2026-11-05:** a documentação do checkout mudou desde a leitura
@@ -529,6 +531,30 @@ pronto antes.
 
 Leitura e ações com card (ver atrasadas, ligar, pausar), atrasados no briefing
 diário, inadimplência no dashboard. Nada envia sem confirmação.
+
+Feita antes das fases 5 e 6, que esperam o número do WhatsApp, a conta da Meta e o
+domínio de e-mail.
+
+#### Como ficou (2026-11-24, branch `feat/cobrancas-assistente`, sem commit)
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Recortes | `lib/billing/panelFilters.ts` | Os filtros da aba Cobranças saíram do componente para servir também ao servidor; `isPastDue`: pendente, no ar, com vencimento passado — com régua ou só com o link |
+| Leitura | `ia/tools/read/billings.ts` | `ver_cobrancas` (vencidas por padrão; para avisar hoje, na régua, pausadas, só o link, pagas, todas; por cliente), com valor de hoje, multa, juros, Pix, último e próximo aviso, abertura e link; `ver_mensalidades` |
+| Ações | `ligar_lembretes`, `pausar_lembretes` | Card de confirmação; pelos mesmos services da tela (`openBilling` com lembretes, `updateBilling` com pausa). Sem segunda confirmação: nada sai do escritório |
+| Prompt | `prompts/system.ts` | Seção Cobranças: inadimplência é `ver_cobrancas` vencidas; nenhum aviso sai sozinho; ações só a pedido |
+| Briefing | `briefing/dailyBriefing.ts` | Para quem vê o Financeiro: avisos para hoje e vencidas em aberto (quantidade e valor de hoje), calculados uma vez por rodada |
+| Dashboard | `FinanceCard` | Em "Cobranças por link", a linha vermelha "N vencidas · R$ X" (valor original), que leva à aba Cobranças |
+
+Verificado: `tsc`, lint e build; 13 verificações no Node (`ver_cobrancas` em cada recorte,
+limite, cliente, valor somado; `isPastDue`; `ver_mensalidades`) e as 220 das fases 1 a 4.
+**Na tela (2026-11-24)**, com uma receita de teste vencida de R$ 1,00 com o link no ar: o
+dashboard mostrou "1 vencida · R$ 1,00"; o Assistente chamou `ver_cobrancas` e descreveu a
+cobrança certa; "Liga os lembretes dessa cobrança" abriu o card, e confirmar gravou os
+lembretes. A receita de teste foi excluída; a conversa do teste ficou no Assistente.
+
+**Não verificado:** o briefing com as cobranças (roda no cron das 7h e gasta IA); a
+ação de pausar pelo Assistente (mesmo caminho da de ligar).
 
 ## Custo estimado
 
