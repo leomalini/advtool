@@ -157,7 +157,9 @@ interface OfficeRow {
   billing_reminder_offsets: number[] | null
 }
 
-async function loadOffice(supabase: SupabaseClient) {
+/** Nome, telefone e os dias da régua do escritório — também para as
+ * mensalidades, que nascem com a antecedência da primeira etapa. */
+export async function loadOffice(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('office_settings')
     .select('name, phone, billing_reminder_offsets')

@@ -17,6 +17,7 @@ import {
 } from '@/lib/billing/reminders'
 import { billingPageUrl } from '@/lib/billing/urls'
 import { createAdminClient, hasServiceRoleKey } from '@/lib/supabase/admin'
+import { billingTermsSchema } from '@/schemas/billingTerms.schema'
 
 /**
  * A cobrança de um lançamento — a página `/pagar/<token>` (docs/cobrancas.md).
@@ -38,16 +39,6 @@ const postSchema = z.object({
   reminders: z.boolean().optional(),
 })
 
-/** Duas casas, como as colunas `numeric` da migration 97. */
-const percent = (max: number) =>
-  z
-    .number()
-    .min(0)
-    .max(max)
-    .refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6, {
-      message: 'Até duas casas decimais.',
-    })
-
 const patchSchema = z
   .object({
     clientDescription: z.string().max(500).optional(),
@@ -55,14 +46,7 @@ const patchSchema = z
     paused: z.boolean().optional(),
     recipientPhone: z.string().max(30).nullable().optional(),
     clientOptOut: z.boolean().optional(),
-    terms: z
-      .object({
-        lateFeePercent: percent(100).nullable().optional(),
-        monthlyInterestPercent: percent(100).nullable().optional(),
-        // A InfinitePay pede maior que 0 e menor que 100; 0 desliga.
-        pixDiscountPercent: percent(99.99).nullable().optional(),
-      })
-      .optional(),
+    terms: billingTermsSchema.optional(),
   })
   .refine((body) => Object.values(body).some((value) => value !== undefined), {
     message: 'Nada a mudar.',

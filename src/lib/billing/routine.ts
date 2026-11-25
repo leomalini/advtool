@@ -3,7 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { publicAppBaseUrl } from '@/lib/appUrl'
 import type { BillingPanelItem } from '@/types/billing.types'
 import { formatCurrency } from '@/types/financialEntry.types'
-import { loadBillingPanel } from './panel'
+import { loadBillingPanel, loadOffice } from './panel'
+import { runSeriesRoutine, type SeriesRoutineSummary } from './series'
 
 /** Quanto tempo depois do clique em "Pagar" sem pagamento o sino avisa
  * (decidido em 2026-11-23, depois da fase 0). */
@@ -16,6 +17,8 @@ export interface BillingRoutineSummary {
   queue: number
   clickAlerts: number
   endedAlerts: number
+  /** Ciclos de mensalidade gerados; null quando o passo falhou. */
+  series: SeriesRoutineSummary | null
 }
 
 function moment(iso: string): string {
@@ -77,11 +80,21 @@ export async function runBillingRoutine(
   supabase: SupabaseClient,
   now: Date = new Date(),
 ): Promise<BillingRoutineSummary> {
+  // Mensalidades primeiro (migration 98): o ciclo que nasce hoje já entra na
+  // fila de hoje. Uma falha delas não impede os avisos da régua.
+  let series: SeriesRoutineSummary | null = null
+  try {
+    const office = await loadOffice(supabase)
+    series = await runSeriesRoutine(supabase, { now, offsets: office.offsets })
+  } catch (error) {
+    console.error('[billing] mensalidades falharam:', error)
+  }
+
   const panel = await loadBillingPanel(supabase, {
     requestOrigin: publicAppBaseUrl() ?? 'http://localhost:3000',
     now,
   })
-  const summary: BillingRoutineSummary = { queue: 0, clickAlerts: 0, endedAlerts: 0 }
+  const summary: BillingRoutineSummary = { queue: 0, clickAlerts: 0, endedAlerts: 0, series }
 
   const queue = panel.items.filter((item) => item.dueStep !== null)
   summary.queue = queue.length

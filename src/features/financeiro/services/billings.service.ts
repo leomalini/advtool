@@ -30,7 +30,7 @@ interface BillingRouteBody {
   code?: string | null
 }
 
-async function request<T = BillingRouteBody>(
+export async function request<T = BillingRouteBody>(
   path: string,
   init: RequestInit,
   fallback: string,
@@ -43,7 +43,7 @@ async function request<T = BillingRouteBody>(
   return body
 }
 
-function json(method: string, payload: unknown): RequestInit {
+export function json(method: string, payload: unknown): RequestInit {
   return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
 }
 

@@ -3,8 +3,9 @@
 > **Status:** plano aprovado em 2026-11-05 (as oito decisões com o usuário e as
 > "Decididas no plano", sem veto). **Fase 0 feita em 2026-11-23:** o webhook
 > entrega. **Fases 1 e 2** na `release/cobrancas` (PRs #84 e #85; migrations 95 e 96
-> aplicadas, testadas). **Fase 3** em `feat/cobrancas-encargos` (migration 97 aplicada,
-> testada com Pix real em 2026-11-24). As migrations 91 a 94 foram usadas por outros
+> aplicadas, testadas). **Fase 3** na `release/cobrancas` (PR #86; migration 97
+> aplicada, testada com Pix real). **Fase 4** em `feat/cobrancas-mensalidades`
+> (migration 98 aplicada, testada na tela). As migrations 91 a 94 foram usadas por outros
 > módulos: as deste plano começam na **95**.
 > **Base:** as fases saem da `main`, em `release/cobrancas`.
 > **API relida em 2026-11-05:** a documentação do checkout mudou desde a leitura
@@ -471,6 +472,39 @@ série não reescreve os já criados.
 
 **Pronto quando:** uma mensalidade gera o ciclo seguinte uma vez só, inclusive com
 dia 31 em mês curto (`addMonthsISO`), e o Financeiro mostra só os ciclos gerados.
+
+#### Como ficou (2026-11-24, branch `feat/cobrancas-mensalidades`, sem commit)
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Migration 98 | `20260101000098_billing_series.sql` | `billing_series` (cliente, descrição interna e para o cliente, valor ≥ R$ 1,00, primeiro vencimento, fim opcional, `generate_from`, lembretes, multa, juros, desconto, pausa, encerramento; RLS só leitura); `financial_entries.billing_series_id` com índice único por série e vencimento |
+| Ciclos | `lib/billing/series.ts` | Puro: vencimento = âncora + N meses (31/01 → 28/02 → 31/03), antecedência = máx(10, primeira etapa da régua). Gerar cria o lançamento (com o mês na descrição), põe a cobrança no ar, aplica os percentuais da série e liga os lembretes; o índice único segura a repetição; no máximo 3 por rodada |
+| Cron | `routine.ts` | As mensalidades rodam antes da régua: o ciclo de hoje já entra na fila. Cobrança que não vai ao ar avisa no sino (`cobranca_mensalidade_sem_cobranca`), e o lançamento fica |
+| Rotas | `/api/financeiro/mensalidades` (GET, POST), `/mensalidades/<id>` (PATCH) | Listar, criar (já gera o que couber), editar, pausar, retomar, encerrar |
+| Tela | `BillingSeriesCard` na aba Cobranças | Lista com situação, dia, próximo vencimento e meses gerados; formulário de criar e editar |
+
+Decidido na implementação (vale salvo veto):
+
+- **Primeiro vencimento hoje ou depois**: meses passados não são cobrados de uma vez.
+- **Cliente e dia não mudam** depois de criada: encerra-se e cria-se outra.
+- **Editar vale para os próximos meses**; os gerados são lançamentos e não mudam.
+- **Retomar não cobra os meses da pausa** (`generate_from` vai para hoje); encerrar
+  mantém os gerados.
+- **Mensalidade encerrada continua na lista**, como histórico; não há botão de excluir.
+- A tela cria em Honorário; as rotas aceitam Custas, Perícia e Outros.
+- A validação dos percentuais das rotas e a leitura do campo na tela viraram peças
+  comuns (`schemas/billingTerms.schema.ts`, `utils/percentInput.ts`).
+
+Verificado: `tsc`, lint e build; 43 verificações no Node (dia 31, bissexto, fim,
+antecedência, uma vez por ciclo, rajada limitada, pausa, retomada, encerramento, edição,
+lista, cron e falha da cobrança) e as 177 das fases 1 a 3. **Na tela (2026-11-24)**, com a
+migration 98 aplicada e conferida: mensalidade de R$ 1,00 sem lembretes para um cliente
+real, primeiro vencimento em 01/12; o ciclo de 12/2026 nasceu na hora com a cobrança no ar
+("Honorários mensais — 12/2026"); editar para R$ 2,00 não mudou o ciclo gerado; pausar,
+retomar e encerrar funcionaram. Os dados de teste foram apagados.
+
+**Não verificado:** o cron gerando um ciclo em produção; uma mensalidade com lembretes
+ligados chegando à fila do dia (coberto no Node).
 
 ### Fase 5: WhatsApp pela API oficial
 
